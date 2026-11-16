@@ -1,6 +1,7 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime';
 import { ConfigProvider, Console, Effect, Layer } from 'effect';
 import { CliError, Command } from 'effect/cli';
+import { doctorCommand } from './commands/doctor';
 import { importLogCommand } from './commands/import-log';
 import { inboxSubcommands } from './commands/inbox';
 import { infoCommand } from './commands/info';
@@ -38,6 +39,7 @@ const mainCommand = Command.make('operator-inbox', {}).pipe(
     installClaudeHooksCommand,
     importLogCommand,
     infoCommand,
+    doctorCommand,
     macrosCommand,
     skillCommand,
     statsCommand,

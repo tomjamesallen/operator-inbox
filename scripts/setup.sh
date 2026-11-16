@@ -501,6 +501,10 @@ say "summary${DRY_LABEL:+ (dry run: nothing changed)}:"
 for line in "${SUMMARY[@]}"; do
   printf '  - %s\n' "$line"
 done
+if ((!DRY_RUN)); then
+  echo
+  say "to check this install at any time: operator-inbox doctor"
+fi
 
 # rebuild is what an unattended sync job runs, so a restart onto a build that
 # does not answer is a failure it must see. all leaves it as a summary note:
