@@ -80,6 +80,18 @@ describe('the sidebar never moves the question', () => {
     expect(layer?.contains(reader())).toBe(false);
   });
 
+  // A sticky breadcrumb inside the reader carries the sidebar's own z-20, and
+  // the later one wins a tie. The reader is its own stacking context, so no
+  // `z-` inside it can rise above the sidebar's layer, whatever its number.
+  it('keeps the reader in a stacking layer of its own, under the sidebar', async () => {
+    await mount();
+    fireEvent.click(burger());
+    await waitFor(() => expect(aside()).not.toBeNull());
+    expect(reader().className.split(' ')).toContain('isolate');
+    const layer = aside()?.closest('[data-rail-layer]');
+    expect(layer?.className).toMatch(/(^| )z-\d+( |$)/);
+  });
+
   it('keeps the same element, classes, scroll and lit question in every state', async () => {
     await mount();
     const element = flow();

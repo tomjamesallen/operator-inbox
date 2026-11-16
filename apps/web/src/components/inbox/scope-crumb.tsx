@@ -161,8 +161,10 @@ export const CrumbRow = ({
       className={`relative ${className}`}
     >
       {/* Out of the row's flow, so the text never moves for it; its right
-          edge is the row's, s2 from the text. A 36px target round a 12px icon. */}
-      <span className="absolute inset-y-0 right-full flex items-center">
+          edge is the row's, s2 from the text. A 36px target round a 12px icon.
+          On a phone the row can wrap, so the icon keeps to its first line: one
+          line box (`h-lh`) below the row's padding, not the whole row. */}
+      <span className="absolute inset-y-0 right-full flex items-center compact:top-s1 compact:bottom-auto compact:h-lh">
         <Tip label="All inboxes" keys={keys.first}>
           <button
             type="button"

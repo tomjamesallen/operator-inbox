@@ -25,9 +25,12 @@ export const InboxReader = () => {
   const header = useRef<HTMLDivElement>(null);
   const foot = useRef<HTMLDivElement>(null);
   return (
+    // `isolate`: the reader is one layer of the page, so nothing inside it
+    // (the stuck breadcrumb, the header's glass, the chase button) can rise
+    // above the sidebar or the masthead, whatever its own `z-` says.
     <main
       data-inbox-reader
-      className="relative h-full min-w-0 flex-1 bg-bg font-zen text-fg"
+      className="relative isolate h-full min-w-0 flex-1 bg-bg font-zen text-fg"
     >
       <QueueTabs header={header} />
       <div className="relative h-full">
