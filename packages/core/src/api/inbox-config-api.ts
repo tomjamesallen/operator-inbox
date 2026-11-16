@@ -5,7 +5,7 @@ import { InboxMetadataRules } from '../inbox-metadata';
 // How long a question may sit with the agent before the page says it
 // probably needs chasing, in minutes: config.json's `chaseAfterMinutes`.
 export const ChaseAfterMinutes = Schema.Number.check(Schema.isGreaterThan(0));
-export const DEFAULT_CHASE_AFTER_MINUTES = 5;
+export const DEFAULT_CHASE_AFTER_MINUTES = 10;
 
 // What serve reads from Local's config for the Inbox page: the metadata rules
 // from metadata.json as the file holds them, or the default when there is no

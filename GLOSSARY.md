@@ -16,7 +16,7 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 
 **With the agent**: the queue of Questions the operator has answered, deferred or asked, which the agent has not yet marked done.
 
-**Chase**: nudging the session that holds a Question which has sat in **With the agent** too long, chiefly one that is stuck or has dropped its Inbox. Past `config.json`'s `chaseAfterMinutes` (five by default) the page marks the Question's time with a **Chase** link to the session, and raises a toast per Inbox that stays until the operator dismisses it. An Inbox with no **session link** gets the mark and the toast, without the link.
+**Chase**: nudging the session that holds a Question which has sat in **With the agent** too long, chiefly one that is stuck or has dropped its Inbox. Past `config.json`'s `chaseAfterMinutes` (ten by default) the page marks the Question's time with a **Chase** link to the session, and raises a toast per Inbox that stays until the operator dismisses it. An Inbox with no **session link** gets the mark and the toast, without the link.
 
 **Processed**: the queue of Questions the agent has marked done or withdrawn, each shown with its answer or the agent's reason. The operator can still read them there.
 
