@@ -482,7 +482,7 @@ const EXPECTED_LIST: unknown = [
 
 describe('the inbox event log, as kairos-es writes it in the v3 encoding', () => {
   it.effect(
-    'this build writes the golden DDL plus two deliberate changes: a metadata column and the blob table',
+    'this build writes the golden DDL plus three deliberate changes: a metadata column, the blob table and the read model tables',
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -504,7 +504,11 @@ describe('the inbox event log, as kairos-es writes it in the v3 encoding', () =>
         // tables on every open, is the second: a new table, so a file
         // written before it gains it on its next open and nothing else moves.
         const withBlobs = `${withMetadata}\nCREATE TABLE "operator_inbox_blobs" (sha TEXT PRIMARY KEY, kind TEXT NOT NULL, bytes INTEGER NOT NULL, doc BLOB NOT NULL);\n`;
-        expect(readDdl(file)).toBe(withBlobs);
+        // The list's read model (`inbox-read-model.ts`) is the third: three
+        // derived tables made after the blob table, which a file written
+        // before them gains on its next open, filled from its events.
+        const withReadModel = `${withBlobs}\nCREATE TABLE "operator_inbox_rm_inbox" (inbox_id TEXT PRIMARY KEY, first_seq INTEGER NOT NULL, last_event_seq INTEGER NOT NULL, last_event_at TEXT, last_news_seq INTEGER, last_news_at TEXT, state TEXT NOT NULL);\n\nCREATE TABLE "operator_inbox_rm_question" (inbox_id TEXT NOT NULL, number INTEGER NOT NULL, state TEXT NOT NULL, asked_at TEXT, answered_at TEXT, processed_at TEXT, withdrawn_at TEXT, group_name TEXT NOT NULL, highlighted INTEGER NOT NULL, from_operator INTEGER NOT NULL);\n\nCREATE INDEX "operator_inbox_rm_question_inbox" ON "operator_inbox_rm_question" (inbox_id);\n\nCREATE TABLE "operator_inbox_rm_checkpoint" (id INTEGER PRIMARY KEY CHECK (id = 1), position TEXT NOT NULL, fold_version INTEGER NOT NULL);\n`;
+        expect(readDdl(file)).toBe(withReadModel);
         expect(readColumns(file)).toEqual([...GOLDEN_COLUMNS, 'metadata']);
       }).pipe(Effect.provide(NodeServices.layer)),
   );

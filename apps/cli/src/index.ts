@@ -9,6 +9,7 @@ import { installClaudeHooksCommand } from './commands/install-claude-hooks';
 import { macrosCommand } from './commands/macros';
 import { serveCommand } from './commands/serve';
 import { skillCommand } from './commands/skill';
+import { statsCommand } from './commands/stats';
 import { machineTunnelCommand } from './commands/tunnel';
 import { processEnvProvider } from './env-config';
 import { describeError } from './error-message';
@@ -39,6 +40,7 @@ const mainCommand = Command.make('operator-inbox', {}).pipe(
     infoCommand,
     macrosCommand,
     skillCommand,
+    statsCommand,
   ]),
 );
 

@@ -24,6 +24,7 @@ import {
 import { InputError } from './errors';
 import { InboxBlobsInMemory, sha256Hex } from './inbox-blobs';
 import { STORE_CONFIG } from './inbox-database';
+import { InboxReadModelInMemory } from './inbox-read-model';
 import {
   connectInboxLog,
   InboxLog,
@@ -506,6 +507,7 @@ const foldRows = (rows: ReadonlyArray<EventRow>, describe: string) =>
       Layer.effect(InboxLog, makeInboxLog).pipe(
         Layer.provideMerge(DcbEventStoreInMemory),
         Layer.provide(InboxBlobsInMemory),
+        Layer.provide(InboxReadModelInMemory),
       ),
     ),
   );
