@@ -68,6 +68,7 @@ export interface WireView {
   readonly code?: string;
   readonly metadata: Meta;
   readonly pinnedGroups: ReadonlyArray<string>;
+  readonly archivedGroups?: ReadonlyArray<string>;
   readonly archived: boolean;
   readonly muted?: boolean;
   readonly awaitingOperator: ReadonlyArray<object>;

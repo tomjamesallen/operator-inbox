@@ -10,6 +10,7 @@ import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
 import { failureText, fetchSentence } from './failure';
 import {
+  archivedGroupsOf,
   type DrawnBoard,
   drawnBoardAtom,
   groupRowsOf,
@@ -21,6 +22,7 @@ import {
   type MachineSection,
   machineLabelOf,
   machineSectionsOf,
+  pinnedGroupsShown,
   pinnedOnly,
   type SidebarSelection,
   type StrayWrite,
@@ -156,10 +158,19 @@ export const unreadNowOf = (
     (m) => isUnreadMachine(m) && !board.greyed.has(m.key),
   );
 
+/**
+ * The sidebar's rows. Only the selected Inbox lists its groups: every other
+ * Inbox's are collapsed (`groups` an empty set) until it is picked, unless a
+ * search or the pinned filter reaches into them, which lists the groups it
+ * kept. An archived group is searched like the rest, and drawn in its Inbox's
+ * "Archived groups"; the pinned filter never shows one, as it never shows an
+ * archived Inbox.
+ */
 export const railListOf = (
   board: DrawnBoard | undefined,
   query: string,
   onlyPinned: boolean,
+  selected?: InboxId,
 ): RailList => {
   const viewOf = (row: Row) =>
     board?.views.find((v) => v.inboxId === row.inboxId);
@@ -170,11 +181,29 @@ export const railListOf = (
       ? []
       : groupRowsOf(view).map((g) => g.group);
   };
+  const querying = query.trim().length > 0;
+  const shown = (hit: RailHit): RailHit => {
+    if (!querying && hit.groups === undefined && hit.row.inboxId !== selected)
+      return { ...hit, groups: new Set() };
+    const view = viewOf(hit.row);
+    const archived = view === undefined ? [] : archivedGroupsOf(view);
+    if (!onlyPinned || archived.length === 0) return hit;
+    const left = hit.groups ?? new Set(groupNames(hit.row));
+    return {
+      ...hit,
+      groups: new Set([...left].filter((g) => !archived.includes(g))),
+    };
+  };
   const filtered = (rows: ReadonlyArray<Row>) => {
     const hits = searchSidebar(inboxRowOrder(rows), groupNames, query);
-    return onlyPinned
-      ? pinnedOnly(hits, groupNames, (r) => viewOf(r)?.pinnedGroups ?? [])
-      : hits;
+    return (
+      onlyPinned
+        ? pinnedOnly(hits, groupNames, (r) => {
+            const view = viewOf(r);
+            return view === undefined ? [] : pinnedGroupsShown(view);
+          })
+        : hits
+    ).map(shown);
   };
   const parts = (board === undefined ? [] : machineSectionsOf(board)).map(
     (section) => ({
@@ -203,6 +232,7 @@ export const railListAtom = Atom.make((get) =>
     get(drawnBoardAtom),
     get(sidebarQueryAtom),
     get(sidebarPinnedOnlyAtom),
+    get(selectedInboxAtom),
   ),
 );
 

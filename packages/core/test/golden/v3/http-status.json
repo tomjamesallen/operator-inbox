@@ -178,6 +178,28 @@
       }
     },
     {
+      "endpoint": "inbox.archiveGroup",
+      "method": "POST",
+      "path": "/api/inbox/:inboxId/archive-group",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ],
+        "404": [
+          "InboxNotFound"
+        ],
+        "409": [
+          "ArchiveRefused"
+        ],
+        "503": [
+          "InboxUnavailable"
+        ]
+      }
+    },
+    {
       "endpoint": "inbox.mute",
       "method": "POST",
       "path": "/api/inbox/:inboxId/mute",

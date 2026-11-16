@@ -15,10 +15,12 @@ import { InboxClient } from './api';
 import { failureText } from './failure';
 import {
   archiveAtom,
+  archivedGroupsOf,
   copyQuestionAtom,
   DEFAULT_GROUP,
   dismissHighlightAtom,
   drawnBoardAtom,
+  groupArchiveAtom,
   groupsInForce,
   inboxBoardAtom,
   inboxRowOrder,
@@ -397,6 +399,32 @@ const togglePin = (get: Atom.AtomContext): boolean => {
   return true;
 };
 
+// Archive the Inbox in hand, or its group when exactly one named group is in
+// force on its own view, as that group row's menu would.
+const toggleArchive = (get: Atom.AtomContext): boolean => {
+  const view = viewInHand(get);
+  if (view === undefined) return false;
+  const selected = get.once(selectedInboxAtom) === view.inboxId;
+  const groups = selected
+    ? groupsInForce(view, get.once(screenStateAtom).groups)
+    : [];
+  const [only] = groups;
+  if (groups.length === 1 && only !== undefined && only !== DEFAULT_GROUP) {
+    get.set(groupArchiveAtom(pinKey(view.inboxId, only)), {
+      inboxId: view.inboxId,
+      group: only,
+      archived: !archivedGroupsOf(view).includes(only),
+      placeless: rowUnseen(get),
+    });
+    return true;
+  }
+  get.set(archiveAtom(view.inboxId), {
+    archived: !view.archived,
+    placeless: rowUnseen(get),
+  });
+  return true;
+};
+
 type Handler = (
   get: Atom.AtomContext,
   e: KeyboardEvent,
@@ -532,15 +560,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     get.set(openRenameAtom, view.inboxId);
     return true;
   },
-  toggle_archive: (get) => {
-    const view = viewInHand(get);
-    if (view === undefined) return false;
-    get.set(archiveAtom(view.inboxId), {
-      archived: !view.archived,
-      placeless: rowUnseen(get),
-    });
-    return true;
-  },
+  toggle_archive: (get) => toggleArchive(get),
   show_help: (get) => {
     get.set(keymapHelpOpenAtom, !get.once(keymapHelpOpenAtom));
     return true;

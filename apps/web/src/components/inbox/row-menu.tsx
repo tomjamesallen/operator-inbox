@@ -4,6 +4,7 @@ import type { InboxId } from '@operator-inbox/core/api';
 import {
   archiveAtom,
   drawnBoardAtom,
+  groupArchiveAtom,
   muteAtom,
   pinAtom,
   pinKey,
@@ -55,6 +56,33 @@ export const PinItem = ({
       }
     >
       {pinned ? 'Unpin' : 'Pin to the top'}
+    </Menu.Item>
+  );
+};
+
+// Archive a group or bring it back, from its row's menu. The write is read on
+// the row, as a pin's is.
+export const GroupArchiveItem = ({
+  inboxId,
+  group,
+  archived,
+}: {
+  readonly inboxId: InboxId;
+  readonly group: string;
+  readonly archived: boolean;
+}) => {
+  const [result, archive] = useAtom(groupArchiveAtom(pinKey(inboxId, group)));
+  const keys = useAtomValue(keyHintAtom('toggle_archive'));
+  return (
+    <Menu.Item
+      className={MENU_ITEM}
+      disabled={result.waiting}
+      aria-label={`${archived ? 'Unarchive' : 'Archive'} the group ${group}`}
+      data-group-archive={group}
+      onClick={() => archive({ inboxId, group, archived: !archived })}
+    >
+      {archived ? 'Unarchive' : 'Archive'}
+      <span className="text-fg/30">{keys.first}</span>
     </Menu.Item>
   );
 };

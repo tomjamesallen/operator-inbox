@@ -233,7 +233,15 @@ describe('the list', () => {
     };
     const ui = { ...asked(3, 'Third', 9), metadata: { group: 'ui' } };
     serve.board = board([{ ...VIEW_A, awaitingOperator: [store, ui] }, VIEW_B]);
+    // From another Inbox, orchard's groups are collapsed: its own row is lit.
     await mounted(`/inbox/${B}`);
+    await openRail();
+    expect(
+      [...nav().querySelectorAll<HTMLElement>('[data-highlighted]')].map(
+        (e) => e.dataset.railGroup ?? e.dataset.railInbox,
+      ),
+    ).toEqual([A]);
+    await pickRow('orchard');
     await openRail();
     const marked = [
       ...nav().querySelectorAll<HTMLElement>('[data-highlighted]'),
@@ -380,6 +388,269 @@ describe('groups', () => {
     serve.board = GROUPED;
     await mounted(`/inbox/${A}#group=gone`);
     expect(items()).toHaveLength(2);
+  });
+});
+
+describe('only the selected inbox lists its groups', () => {
+  // orchard has "store" and "ui"; quarry has "dig".
+  const TWO_GROUPED = board([
+    {
+      ...VIEW_A,
+      pinnedGroups: ['ui'],
+      awaitingOperator: [
+        inGroup(asked(1, 'First', 2), 'store'),
+        inGroup(asked(3, 'Third', 9), 'ui'),
+      ],
+    },
+    {
+      ...VIEW_B,
+      awaitingOperator: [inGroup(asked(1, 'Quarry one', 7), 'dig')],
+    },
+  ]);
+
+  it('lists no group in All, and only the picked inbox’s once one is picked', async () => {
+    serve.board = TWO_GROUPED;
+    await mounted('/inbox');
+    await openRail();
+    expect(order()).toEqual([A, B]);
+    await pickRow('quarry');
+    await openRail();
+    expect(order()).toEqual([A, B, '  Default', '  dig']);
+    await pickRow('orchard');
+    await openRail();
+    expect(order()).toEqual([A, '  Default', '  ui', '  store', B]);
+  });
+
+  it('expands an inbox the search reaches into, picked or not', async () => {
+    serve.board = TWO_GROUPED;
+    await mounted(`/inbox/${A}`);
+    await openRail();
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: 'Search inboxes and groups' }),
+      { target: { value: 'dig' } },
+    );
+    await waitFor(() => expect(order()).toEqual([B, '  dig']));
+    // A name match lists all its groups, as it did.
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: 'Search inboxes and groups' }),
+      { target: { value: 'quarry' } },
+    );
+    await waitFor(() => expect(order()).toEqual([B, '  Default', '  dig']));
+  });
+
+  it('lists an unpicked inbox’s pinned groups under the pinned filter', async () => {
+    serve.board = TWO_GROUPED;
+    await mounted(`/inbox/${B}`);
+    await openRail();
+    fireEvent.click(screen.getByRole('button', { name: 'Show only pinned' }));
+    await waitFor(() => expect(order()).toEqual([A, '  ui']));
+  });
+
+  it('moves along the picked inbox’s groups with Tab, and Space picks one', async () => {
+    serve.board = TWO_GROUPED;
+    await mounted(`/inbox/${B}`);
+    await openRail();
+    // quarry's rows are the only group rows on the page, in its order.
+    const links = [
+      ...nav().querySelectorAll<HTMLElement>('[data-rail-group]'),
+    ].map((a) => a.dataset.railGroup);
+    expect(links).toEqual(['', 'dig']);
+    const dig = nav().querySelector<HTMLElement>('[data-rail-group="dig"]');
+    if (dig === null) throw new Error('no dig row');
+    press({ key: ' ', code: 'Space' }, dig);
+    await waitFor(() => expect(location.hash).toBe('#group=dig'));
+    expect(location.pathname).toBe(`/inbox/${B}`);
+  });
+});
+
+describe('archived groups', () => {
+  // orchard: #1 in "store", #3 in "ui", #6 (with the agent) in "store";
+  // "store" is archived.
+  const ARCHIVED_GROUP = {
+    ...VIEW_A,
+    archivedGroups: ['store'],
+    awaitingOperator: [
+      inGroup(asked(1, 'First', 2), 'store'),
+      inGroup(asked(3, 'Third', 9), 'ui'),
+    ],
+    awaitingAgent: [
+      inGroup(answered(6, 'Sixth', 11, 'Six.'), 'store'),
+      answered(2, 'Second', 12, 'Yes.'),
+    ],
+  };
+  const LIVE_GROUP = {
+    ...ARCHIVED_GROUP,
+    archivedGroups: [] as ReadonlyArray<string>,
+  };
+  // As serve counts: an archived group's waiting question is out of the
+  // row's count and All's.
+  const counted = (views: ReadonlyArray<WireView>) => {
+    const b = board(views);
+    return {
+      ...b,
+      inboxes: b.inboxes.map((i) =>
+        i.inboxId === A
+          ? { ...i, awaitingOperator: i.awaitingOperator - 1 }
+          : i,
+      ),
+      totalAwaitingOperator: b.totalAwaitingOperator - 1,
+    };
+  };
+  const ARCHIVED = counted([ARCHIVED_GROUP, VIEW_B]);
+
+  const fold = () =>
+    rail().getByRole('button', { name: /Archived groups \(1\)/ });
+  const groupRows = (): string[] =>
+    [...nav().querySelectorAll<HTMLElement>('[data-rail-group]')].map(
+      (a) => a.dataset.railGroup || 'Default',
+    );
+
+  it('folds an archived group away under its inbox, shut', async () => {
+    serve.board = ARCHIVED;
+    await mounted(`/inbox/${A}`);
+    await openRail();
+    expect(fold().getAttribute('aria-expanded')).toBe('false');
+    expect(groupRows()).toEqual(['Default', 'ui']);
+    fireEvent.click(fold());
+    await waitFor(() =>
+      expect(groupRows()).toEqual(['Default', 'ui', 'store']),
+    );
+    expect(
+      rail().getByRole('list', { name: 'Archived groups in orchard' }),
+    ).toBeTruthy();
+    // The inbox's row counts only what is not put away; All too.
+    expect(rowText(rail().getByText('orchard'))).toBe('orchard1');
+    expect(rowText(rail().getAllByRole('link')[0] as Element)).toBe('All2');
+  });
+
+  it('leaves its questions out of All and the inbox’s own view, and shows them when picked', async () => {
+    serve.board = ARCHIVED;
+    await mounted('/inbox');
+    expect(items()).toEqual([`${B}/1`, `${A}/3`]);
+    await pickRow('orchard');
+    await waitFor(() => expect(items()).toEqual([`${A}/3`]));
+    expect(queueTab(/With the agent/).textContent).toContain('1');
+    await openRail();
+    fireEvent.click(fold());
+    await pickRow('store');
+    await waitFor(() => expect(items()).toEqual([`${A}/1`]));
+    expect(location.hash).toBe('#group=store');
+    // Picked, its fold stays open, so the picked row is on show.
+    await openRail();
+    expect(fold().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('archives a group from its row’s menu, and unarchives it from the fold', async () => {
+    let archived = false;
+    serve.board = board([LIVE_GROUP, VIEW_B]);
+    serve.post = () => {
+      archived = !archived;
+      serve.board = archived ? ARCHIVED : board([LIVE_GROUP, VIEW_B]);
+      return json(archived ? ARCHIVED_GROUP : LIVE_GROUP);
+    };
+    await mounted(`/inbox/${A}`);
+    await openRail();
+    const row = (group: string) => {
+      const el = nav().querySelector(`[data-rail-group="${group}"]`);
+      if (el === null) throw new Error(`no ${group} row`);
+      return el;
+    };
+    const menu = await rowMenu(row('store'));
+    fireEvent.click(
+      within(menu).getByRole('menuitem', { name: 'Archive the group store' }),
+    );
+    await waitFor(() => expect(groupRows()).toEqual(['Default', 'ui']));
+    fireEvent.click(fold());
+    await waitFor(() =>
+      expect(row('store').hasAttribute('data-group-archived')).toBe(true),
+    );
+    const again = await rowMenu(row('store'));
+    // An archived group's menu only brings it back: its pin waits.
+    expect(within(again).queryByRole('menuitem', { name: /Pin/ })).toBeNull();
+    fireEvent.click(
+      within(again).getByRole('menuitem', {
+        name: 'Unarchive the group store',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        rail().queryByRole('button', { name: /Archived groups/ }),
+      ).toBeNull(),
+    );
+    expect(serve.posts).toEqual([
+      {
+        path: `/api/inbox/${A}/archive-group`,
+        body: { group: 'store', archived: true },
+      },
+      {
+        path: `/api/inbox/${A}/archive-group`,
+        body: { group: 'store', archived: false },
+      },
+    ]);
+  });
+
+  it('says a refused archive was not made, under the group’s row', async () => {
+    serve.board = board([LIVE_GROUP, VIEW_B]);
+    serve.post = () =>
+      json(
+        {
+          _tag: 'ArchiveRefused',
+          message: 'no question in this inbox is in group "store"',
+        },
+        409,
+      );
+    await mounted(`/inbox/${A}`);
+    await openRail();
+    const row = nav().querySelector('[data-rail-group="store"]');
+    if (row === null) throw new Error('no store row');
+    fireEvent.click(
+      within(await rowMenu(row)).getByRole('menuitem', {
+        name: 'Archive the group store',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        nav().querySelector('[data-group-archive-outcome="store"]')
+          ?.textContent,
+      ).toContain('Not archived'),
+    );
+  });
+
+  it('opens the fold to show a search match there', async () => {
+    serve.board = ARCHIVED;
+    await mounted(`/inbox/${B}`);
+    await openRail();
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: 'Search inboxes and groups' }),
+      { target: { value: 'stor' } },
+    );
+    await waitFor(() => expect(order()).toEqual([A, '  store']));
+    expect(fold().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('never shows under the pinned filter, its pin waiting', async () => {
+    const pinned = { ...ARCHIVED_GROUP, pinnedGroups: ['store', 'ui'] };
+    serve.board = counted([pinned, VIEW_B]);
+    await mounted(`/inbox/${B}`);
+    await openRail();
+    fireEvent.click(screen.getByRole('button', { name: 'Show only pinned' }));
+    await waitFor(() => expect(order()).toEqual([A, '  ui']));
+  });
+
+  it('archives the one group in force with the archive key', async () => {
+    serve.board = board([LIVE_GROUP, VIEW_B]);
+    serve.post = () => json(ARCHIVED_GROUP);
+    await mounted(`/inbox/${A}#group=store`);
+    press({ key: ' ', code: 'Space', ctrlKey: true });
+    press({ key: '&', shiftKey: true });
+    await waitFor(() =>
+      expect(serve.posts).toEqual([
+        {
+          path: `/api/inbox/${A}/archive-group`,
+          body: { group: 'store', archived: true },
+        },
+      ]),
+    );
   });
 });
 

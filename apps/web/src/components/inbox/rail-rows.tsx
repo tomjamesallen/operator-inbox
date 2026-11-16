@@ -14,9 +14,12 @@ import {
 } from '../../failure';
 import {
   agoOf,
+  archivedGroupsOf,
+  archivedGroupsOpenAtom,
   archiveOutcomeAtom,
   DEFAULT_GROUP,
   type GroupRow,
+  groupArchiveOutcomeAtom,
   groupRowsOf,
   groupsInForce,
   hashOfScreenState,
@@ -36,6 +39,7 @@ import {
   freshElsewhereAtom,
   pickRowAtom,
   type RailHit,
+  railListAtom,
   railRenameAtom,
 } from '../../inbox-rail';
 import { renamingAtom } from '../../inbox-reader';
@@ -43,7 +47,14 @@ import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { InboxKeyBadge } from '../keymap-help';
 import { freshMark, HIGHLIGHT, MarkStack } from './marks';
-import { InboxMenuItems, PinItem, type PinPlace, POPUP } from './row-menu';
+import { ArchivedGroupsFold } from './rail-folds';
+import {
+  GroupArchiveItem,
+  InboxMenuItems,
+  PinItem,
+  type PinPlace,
+  POPUP,
+} from './row-menu';
 
 // The sidebar's rows: All, an Inbox, and its groups. A row is a link, so a
 // modifier click opens a new tab; a plain click picks it in place.
@@ -273,6 +284,32 @@ const ArchiveFailure = ({ inboxId }: { readonly inboxId: InboxId }) => {
   );
 };
 
+const GroupArchiveFailure = ({
+  inboxId,
+  group,
+}: {
+  readonly inboxId: InboxId;
+  readonly group: string;
+}) => {
+  const outcome = useAtomValue(groupArchiveOutcomeAtom(pinKey(inboxId, group)));
+  if (outcome === undefined || outcome.settled) return null;
+  return (
+    <p className={outcomeLine} role="alert" data-group-archive-outcome={group}>
+      {isUnconfirmed(outcome.failure)
+        ? unconfirmedShort(
+            outcome.asked.archived ? 'Archive' : 'Unarchive',
+            outcome.failure,
+          )
+        : refusalText(
+            outcome.asked.archived ? 'Not archived' : 'Not unarchived',
+            outcome.failure,
+            inboxId,
+            'ArchiveRefused',
+          )}
+    </p>
+  );
+};
+
 const MuteFailure = ({ inboxId }: { readonly inboxId: InboxId }) => {
   const outcome = useAtomValue(muteOutcomeAtom(inboxId));
   if (outcome === undefined || outcome.settled) return null;
@@ -373,8 +410,12 @@ const GroupRowLink = ({
   const pick = useAtomSet(pickRowAtom);
   const hint = useAtomValue(keyHintAtom('toggle_group'));
   const on = inForce.includes(group.group);
-  const pinnable = group.group !== DEFAULT_GROUP;
-  const name = pinnable ? group.group : 'Default';
+  // Default has no name to pin or archive.
+  const named = group.group !== DEFAULT_GROUP;
+  const name = named ? group.group : 'Default';
+  // An archived group's pin waits for it to come back, as an archived
+  // Inbox's does: its row shows no pin, and its menu only brings it back.
+  const showsPin = pinned && !group.archived;
   return (
     <>
       <RailRow
@@ -392,18 +433,31 @@ const GroupRowLink = ({
         current="true"
         top={top}
         lit={lit}
-        hooks={{ 'data-rail-group': group.group, 'data-inbox': inboxId }}
-        pinned={pinned}
+        hooks={{
+          'data-rail-group': group.group,
+          'data-inbox': inboxId,
+          'data-group-archived': group.archived ? '' : undefined,
+        }}
+        pinned={showsPin}
         pin={{ inboxId, group: group.group, name: `the group ${name}` }}
-        {...(pinnable
+        {...(named
           ? {
               menu: (
-                <PinItem
-                  inboxId={inboxId}
-                  group={group.group}
-                  pinned={pinned}
-                  name={name}
-                />
+                <>
+                  {!group.archived && (
+                    <PinItem
+                      inboxId={inboxId}
+                      group={group.group}
+                      pinned={pinned}
+                      name={name}
+                    />
+                  )}
+                  <GroupArchiveItem
+                    inboxId={inboxId}
+                    group={group.group}
+                    archived={group.archived}
+                  />
+                </>
               ),
             }
           : {})}
@@ -420,12 +474,17 @@ const GroupRowLink = ({
           else pick({ inboxId, groups: [group.group] });
         }}
       />
-      {pinnable && <PinFailure inboxId={inboxId} group={group.group} />}
+      {named && <PinFailure inboxId={inboxId} group={group.group} />}
+      {named && <GroupArchiveFailure inboxId={inboxId} group={group.group} />}
     </>
   );
 };
 
-/** An Inbox's row and, once any of its questions has one, its groups' rows. */
+/**
+ * An Inbox's row and, once any of its questions has one and the Inbox is the
+ * one selected (or a search reaches into it), its groups' rows: the archived
+ * ones under a fold of their own.
+ */
 export const InboxRows = ({
   hit,
   view,
@@ -441,6 +500,10 @@ export const InboxRows = ({
   const { groups: chosen } = useAtomValue(screenStateAtom);
   const renaming = useAtomValue(renamingAtom);
   const fresh = useAtomValue(freshElsewhereAtom);
+  const { searching } = useAtomValue(railListAtom);
+  const [archivedOpen, setArchivedOpen] = useAtom(
+    archivedGroupsOpenAtom(inboxId),
+  );
   const pick = useAtomSet(pickRowAtom);
   const now = nowMillis(useAtomValue(clockAtom));
   const here = selected === inboxId;
@@ -463,6 +526,24 @@ export const InboxRows = ({
       : all.filter((g) => only.has(g.group));
   const inForce = here && view !== undefined ? groupsInForce(view, chosen) : [];
   const lit = view === undefined ? new Set<string>() : highlightedGroups(view);
+  const active = groups.filter((g) => !g.archived);
+  const archived = groups.filter((g) => g.archived);
+  // The Inbox row is lit for what its own view shows: not an archived group.
+  const putAway = view === undefined ? [] : archivedGroupsOf(view);
+  const litShown = [...lit].some((g) => !putAway.includes(g));
+  const groupItem = (g: GroupRow) => (
+    <li key={g.group}>
+      <GroupRowLink
+        inboxId={inboxId}
+        group={g}
+        inForce={inForce}
+        here={here}
+        pinned={pinnedGroups.includes(g.group)}
+        lit={lit.has(g.group)}
+        top={top.has(sidebarKey(inboxId, g.group))}
+      />
+    </li>
+  );
   const seen = agoOf(row.lastActivityAt, now);
   const editing = renaming === inboxId;
   return (
@@ -474,7 +555,7 @@ export const InboxRows = ({
         count={row.awaitingOperator}
         on={here && inForce.length === 0}
         top={top.has(sidebarKey(inboxId))}
-        lit={lit.size > 0}
+        lit={litShown}
         muted={muted}
         fresh={fresh.filter((f) => f.inboxId === inboxId).slice(-1)}
         hooks={{ 'data-rail-inbox': inboxId }}
@@ -503,22 +584,25 @@ export const InboxRows = ({
       <PinFailure inboxId={inboxId} />
       <ArchiveFailure inboxId={inboxId} />
       <MuteFailure inboxId={inboxId} />
-      {groups.length > 0 && (
+      {active.length > 0 && (
         <ul aria-label={`Groups in ${label}`} data-rail-groups>
-          {groups.map((g) => (
-            <li key={g.group}>
-              <GroupRowLink
-                inboxId={inboxId}
-                group={g}
-                inForce={inForce}
-                here={here}
-                pinned={pinnedGroups.includes(g.group)}
-                lit={lit.has(g.group)}
-                top={top.has(sidebarKey(inboxId, g.group))}
-              />
-            </li>
-          ))}
+          {active.map(groupItem)}
         </ul>
+      )}
+      {archived.length > 0 && (
+        <ArchivedGroupsFold
+          count={archived.length}
+          open={
+            archivedOpen ||
+            searching ||
+            archived.some((g) => inForce.includes(g.group))
+          }
+          onOpenChange={setArchivedOpen}
+        >
+          <ul aria-label={`Archived groups in ${label}`} data-rail-groups>
+            {archived.map(groupItem)}
+          </ul>
+        </ArchivedGroupsFold>
       )}
     </>
   );

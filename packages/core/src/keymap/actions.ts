@@ -211,7 +211,7 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
     id: 'toggle_archive',
     section: 'Inbox',
     description:
-      'Archive the selected inbox, or bring it back; in All, the question’s inbox',
+      'Archive the selected inbox, or its one group, or bring it back; in All, the question’s inbox',
   },
   { id: 'show_help', section: 'Help', description: 'Show these key bindings' },
 ];

@@ -46,6 +46,37 @@ export const ArchivedFold = ({
   );
 };
 
+/**
+ * The archived groups of one Inbox, under its groups: shut until asked for,
+ * searched, or one of them is picked. Quieter still than Archived, and nested
+ * as its groups are.
+ */
+export const ArchivedGroupsFold = ({
+  count,
+  open,
+  onOpenChange,
+  children,
+}: {
+  readonly count: number;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly children: ReactNode;
+}) => (
+  <Collapsible.Root
+    open={open}
+    onOpenChange={onOpenChange}
+    data-archived-groups
+  >
+    <Collapsible.Trigger className="flex w-full cursor-pointer items-center gap-s1 py-s1 pr-s2 pl-s4 text-left text-11 text-fg/30 hover:text-fg/70">
+      <span className="w-2 text-11" aria-hidden="true">
+        {open ? '▾' : '▸'}
+      </span>
+      Archived groups ({count})
+    </Collapsible.Trigger>
+    <Collapsible.Panel>{children}</Collapsible.Panel>
+  </Collapsible.Root>
+);
+
 const dotOf = (section: MachineSection): string => {
   if (section.status === 'reachable' || section.status === 'local')
     return 'bg-green';

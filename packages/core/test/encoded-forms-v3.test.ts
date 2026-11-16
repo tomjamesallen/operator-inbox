@@ -12,6 +12,7 @@ import {
   ArchiveRefused,
   AskPayload,
   AskRefused,
+  GroupArchivePayload,
   HighlightRefused,
   HttpApiDecodeError,
   InboxBoardDto,
@@ -228,7 +229,8 @@ describe('InboxEvent as stored in the log', () => {
     // they have no v3 golden. `InboxCodeAssigned` and `InboxCodeChanged` came
     // after this golden was pinned, so they have their own
     // (`inbox-code-events.jsonl` and `inbox-code-change-events.jsonl`, below)
-    // and this one stays byte for byte as it was.
+    // and this one stays byte for byte as it was; so do `GroupArchived` and
+    // `GroupUnarchived` (`inbox-group-archive-events.jsonl`).
     const every: Record<
       Exclude<
         InboxEventTag,
@@ -238,6 +240,8 @@ describe('InboxEvent as stored in the log', () => {
         | 'InboxUnmuted'
         | 'InboxCodeAssigned'
         | 'InboxCodeChanged'
+        | 'GroupArchived'
+        | 'GroupUnarchived'
       >,
       true
     > = {
@@ -534,6 +538,26 @@ describe('macros as stored in the log', () => {
   });
 });
 
+// Group archives, which came after the event goldens above were pinned and so
+// have their own file.
+const GROUP_ARCHIVE_EVENTS: ReadonlyArray<InboxEvent> = [
+  { _tag: 'GroupArchived', inboxId: INBOX_A, group: 'alpha' },
+  { _tag: 'GroupUnarchived', inboxId: INBOX_A, group: 'alpha' },
+];
+
+describe('group archives as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = GROUP_ARCHIVE_EVENTS.map((e) => `${encodeEvent(e)}\n`).join(
+      '',
+    );
+    expectGolden('inbox-group-archive-events.jsonl', lines);
+    const read = golden('inbox-group-archive-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(GROUP_ARCHIVE_EVENTS);
+  });
+});
+
 // ================================================================================
 // Frontmatter — what the `plan*` builders hand `serialiseFrontmatter`, the
 // production write path of every `new-*` command, and what `parseFrontmatter`
@@ -677,6 +701,26 @@ const INBOX_BOARD_CODED: InboxBoardDto = {
   ],
 };
 
+// The board read with a view's archived groups, in a golden of its own, so the
+// ones above stay as they were pinned.
+const INBOX_BOARD_ARCHIVED_GROUPS: InboxBoardDto = {
+  inboxes: [SUMMARY_B],
+  totalAwaitingOperator: 0,
+  views: [
+    {
+      inboxId: INBOX_B,
+      label: 'Bare inbox',
+      metadata: {},
+      archived: true,
+      pinnedGroups: [],
+      archivedGroups: ['alpha', 'beta'],
+      awaitingOperator: [],
+      awaitingAgent: [],
+      processed: [],
+    },
+  ],
+};
+
 const INBOX_INDEX: InboxIndexDto = {
   inboxes: [SUMMARY_A, SUMMARY_B],
   totalAwaitingOperator: 1,
@@ -698,6 +742,11 @@ const DTOS = [
   dtoCase('dto-inbox-board.json', InboxBoardDto, INBOX_BOARD),
   dtoCase('dto-inbox-index.json', InboxIndexDto, INBOX_INDEX),
   dtoCase('dto-inbox-board-coded.json', InboxBoardDto, INBOX_BOARD_CODED),
+  dtoCase(
+    'dto-inbox-board-archived-groups.json',
+    InboxBoardDto,
+    INBOX_BOARD_ARCHIVED_GROUPS,
+  ),
   dtoCase('dto-payload-answer.json', AnswerPayload, {
     response: 'An answer.',
     seenRevision: rev(2),
@@ -727,6 +776,10 @@ const DTOS = [
   }),
   dtoCase('dto-payload-pin-inbox.json', PinPayload, { pinned: false }),
   dtoCase('dto-payload-archive.json', ArchivePayload, { archived: true }),
+  dtoCase('dto-payload-archive-group.json', GroupArchivePayload, {
+    group: 'alpha',
+    archived: true,
+  }),
   dtoCase('dto-payload-rename.json', RenamePayload, { label: 'New name' }),
 ];
 

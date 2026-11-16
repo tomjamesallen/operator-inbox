@@ -211,6 +211,11 @@ const code = Schema.optionalKey(InboxCode);
 // `PROCESSED_VIEW_CAP`, 30). `archived` is true for an Inbox the agent has
 // archived: the page leaves its cards out of the All view.
 // `pinnedGroups` is the groups the operator pinned, in the order pinned.
+// `archivedGroups` is the groups archived, in the order archived: the page
+// folds them away under the Inbox and leaves their cards out of All and of
+// the Inbox's own view. Optional, so a machine's serve that predates group
+// archives still decodes; absent reads as none, and serve leaves it out when
+// there are none.
 export const InboxViewDto = Schema.Struct({
   inboxId: InboxId,
   label: Schema.String,
@@ -222,6 +227,7 @@ export const InboxViewDto = Schema.Struct({
   // predates mutes still decodes; absent reads as not muted.
   muted: Schema.optionalKey(Schema.Boolean),
   pinnedGroups: Schema.Array(Schema.String),
+  archivedGroups: Schema.optionalKey(Schema.Array(Schema.String)),
   awaitingOperator: Schema.Array(InboxOperatorQuestionDto),
   awaitingAgent: Schema.Array(InboxAgentQuestionDto),
   processed: Schema.Array(InboxProcessedQuestionDto),
@@ -535,6 +541,16 @@ export type PinPayload = typeof PinPayload.Type;
 export const ArchivePayload = Schema.Struct({ archived: Schema.Boolean });
 export type ArchivePayload = typeof ArchivePayload.Type;
 
+// Archive one of the Inbox's groups (`archived: true`) or bring it back
+// (`false`). An endpoint of its own rather than a `group` on `ArchivePayload`:
+// a serve that predates group archives would ignore the key and archive the
+// whole Inbox, where an unknown path is refused.
+export const GroupArchivePayload = Schema.Struct({
+  group: Schema.String,
+  archived: Schema.Boolean,
+});
+export type GroupArchivePayload = typeof GroupArchivePayload.Type;
+
 // Mute the Inbox (`muted: true`) or unmute it (`false`).
 export const MutePayload = Schema.Struct({ muted: Schema.Boolean });
 export type MutePayload = typeof MutePayload.Type;
@@ -616,7 +632,9 @@ export class PinRefused extends Schema.Error<PinRefused>('PinRefused')(
   { httpApiStatus: 409 },
 ) {}
 
-// The archive was refused: the Inbox is already archived, or already not.
+// The archive was refused: the Inbox is already archived, or already not; or,
+// for a group, it is already archived or already not, it has no name, or no
+// question is in it.
 export class ArchiveRefused extends Schema.Error<ArchiveRefused>(
   'ArchiveRefused',
 )(
@@ -759,6 +777,13 @@ export class InboxApiGroup extends HttpApiGroup.make('inbox').add(
     params: InboxPath,
     query: InboxReadQuery,
     payload: ArchivePayload,
+    success: InboxViewDto,
+    error: [InboxNotFound, ArchiveRefused, InboxUnavailable],
+  }),
+  HttpApiEndpoint.post('archiveGroup', '/inbox/:inboxId/archive-group', {
+    params: InboxPath,
+    query: InboxReadQuery,
+    payload: GroupArchivePayload,
     success: InboxViewDto,
     error: [InboxNotFound, ArchiveRefused, InboxUnavailable],
   }),
