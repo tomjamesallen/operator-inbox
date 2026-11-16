@@ -240,6 +240,20 @@ describe('on the page', () => {
     ).toBeNull();
   });
 
+  // jsdom paints nothing, so this holds the shape the fade depends on: WebKit
+  // drops a box's opacity from a repaint that does not touch the box, so the
+  // code that hangs in the gutter must be inside the faded box, not only
+  // inside its element.
+  it('fades the code with its question, inside the box the fade is set on', async () => {
+    await opened();
+    const code = item(SECOND).querySelector('[data-question-code]');
+    expect(
+      code?.closest('[style*="opacity"]')?.getAttribute('data-zen-item'),
+    ).toBe(SECOND);
+    expect(item(SECOND).classList).toContain('-ml-code-gutter');
+    expect(item(SECOND).classList).toContain('pl-code-gutter');
+  });
+
   it('keeps the pointer on a question not lit, and none for the lit one', async () => {
     await opened();
     expect(item(SECOND).querySelector('article')?.className).toContain(
