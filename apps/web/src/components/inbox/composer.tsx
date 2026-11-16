@@ -58,7 +58,7 @@ import {
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { listenOnAtom } from '../../readout/readout';
-import { AttachDrop, AttachRow, AttachRowSpace } from './attachments';
+import { AttachDrop, AttachRefusal, FileStrip } from './attachments';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
@@ -289,11 +289,14 @@ const AnswerBox = ({
   const setText = (text: string) =>
     setDraft({ inboxId: item.inboxId, number: item.question.number, text });
   const menu = useMacroMenu({
-    key: item.key,
-    inboxId: item.inboxId,
-    number: item.question.number,
+    place,
     text: draft,
     setText,
+    macros: {
+      key: item.key,
+      inboxId: item.inboxId,
+      number: item.question.number,
+    },
   });
   return (
     <div className="relative">
@@ -350,12 +353,12 @@ const AnswerBox = ({
           />
         </Frame>
       </AttachDrop>
-      <AttachRow place={place} />
       <MacroCards
         itemKey={item.key}
         inboxId={item.inboxId}
         number={item.question.number}
       />
+      <AttachRefusal place={place} />
     </div>
   );
 };
@@ -394,15 +397,34 @@ const FollowUpBox = ({
   const place = followUpPlaceOf(itemKey);
   const { waiting } = useAtomValue(readerAskAtom(place));
   const files = useAtomValue(pendingFilesAtom(place));
+  const self = useRef<HTMLTextAreaElement | null>(null);
+  const menu = useMacroMenu({ place, text: draft, setText: setDraft });
   return (
-    <>
+    <div className="relative">
       <AskFailure place={place} inboxId={inboxId} />
+      {menu.open && (
+        <MacroMenuList
+          items={menu.items}
+          active={menu.active}
+          failed={menu.failed}
+          onPick={(m) => menu.pick(m, self.current)}
+        />
+      )}
       <AttachDrop place={place}>
         <Frame place={place}>
           <Box
+            boxRef={self}
             value={draft}
             placeholder="Add a follow-up"
-            onChange={setDraft}
+            combobox={menu.combobox}
+            onChange={(text, el) => {
+              setDraft(text);
+              menu.refresh(el);
+            }}
+            onSelect={menu.refresh}
+            onKeyDown={(e) => {
+              menu.onKeyDown(e);
+            }}
             attachTo={place}
           />
           <Actions
@@ -413,8 +435,9 @@ const FollowUpBox = ({
           />
         </Frame>
       </AttachDrop>
-      <AttachRow place={place} />
-    </>
+      <FileStrip place={place} />
+      <AttachRefusal place={place} />
+    </div>
   );
 };
 
@@ -424,17 +447,34 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
   const step = useAtomSet(stepAskAtom);
   const place = askPlaceOf(inboxId);
   const { waiting } = useAtomValue(readerAskAtom(place));
+  const self = useRef<HTMLTextAreaElement | null>(null);
+  const menu = useMacroMenu({ place, text: draft, setText: setDraft });
   return (
-    <>
+    <div className="relative">
       <AskFailure place={place} inboxId={inboxId} />
+      {menu.open && (
+        <MacroMenuList
+          items={menu.items}
+          active={menu.active}
+          failed={menu.failed}
+          onPick={(m) => menu.pick(m, self.current)}
+        />
+      )}
       <AttachDrop place={place}>
         <Frame place={place}>
           <Box
+            boxRef={self}
             value={draft}
             placeholder="What do you want to ask?"
-            onChange={setDraft}
+            combobox={menu.combobox}
+            onChange={(text, el) => {
+              setDraft(text);
+              menu.refresh(el);
+            }}
+            onSelect={menu.refresh}
             attachTo={place}
             onKeyDown={(e) => {
+              if (menu.onKeyDown(e)) return;
               if (e.key === 'Escape') send({ type: 'AskClosed' });
               else if (e.metaKey || draft !== '') return;
               // An empty box has no line for the arrows to move between.
@@ -445,8 +485,9 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
           <Actions label="Ask" ready={!waiting && draft.trim() !== ''} />
         </Frame>
       </AttachDrop>
-      <AttachRow place={place} />
-    </>
+      <FileStrip place={place} />
+      <AttachRefusal place={place} />
+    </div>
   );
 };
 
@@ -457,32 +498,29 @@ const PickBox = () => {
   const step = useAtomSet(stepAskAtom);
   const { cursor } = useAtomValue(askChoicesAtom);
   return (
-    <>
-      <Frame>
-        <Box
-          value={query}
-          placeholder="Which inbox?"
-          onChange={setQuery}
-          combobox={{
-            active:
-              cursor === undefined ? undefined : pickChoiceId(cursor.inboxId),
-          }}
-          onKeyDown={(e) => {
-            // ⌘↑ and ⌘↓ are the keymap's, which does the same.
-            if (e.metaKey) return;
-            if (e.key === 'ArrowDown') step(1);
-            else if (e.key === 'ArrowUp') step(-1);
-            else if (e.key === 'Escape') send({ type: 'AskClosed' });
-            else if (e.key === 'Enter' && cursor !== undefined)
-              pick(cursor.inboxId);
-            else return;
-            e.preventDefault();
-          }}
-        />
-        <Actions label="Ask" ready={false} />
-      </Frame>
-      <AttachRowSpace />
-    </>
+    <Frame>
+      <Box
+        value={query}
+        placeholder="Which inbox?"
+        onChange={setQuery}
+        combobox={{
+          active:
+            cursor === undefined ? undefined : pickChoiceId(cursor.inboxId),
+        }}
+        onKeyDown={(e) => {
+          // ⌘↑ and ⌘↓ are the keymap's, which does the same.
+          if (e.metaKey) return;
+          if (e.key === 'ArrowDown') step(1);
+          else if (e.key === 'ArrowUp') step(-1);
+          else if (e.key === 'Escape') send({ type: 'AskClosed' });
+          else if (e.key === 'Enter' && cursor !== undefined)
+            pick(cursor.inboxId);
+          else return;
+          e.preventDefault();
+        }}
+      />
+      <Actions label="Ask" ready={false} />
+    </Frame>
   );
 };
 
@@ -492,7 +530,6 @@ const NoBox = () => (
       <Box value="" placeholder="" disabled onChange={() => undefined} />
       <Actions label="Send" ready={false} />
     </Frame>
-    <AttachRowSpace />
   </>
 );
 

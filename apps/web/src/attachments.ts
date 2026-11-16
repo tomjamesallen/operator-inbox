@@ -44,6 +44,15 @@ const pendingAtom = Atom.family((_place: string) =>
   Atom.make<PendingFiles>(EMPTY).pipe(Atom.keepAlive),
 );
 
+/**
+ * The file picker asked for, by the box's place: `/attach` sets it, and the
+ * box's own hidden picker (`AttachDrop`) opens when it is its place. A new
+ * object each time, so asking twice for one box opens it twice.
+ */
+export const pickerAskedAtom = Atom.make<
+  { readonly place: string } | undefined
+>(undefined).pipe(Atom.keepAlive);
+
 /** The files waiting in one box, in the order they were added. */
 export const pendingFilesAtom = Atom.family((place: string) =>
   Atom.make((get) => get(pendingAtom(place)).files),

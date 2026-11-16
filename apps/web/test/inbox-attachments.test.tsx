@@ -4,11 +4,11 @@ import {
   A,
   answered,
   asked,
-  B,
   board,
   box,
   mounted,
   onQueue,
+  press,
   serve,
   type,
   useInboxPage,
@@ -16,9 +16,10 @@ import {
   VIEW_B,
 } from './inbox-page-harness';
 
-// Files on an answer: the "Attach" link under the box opens the picker, a
-// drop over the box or a paste into it adds files too, each waits as a chip
-// with its own ×, and the send carries them whole in the answer's request.
+// Files on an answer: `/attach` in the box's menu opens the picker, a drop
+// over the box or a paste into it adds files too, each waits as a card in
+// the strip under the box with its own ×, and the send carries them whole in
+// the answer's request.
 // A follow-up does the same. An answered card shows the files its answer
 // carried: an image as a thumbnail read back from serve, anything else as
 // its name.
@@ -41,7 +42,7 @@ const pick = (...files: ReadonlyArray<File>) =>
 
 const chips = (): ReadonlyArray<string> =>
   [...document.querySelectorAll('[data-zen-pending-file]')].map(
-    (c) => c.querySelector('.truncate')?.textContent ?? '',
+    (c) => c.querySelector('[data-zen-file-name]')?.textContent ?? '',
   );
 
 const zone = (): HTMLElement =>
@@ -49,19 +50,48 @@ const zone = (): HTMLElement =>
 
 const sendButton = () => screen.getByRole('button', { name: 'Send' });
 
+const menu = () => document.querySelector<HTMLElement>('#macro-menu');
+
+/** Types into the box as a person does: the value, the caret at its end. */
+const typeBox = (text: string) => {
+  const el = box();
+  fireEvent.change(el, { target: { value: text } });
+  el.setSelectionRange(text.length, text.length);
+  fireEvent.select(el);
+};
+
 describe('attaching files to an answer', () => {
-  it('opens the picker from the link, shows a chip per file, and takes one off', async () => {
+  it('opens the picker from /attach, which leaves the text as it was', async () => {
     await mounted(`/inbox/${A}`);
     const click = vi.spyOn(picker(), 'click');
-    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
-    expect(click).toHaveBeenCalled();
+    typeBox('See /att');
+    await waitFor(() => expect(menu()).not.toBeNull());
+    expect(
+      screen
+        .getAllByRole('option')
+        .map((o) => o.querySelector('span')?.textContent),
+    ).toEqual(['/attach']);
+    press({ key: 'Enter', code: 'Enter' }, box());
+    expect(click).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(menu()).toBeNull());
+    expect(box().value).toBe('See ');
+    expect(picker().multiple).toBe(true);
     pick(
       fileOf('shot.png', 'image/png', 'png'),
       fileOf('build.log', 'text/plain', 'log'),
     );
     await waitFor(() => expect(chips()).toEqual(['shot.png', 'build.log']));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove shot.png' }));
-    await waitFor(() => expect(chips()).toEqual(['build.log']));
+  });
+
+  it('opens the picker from /attach clicked in the menu of a follow-up', async () => {
+    await mounted();
+    await onQueue(/With the agent/);
+    const click = vi.spyOn(picker(), 'click');
+    typeBox('/');
+    await waitFor(() => expect(menu()).not.toBeNull());
+    fireEvent.mouseDown(screen.getByRole('option', { name: /\/attach/ }));
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(box().value).toBe('');
   });
 
   it('shows a drop zone while files are dragged over the box, and takes them on drop', async () => {
@@ -136,19 +166,65 @@ describe('attaching files to an answer', () => {
   });
 });
 
-describe('the attach line', () => {
-  it('keeps its place under a box that takes no files, with the link hidden', async () => {
-    await mounted(`/inbox/${B}`);
-    expect(document.querySelector('[data-zen-attach]')).not.toBeNull();
-    expect(document.querySelector('[data-zen-attach-space]')).toBeNull();
-    // Quarry has nothing with the agent, so the box there takes nothing.
-    await onQueue(/With the agent/);
+describe('a file waiting to be sent', () => {
+  it('is a card in the same strip as the comments and macros, and comes off with its ×', async () => {
+    serve.macros = JSON.stringify({
+      macros: [
+        {
+          name: 'park',
+          description: 'Park this thread',
+          instruction: 'Stop work on this thread until asked.',
+          params: [],
+        },
+      ],
+    });
+    await mounted(`/inbox/${A}`);
+    typeBox('/park');
     await waitFor(() =>
-      expect(document.querySelector('[data-zen-attach]')).toBeNull(),
+      expect(screen.queryByRole('option', { name: /\/park/ })).not.toBeNull(),
     );
-    const space = document.querySelector('[data-zen-attach-space]');
-    expect(space?.className).toContain('invisible');
-    expect(space?.getAttribute('aria-hidden')).toBe('true');
+    press({ key: 'Enter', code: 'Enter' }, box());
+    await waitFor(() =>
+      expect(document.querySelector('[data-macro-card]')).not.toBeNull(),
+    );
+    pick(
+      fileOf('shot.png', 'image/png', 'png'),
+      fileOf('build.log', 'text/plain', 'log'),
+    );
+    await waitFor(() => expect(chips()).toEqual(['shot.png', 'build.log']));
+    // One strip: the macro's card, then the files' cards, side by side.
+    const strips = document.querySelectorAll('[data-macro-cards]');
+    expect(strips).toHaveLength(1);
+    const strip = strips[0] as HTMLElement;
+    expect(strip.querySelector('[data-macro-card]')).not.toBeNull();
+    const files = strip.querySelectorAll('[data-zen-pending-file]');
+    expect(files).toHaveLength(2);
+    expect(files[0]?.getAttribute('aria-label')).toBe('/attach shot.png');
+    expect(files[0]?.querySelector('img')?.getAttribute('src')).toBe(
+      'blob:preview',
+    );
+    expect(files[1]?.querySelector('img')).toBeNull();
+    expect(files[1]?.textContent).toContain('3 B');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove shot.png' }));
+    await waitFor(() => expect(chips()).toEqual(['build.log']));
+  });
+
+  it('has a strip of its own under a follow-up', async () => {
+    await mounted();
+    await onQueue(/With the agent/);
+    pick(fileOf('trace.log', 'text/plain', 'boom'));
+    await waitFor(() => expect(chips()).toEqual(['trace.log']));
+    expect(
+      document
+        .querySelector('[data-zen-pending-file]')
+        ?.closest('[data-macro-cards]'),
+    ).not.toBeNull();
+  });
+
+  it('leaves no Attach link under the box', async () => {
+    await mounted(`/inbox/${A}`);
+    expect(screen.queryByRole('button', { name: 'Attach' })).toBeNull();
+    expect(document.querySelector('[data-zen-attach]')).toBeNull();
   });
 });
 

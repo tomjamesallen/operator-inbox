@@ -21,15 +21,19 @@ import {
   missingMacroParams,
 } from '@operator-inbox/core/api';
 import type { KeyboardEvent } from 'react';
+import { pendingFilesAtom, pickerAskedAtom } from '../../attachments';
 import { removeCardAtom } from '../../card-undo';
 import { commentStop, commentsInOrderAtom } from '../../comments';
-import { boxFocusAskedAtom } from '../../inbox-reader';
+import { answerPlaceOf, boxFocusAskedAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
 import {
+  ATTACH_DESCRIPTION,
   askMacroFocusAtom,
   cardRefOf,
+  entryName,
   type MacroCard,
   type MacroFocus,
+  type MenuEntry,
   macroCardsAtom,
   macroFocusAskedAtom,
   macroHeldAtom,
@@ -37,7 +41,7 @@ import {
   macroMenuAtom,
   macrosAtom,
   macrosSourceAtom,
-  matchingMacros,
+  menuEntries,
   missingKeyOf,
   signatureOf,
   slashAt,
@@ -45,6 +49,7 @@ import {
   withArg,
   withCard,
 } from '../../macros';
+import { FileCards } from './attachments';
 import { CardShell } from './card-shell';
 import { CommentCard } from './comment-card';
 import { edgeFade, fadeEdges } from './edge-fade';
@@ -86,33 +91,47 @@ const focusStop = (el: HTMLElement): void => {
 };
 
 /**
- * The answer box's `/` menu: its state lives in `macroMenuAtom`, and this
- * reads the box's text and caret into it, takes the menu's keys first, and
- * turns a pick into a card.
+ * The `/` menu of the box at the foot: its state lives in `macroMenuAtom`,
+ * and this reads the box's text and caret into it, takes the menu's keys
+ * first, and acts on a pick. `/attach` opens the box's file picker; a macro,
+ * offered in the answer box only, becomes a card under it.
  */
 export const useMacroMenu = (item: {
-  readonly key: string;
-  readonly inboxId: InboxId;
-  readonly number: QuestionNumber;
+  // The box's place, whose picker `/attach` opens (`attachments.ts`).
+  readonly place: string;
   readonly text: string;
   readonly setText: (text: string) => void;
+  // The answer the macros' cards belong to. Left out (a follow-up, an ask),
+  // the menu offers `/attach` alone.
+  readonly macros?: {
+    readonly key: string;
+    readonly inboxId: InboxId;
+    readonly number: QuestionNumber;
+  };
 }) => {
   const [menu, setMenu] = useAtom(macroMenuAtom);
-  const macros = useAtomValue(macrosAtom);
+  const loaded = useAtomValue(macrosAtom);
   const source = useAtomValue(macrosSourceAtom);
-  const [cards, setCards] = useAtom(macroCardsAtom(item.key));
+  const [cards, setCards] = useAtom(
+    macroCardsAtom(item.macros?.key ?? item.place),
+  );
   const askFocus = useAtomSet(askMacroFocusAtom);
-  const items = menu === undefined ? [] : matchingMacros(macros, menu.query);
-  const failed = source._tag === 'Failed' ? source.message : undefined;
+  const askPicker = useAtomSet(pickerAskedAtom);
+  const macros = item.macros === undefined ? [] : loaded;
+  const items = menu === undefined ? [] : menuEntries(macros, menu.query);
+  const failed =
+    item.macros !== undefined && source._tag === 'Failed'
+      ? source.message
+      : undefined;
   const open =
     menu !== undefined &&
     !menu.shut &&
     (items.length > 0 || failed !== undefined);
 
   const refresh = (el: HTMLTextAreaElement) => {
-    // No file, or one still loading, is no menu: `/` simply types.
+    // `/attach` is always offered, so `/` at a word's start is always the
+    // menu; one that matches nothing shows none.
     const at =
-      (macros.length > 0 || failed !== undefined) &&
       el.selectionStart === el.selectionEnd
         ? slashAt(el.value, el.selectionStart)
         : undefined;
@@ -128,28 +147,37 @@ export const useMacroMenu = (item: {
     setMenu({ start: at.start, query: at.query, active: 0, shut: false });
   };
 
-  const pick = (macro: MacroConfig, el: HTMLTextAreaElement | null) => {
+  const pick = (entry: MenuEntry, el: HTMLTextAreaElement | null) => {
     if (menu === undefined || el === null) return;
     const { start } = menu;
     setMenu(undefined);
     item.setText(item.text.slice(0, start) + item.text.slice(el.selectionEnd));
-    const added = withCard(cards, macro);
-    setCards({
-      inboxId: item.inboxId,
-      number: item.number,
-      cards: added.cards,
-    });
-    if (macro.params.length > 0)
-      askFocus({
-        key: item.key,
-        to: { _tag: 'Field', card: added.id, index: 0 },
-      });
-    // A card with nothing to fill leaves the caret where the slash was.
-    else
+    const keepCaret = () =>
       setTimeout(() => {
         el.focus({ preventScroll: true });
         el.setSelectionRange(start, start);
       });
+    if (entry._tag === 'Attach') {
+      // In the same key press, so the browser lets the picker open.
+      askPicker({ place: item.place });
+      keepCaret();
+      return;
+    }
+    if (item.macros === undefined) return;
+    const { macro } = entry;
+    const added = withCard(cards, macro);
+    setCards({
+      inboxId: item.macros.inboxId,
+      number: item.macros.number,
+      cards: added.cards,
+    });
+    if (macro.params.length > 0)
+      askFocus({
+        key: item.macros.key,
+        to: { _tag: 'Field', card: added.id, index: 0 },
+      });
+    // A card with nothing to fill leaves the caret where the slash was.
+    else keepCaret();
   };
 
   /** The menu's keys, first in the box's own handler; true when it took one. */
@@ -166,9 +194,9 @@ export const useMacroMenu = (item: {
       (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) ||
       (e.key === 'Tab' && !e.shiftKey)
     ) {
-      const macro = items[menu.active];
-      if (macro === undefined) return false;
-      pick(macro, e.currentTarget);
+      const entry = items[menu.active];
+      if (entry === undefined) return false;
+      pick(entry, e.currentTarget);
     } else return false;
     e.preventDefault();
     e.stopPropagation();
@@ -177,7 +205,7 @@ export const useMacroMenu = (item: {
 
   const active = open ? items[menu?.active ?? 0] : undefined;
   const combobox = {
-    active: active === undefined ? undefined : optionId(active.name),
+    active: active === undefined ? undefined : optionId(entryName(active)),
     expanded: open,
     controls: MACRO_MENU_ID,
   };
@@ -192,10 +220,10 @@ export const MacroMenuList = ({
   failed,
   onPick,
 }: {
-  readonly items: ReadonlyArray<MacroConfig>;
-  readonly active: MacroConfig | undefined;
+  readonly items: ReadonlyArray<MenuEntry>;
+  readonly active: MenuEntry | undefined;
   readonly failed: string | undefined;
-  readonly onPick: (macro: MacroConfig) => void;
+  readonly onPick: (entry: MenuEntry) => void;
 }) => (
   <div
     id={MACRO_MENU_ID}
@@ -208,25 +236,33 @@ export const MacroMenuList = ({
         No macros: {failed}
       </p>
     )}
-    {items.map((m) => (
-      <div
-        key={m.name}
-        id={optionId(m.name)}
-        role="option"
-        tabIndex={-1}
-        aria-selected={m === active}
-        // A press keeps the caret in the box.
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onPick(m);
-        }}
-        className={`flex cursor-pointer items-baseline gap-s2 px-s2 py-0.5 ${m === active ? 'bg-fg/8 text-fg' : 'text-fg/55 hover:text-fg/85'}`}
-      >
-        <span className="shrink-0 font-medium">/{m.name}</span>
-        <span className="shrink-0 text-fg/40">{signatureOf(m)}</span>
-        <span className="min-w-0 truncate text-fg/35">{m.description}</span>
-      </div>
-    ))}
+    {items.map((m) => {
+      const name = entryName(m);
+      return (
+        <div
+          key={`${m._tag}:${name}`}
+          id={optionId(name)}
+          role="option"
+          tabIndex={-1}
+          aria-selected={m === active}
+          // A press keeps the caret in the box, and is the gesture the
+          // file picker needs to open.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick(m);
+          }}
+          className={`flex cursor-pointer items-baseline gap-s2 px-s2 py-0.5 ${m === active ? 'bg-fg/8 text-fg' : 'text-fg/55 hover:text-fg/85'}`}
+        >
+          <span className="shrink-0 font-medium">/{name}</span>
+          {m._tag === 'Macro' && (
+            <span className="shrink-0 text-fg/40">{signatureOf(m.macro)}</span>
+          )}
+          <span className="min-w-0 truncate text-fg/35">
+            {m._tag === 'Macro' ? m.macro.description : ATTACH_DESCRIPTION}
+          </span>
+        </div>
+      );
+    })}
   </div>
 );
 
@@ -472,7 +508,7 @@ const Card = ({
 /**
  * The cards of one answer, under its box, one stack scrolling once taller than
  * its token: the comments on the Question (in body order), then the
- * macros. Every card is the same kind of stop, so Tab, Esc, ⌘⌫ and the focus a
+ * macros, then the files waiting to be sent (`FileCards`), side by side. Every card is the same kind of stop, so Tab, Esc, ⌘⌫ and the focus a
  * removal leaves behind are the same for both.
  */
 export const MacroCards = ({
@@ -486,6 +522,8 @@ export const MacroCards = ({
 }) => {
   const [cards, setCards] = useAtom(macroCardsAtom(itemKey));
   const comments = useAtomValue(commentsInOrderAtom(itemKey));
+  const place = answerPlaceOf(itemKey);
+  const files = useAtomValue(pendingFilesAtom(place));
   // A removal is kept to undo (`card-undo.ts`).
   const removeCard = useAtomSet(removeCardAtom);
   const heldOn = useAtomValue(macroHeldAtom(itemKey));
@@ -507,7 +545,8 @@ export const MacroCards = ({
       if (el !== null) focusStop(el);
     });
   });
-  if (cards.length === 0 && comments.length === 0) return null;
+  if (cards.length === 0 && comments.length === 0 && files.length === 0)
+    return null;
   const held = heldOn !== undefined && heldOn === missingKeyOf(cards);
   const write = (next: ReadonlyArray<MacroCard>) =>
     setCards({ inboxId, number, cards: next });
@@ -552,6 +591,7 @@ export const MacroCards = ({
           }}
         />
       ))}
+      <FileCards place={place} />
     </div>
   );
 };
