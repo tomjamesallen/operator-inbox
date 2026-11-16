@@ -2,6 +2,7 @@ import { RegistryProvider } from '@effect/atom-react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { refreshOnNewBuild } from './build-refresh';
 import './index.css';
 import { installRowContextMenu } from './pake-row-menu';
 
@@ -23,8 +24,18 @@ createRoot(root).render(
 // worker would cache modules Vite is busy replacing.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
-      // Not fatal: the page works without a worker, it just cannot install.
-    });
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/' })
+      .then((registration) =>
+        refreshOnNewBuild({
+          container: navigator.serviceWorker,
+          registration,
+          doc: document,
+          reload: () => window.location.reload(),
+        }),
+      )
+      .catch(() => {
+        // Not fatal: the page works without a worker, it just cannot install.
+      });
   });
 }
