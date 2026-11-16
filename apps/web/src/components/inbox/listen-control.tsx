@@ -34,7 +34,8 @@ import { Tip } from './icon';
 // yellow, play and pause slide out of it to the right, and the progress bar
 // and the speeds fade in after it. Turning it on or off moves nothing else on
 // the line. On a phone the buttons are a finger's size, and the bar has a
-// strip of its own under them, kept whether listen mode is on or off.
+// strip of its own over them, there while listen mode is on (the line's
+// `compact:pt-5`, in `composer.tsx`), so the buttons never move.
 
 const clock = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -66,7 +67,7 @@ const SegmentBar = () => {
   return (
     <span
       data-readout-bar
-      className="flex h-3 min-w-0 flex-1 items-center gap-px compact:absolute compact:inset-x-0 compact:bottom-0 compact:h-5"
+      className="flex h-3 min-w-0 flex-1 items-center gap-px compact:absolute compact:inset-x-0 compact:top-0 compact:h-5"
     >
       {lit.ready.segments.map((s, i) => {
         const done =

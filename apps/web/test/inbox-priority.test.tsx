@@ -388,8 +388,11 @@ describe('the boomerang', () => {
 
 describe('the ambient indicator', () => {
   const button = () => document.querySelector('[data-priority-button]');
+  const dot = () => document.querySelector('[data-burger-priority]');
+  const burger = () => document.querySelector('[data-rail-burger]');
+  const picker = () => document.querySelector('[data-testid="inbox-picker"]');
 
-  it('counts what waits there while the operator is elsewhere, and lists it', async () => {
+  it('counts what waits there while the operator is elsewhere, and opens the inbox picker', async () => {
     serve.board = PRIORITY_B;
     await mounted(`/inbox/${A}`);
     await waitFor(() => expect(button()).not.toBeNull());
@@ -397,16 +400,50 @@ describe('the ambient indicator', () => {
       '1',
     );
     expect(button()?.closest('[data-foot-alerts]')).not.toBeNull();
+    expect(button()?.getAttribute('aria-label')).toBe(
+      'quarry has a question waiting — open the inbox picker',
+    );
     fireEvent.click(button() as Element);
-    const item = await waitFor(() => {
-      const el = document.querySelector('[data-priority-question="1"]');
-      if (el === null) throw new Error('no list');
+    const opened = await waitFor(() => {
+      const el = picker();
+      if (el === null) throw new Error('no picker');
       return el;
     });
-    expect(item.textContent).toContain('Quarry one');
-    fireEvent.click(item);
-    await waitFor(() => expect(location.pathname).toBe(`/inbox/${B}`));
-    await waitFor(() => expect(button()).toBeNull());
+    // Its own list is gone: the picker, with the priority Inbox first.
+    expect(document.querySelector('[data-priority-list]')).toBeNull();
+    expect(
+      opened
+        .querySelector('[data-testid="inbox-picker-row"]')
+        ?.getAttribute('data-key'),
+    ).toBe(B);
+    expect(button()?.getAttribute('aria-expanded')).toBe('true');
+    // A second click shuts it, as the chase button's does.
+    fireEvent.click(button() as Element);
+    await waitFor(() => expect(picker()).toBeNull());
+  });
+
+  // On a phone the flag gives way to a dot on the burger; the breakpoint is
+  // CSS's (`compact:`), so this reads the classes that ask for it.
+  it('is a dot on the burger on a phone, under the same condition', async () => {
+    serve.board = PRIORITY_B;
+    await mounted(`/inbox/${A}`);
+    await waitFor(() => expect(dot()).not.toBeNull());
+    expect(button()?.className).toContain('compact:hidden');
+    expect(dot()?.className).toContain('hidden');
+    expect(dot()?.className).toContain('compact:block');
+    expect(dot()?.className).toContain('bg-priority');
+    expect(burger()?.contains(dot())).toBe(true);
+    expect(burger()?.getAttribute('aria-label')).toBe(
+      'Sidebar, priority: quarry has a question waiting',
+    );
+  });
+
+  it('puts no dot on the burger in the priority Inbox itself', async () => {
+    serve.board = PRIORITY_B;
+    await mounted(`/inbox/${B}`);
+    await settle();
+    expect(dot()).toBeNull();
+    expect(burger()?.getAttribute('aria-label')).toBe('Sidebar');
   });
 
   it('is not there in the priority Inbox itself', async () => {

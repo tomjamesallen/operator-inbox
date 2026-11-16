@@ -1,5 +1,4 @@
 import { Menu } from '@base-ui/react/menu';
-import { Popover } from '@base-ui/react/popover';
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
 import type { InboxId } from '@operator-inbox/core/api';
 import { Flag } from 'lucide-react';
@@ -8,6 +7,10 @@ import {
   priorityInboxOf,
   selectedInboxAtom,
 } from '../../inbox';
+import {
+  inboxPickerOpenAtom,
+  setInboxPickerOpenAtom,
+} from '../../inbox-picker';
 import {
   carryOnAtom,
   goToPriorityAtom,
@@ -24,7 +27,8 @@ import { focusRing } from '../styles';
 
 // The priority Inbox, drawn: its flag in the sidebar and the lists of
 // other Inboxes, the row menu's item that marks it, the count that stacks
-// with the chase button, the interjection card and the boomerang's pill. What
+// with the chase button (a dot on the burger on a phone), the interjection
+// card and the boomerang's pill. What
 // pulls and when is `inbox-priority.ts`. Each control shows at most one key
 // hint, outside any underline, and nothing that could be read as a key.
 
@@ -122,77 +126,70 @@ const countLabel = (n: number, label: string) =>
   `${label} has ${n === 1 ? 'a question' : `${n} questions`} waiting`;
 
 /**
- * The ambient indicator: a round flag in the priority colour with the count, stacked over the
- * chase button and working as it does. It is there only while the operator is
- * elsewhere and the priority Inbox has Questions waiting. A click pops it open
- * on those Questions, oldest first; picking one goes there.
+ * The ambient indicator: a round flag in the priority colour with the count,
+ * stacked over the chase button and working as it does. It is there only
+ * while the operator is elsewhere and the priority Inbox has Questions
+ * waiting. A click opens the inbox picker, which lists the priority Inbox
+ * first, and a second shuts it. Not on a phone: there the burger carries a
+ * dot instead (`BurgerPriorityDot`), and nothing floats over the Question.
  */
 export const PriorityButton = () => {
   const count = useAtomValue(priorityCountAtom);
   const info = useAtomValue(priorityInfoAtom);
-  const go = useAtomSet(goToPriorityAtom);
-  const keys = useAtomValue(keyHintAtom('goto_priority')).first;
+  const open = useAtomValue(inboxPickerOpenAtom);
+  const setOpen = useAtomSet(setInboxPickerOpenAtom);
   if (count === 0 || info === undefined) return null;
   const words = countLabel(count, info.label);
   return (
-    <Popover.Root>
-      <Popover.Trigger
-        aria-label={`${words}: list them`}
-        title={words}
-        data-priority-button
-        className="relative flex size-6 cursor-pointer items-center justify-center rounded-full border border-priority/40 bg-rail text-priority shadow-sm transition-colors hover:bg-priority/10 data-popup-open:bg-priority/10 motion-reduce:transition-none"
+    <button
+      type="button"
+      aria-label={`${words} — open the inbox picker`}
+      title={words}
+      aria-expanded={open}
+      data-priority-button
+      onClick={() => setOpen(!open)}
+      className="relative flex size-6 cursor-pointer items-center justify-center rounded-full border border-priority/40 bg-rail text-priority shadow-sm transition-colors hover:bg-priority/10 compact:hidden motion-reduce:transition-none"
+    >
+      <Flag aria-hidden className="size-3.5" />
+      <span
+        aria-hidden
+        data-priority-count
+        className="absolute -top-1 -right-1 flex min-w-3 items-center justify-center rounded-full bg-priority px-0.5 font-zen text-9 leading-card text-rail tabular-nums"
       >
-        <Flag aria-hidden className="size-3.5" />
-        <span
-          aria-hidden
-          data-priority-count
-          className="absolute -top-1 -right-1 flex min-w-3 items-center justify-center rounded-full bg-priority px-0.5 font-zen text-9 leading-card text-rail tabular-nums"
-        >
-          {count}
-        </span>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner
-          side="top"
-          align="end"
-          sideOffset={6}
-          className="z-40"
-        >
-          <Popover.Popup
-            data-priority-list
-            className="max-w-subtitle border border-priority/30 bg-rail py-s1 font-zen text-12 text-fg/80 shadow-lg outline-none"
-          >
-            <Popover.Title className="flex items-center gap-s1 px-s3 py-s1 text-11 text-priority">
-              <Flag aria-hidden className="size-3" fill="currentColor" />
-              <span className="truncate">{words}</span>
-            </Popover.Title>
-            <ul className="flex flex-col">
-              {info.waiting.map((q) => (
-                <li key={q.number}>
-                  <Popover.Close
-                    data-priority-question={q.number}
-                    onClick={() => go({ number: q.number })}
-                    className={`flex w-full cursor-pointer items-baseline gap-s2 px-s3 py-s1 text-left hover:bg-fg/8 hover:text-fg ${focusRing}`}
-                  >
-                    <span className="shrink-0 text-11 text-fg/40 tabular-nums">
-                      #{q.number}
-                    </span>
-                    <span className="line-clamp-2">{q.title}</span>
-                  </Popover.Close>
-                </li>
-              ))}
-            </ul>
-            <Popover.Close
-              data-priority-go
-              onClick={() => go({})}
-              className={`mx-s3 mt-s1 mb-s1 flex cursor-pointer items-center gap-s2 text-11 text-priority hover:text-fg ${focusRing}`}
-            >
-              Go to the oldest {hintOf(keys)}
-            </Popover.Close>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+        {count}
+      </span>
+    </button>
+  );
+};
+
+/**
+ * The burger's priority words, on a phone, while the ambient indicator would
+ * show: what the burger's dot means, for its label. Undefined when there is
+ * no dot.
+ */
+export const priorityDotWords = (
+  count: number,
+  label: string | undefined,
+): string | undefined =>
+  count === 0 || label === undefined
+    ? undefined
+    : `priority: ${countLabel(count, label)}`;
+
+/**
+ * The ambient indicator on a phone: a dot in the priority colour on the
+ * burger, top left, under the same condition as the flag. The burger's own
+ * label says what it means (`priorityDotWords`).
+ */
+export const BurgerPriorityDot = () => {
+  const count = useAtomValue(priorityCountAtom);
+  const info = useAtomValue(priorityInfoAtom);
+  if (priorityDotWords(count, info?.label) === undefined) return null;
+  return (
+    <span
+      aria-hidden
+      data-burger-priority
+      className="absolute top-0 -left-0.5 hidden size-1 rounded-full bg-priority compact:block"
+    />
   );
 };
 

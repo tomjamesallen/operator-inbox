@@ -50,6 +50,7 @@ import {
 } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
+import { listenOnAtom } from '../../readout/readout';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
@@ -571,9 +572,12 @@ const FootNote = ({ composer }: { readonly composer: ComposerState }) => {
 // lit Question's actions and place on the right. The page's scope is shown in
 // each Question's breadcrumb (`scope-crumb.tsx`), not here, so nothing on
 // this line moves when listen mode is toggled or the scope changes. On a
-// phone the line keeps a strip under its buttons for listen mode's bar,
-// whether listen mode is on or off.
+// phone listen mode's bar has a strip of its own over the buttons, there only
+// while listen mode is on: the foot grows upwards, so the buttons and the box
+// stay where they are, and with listen mode off the buttons sit as close over
+// the box as they do on a wider screen.
 const TitleLine = () => {
+  const listening = useAtomValue(listenOnAtom);
   const queue = useAtomValue(activeQueueAtom);
   const items = useAtomValue(shownQueuesAtom)[queue];
   const lit = useAtomValue(litKeyAtom);
@@ -591,7 +595,9 @@ const TitleLine = () => {
     );
   return (
     // The lit question is plain on the page, so its title is not repeated here.
-    <div className="relative mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40 compact:pb-5">
+    <div
+      className={`relative mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40 ${listening ? 'compact:pt-5' : ''}`}
+    >
       <ListenControl />
       <LitActions inboxId={item.inboxId} />
       <InboxMenuButton inboxId={item.inboxId} lit />
