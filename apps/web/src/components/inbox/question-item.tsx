@@ -329,7 +329,9 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
       {caption !== undefined && (
         <p className="font-zen text-11 text-fg/40">{caption}</p>
       )}
-      <h1 className="text-18 leading-card font-medium text-fg">{title}</h1>
+      <h1 className="text-18 leading-card font-medium text-balance text-fg">
+        {title}
+      </h1>
       {followsUp !== undefined && (
         <button
           type="button"
