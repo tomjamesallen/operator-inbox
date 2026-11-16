@@ -37,7 +37,7 @@ import {
 import type { FreshMark } from '../../inbox-queues';
 import {
   freshElsewhereAtom,
-  pickRowAtom,
+  pickRailRowAtom,
   type RailHit,
   railListAtom,
   railRenameAtom,
@@ -407,7 +407,7 @@ const GroupRowLink = ({
   readonly lit: boolean;
   readonly top: boolean;
 }) => {
-  const pick = useAtomSet(pickRowAtom);
+  const pick = useAtomSet(pickRailRowAtom);
   const hint = useAtomValue(keyHintAtom('toggle_group'));
   const on = inForce.includes(group.group);
   // Default has no name to pin or archive.
@@ -504,7 +504,7 @@ export const InboxRows = ({
   const [archivedOpen, setArchivedOpen] = useAtom(
     archivedGroupsOpenAtom(inboxId),
   );
-  const pick = useAtomSet(pickRowAtom);
+  const pick = useAtomSet(pickRailRowAtom);
   const now = nowMillis(useAtomValue(clockAtom));
   const here = selected === inboxId;
   const pinnedGroups = view?.pinnedGroups ?? [];

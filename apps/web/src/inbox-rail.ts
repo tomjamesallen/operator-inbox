@@ -435,12 +435,27 @@ export const greyedLineAtom = Atom.make((get) => {
 
 // --- what it does ---------------------------------------------------------------
 
-/** A row picked: the view changes, and a sidebar lying over it has done its job. */
+/**
+ * A row picked from outside the sidebar (the Inbox picker, the elsewhere view):
+ * the view changes, and a sidebar lying over it has done its job.
+ */
 export const pickRowAtom = Atom.writable<void, SidebarSelection>(
   () => undefined,
   (ctx, next) => {
     ctx.set(selectSidebarAtom, next);
     ctx.set(inboxReaderAtoms.send, { type: 'RailDismissed' });
+  },
+);
+
+/**
+ * A row picked in the sidebar itself: the view changes and the sidebar stays
+ * out, drawer or docked, so the reader can pick again; the veil, Escape or
+ * the burger put it away.
+ */
+export const pickRailRowAtom = Atom.writable<void, SidebarSelection>(
+  () => undefined,
+  (ctx, next) => {
+    ctx.set(selectSidebarAtom, next);
   },
 );
 

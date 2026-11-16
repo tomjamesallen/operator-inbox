@@ -19,7 +19,7 @@ import {
 } from '../../inbox';
 import {
   clampRail,
-  pickRowAtom,
+  pickRailRowAtom,
   RAIL_MIN_PX,
   type RailPart,
   railFocusAskedAtom,
@@ -46,7 +46,7 @@ const Search = () => {
   const [query, setQuery] = useAtom(sidebarQueryAtom);
   const [onlyPinned, setOnlyPinned] = useAtom(sidebarPinnedOnlyAtom);
   const { first } = useAtomValue(railListAtom);
-  const pick = useAtomSet(pickRowAtom);
+  const pick = useAtomSet(pickRailRowAtom);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -121,7 +121,7 @@ const Inboxes = ({ part }: { readonly part: RailPart }) => {
 const AllRow = () => {
   const board = useAtomValue(drawnBoardAtom);
   const selected = useAtomValue(selectedInboxAtom);
-  const pick = useAtomSet(pickRowAtom);
+  const pick = useAtomSet(pickRailRowAtom);
   return (
     <RailRow
       href={inboxPath(undefined)}

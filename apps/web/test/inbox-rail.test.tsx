@@ -325,10 +325,13 @@ describe('how the sidebar opens', () => {
     await railIs('docked');
   });
 
-  it('shuts a drawer on picking a row, and leaves a pin open', async () => {
+  it('keeps a drawer out on picking a row, and a pin open', async () => {
     await mount();
     await openDrawer();
     fireEvent.click(rail().getByRole('link', { name: 'grove' }));
+    await waitFor(() => expect(location.pathname).toBe(`/inbox/${GROVE}`));
+    await railIs('drawer');
+    fireEvent.click(burger());
     await railShut();
     expect(location.pathname).toBe(`/inbox/${GROVE}`);
     click('wide');
@@ -491,12 +494,11 @@ describe('the rows', () => {
         .map((a) => a.textContent),
     ).toEqual(['Default', 'alpha', 'beta']);
     fireEvent.click(rail().getByRole('link', { name: /alpha/ }));
-    await railShut();
-    await openDrawer();
+    await railIs('drawer');
     fireEvent.click(rail().getByRole('link', { name: /beta/ }), {
       shiftKey: true,
     });
-    await railShut();
+    await railIs('drawer');
     expect(decodeURIComponent(location.hash)).toContain('alpha');
     expect(decodeURIComponent(location.hash)).toContain('beta');
   });
