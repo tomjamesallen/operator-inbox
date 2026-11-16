@@ -141,14 +141,22 @@ const QUEUE_ICONS: Readonly<
  * the icon while the prefix waits, as on the sidebar's All row. It has no
  * background of its own: the header's glass grows down to hold it while it
  * sticks (`HeaderGlass`).
+ *
+ * A Question's dots (`marks`) hang beside the icon, not over it: in the margin
+ * left of it, centred on the row; on a phone, whose margin holds only the
+ * icon, under it, on the row's second line. Centred on the row, they keep
+ * clear of the header's glass, which covers the top of the first Question's
+ * row while the page is narrowed.
  */
 export const CrumbRow = ({
   className,
   sticky,
+  marks,
   children,
 }: {
   readonly className: string;
   readonly sticky?: boolean;
+  readonly marks?: ReactNode;
   readonly children: ReactNode;
 }) => {
   const select = useAtomSet(selectSidebarAtom);
@@ -180,6 +188,18 @@ export const CrumbRow = ({
             <KeyBadge action="all_inboxes" at={OVER_ICON} />
           </button>
         </Tip>
+        {/* s2 clear of the icon, so the widest ring misses it. On a phone the
+            row wraps with a gap of s1 (the row's `gap-s1`), so its second
+            line is one `lh` high, s1 below the icon's. They take no clicks:
+            the icon's target reaches under them. */}
+        {marks !== undefined && (
+          <span
+            data-crumb-marks
+            className="pointer-events-none absolute inset-y-0 right-full mr-s2 flex items-center compact:top-full compact:right-auto compact:bottom-auto compact:left-1/2 compact:mt-s1 compact:mr-0 compact:h-lh compact:-translate-x-1/2"
+          >
+            {marks}
+          </span>
+        )}
       </span>
       {children}
     </div>

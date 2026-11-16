@@ -63,8 +63,8 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
 //
 // It sits at the end of the eyebrow. With room in the reader's column
 // (`@code-gutter:`, a container query on the flow), it moves out to the gutter
-// left of the question's first line, past its dots, right-aligned with the
-// breadcrumb's queue icon: the breadcrumb row reaches s2 into the margin, so
+// left of the question's first line, right-aligned with the breadcrumb's
+// queue icon: the breadcrumb row reaches s2 into the margin, so
 // the code hangs from its edge, s2 from the text. Pinned, the sidebar holds
 // that gutter, so the code stays in the eyebrow. Over the page (a hover's peek,
 // or a drawer) the sidebar is passing, and the code stays where it was: moving
@@ -136,11 +136,13 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
   const fades = sticky
     ? 'transition-opacity group-data-stuck/crumb:opacity-0'
     : '';
+  const marks = useMarks(item);
   return (
     // On a narrow screen the inbox takes the first line and the rest the next.
     // `relative` (the row's own): the code's gutter place is measured from here.
     <CrumbRow
       sticky={sticky}
+      marks={marks.length > 0 ? <MarkStack marks={marks} /> : undefined}
       className={`flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap ${CRUMB_BOX} ${sticky ? 'group/crumb sticky top-crumb-top z-20' : ''}`}
     >
       {/* Short of room the inbox's name gives way, so the group still shows.
@@ -380,11 +382,6 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   );
 };
 
-// Beside a question, and it fades with it.
-const Dots = ({ item }: { readonly item: ReaderItem }) => (
-  <MarkStack marks={useMarks(item)} className="absolute top-s1 -left-s4" />
-);
-
 // The flow sets how much of each question shows (`paint`), straight on this div
 // and before the browser draws it, so nothing here says so. The div reaches
 // into the gutter on its left (`-ml-code-gutter pl-code-gutter`), so the code
@@ -405,11 +402,9 @@ export const QuestionItem = memo(
       data-zen-item={item.key}
       className="-ml-code-gutter pl-code-gutter data-zen-dark:pointer-events-none"
     >
-      {/* `relative`: the dots sit beside the question, not the gutter, and
-          listen mode's cursor is drawn over it. While a tap seeks, the
-          question shows a pointer. */}
+      {/* `relative`: listen mode's cursor is drawn over the question, not the
+          gutter. While a tap seeks, the question shows a pointer. */}
       <div className="relative data-readout-scrub:cursor-pointer">
-        <Dots item={item} />
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keys and the minimap move the focus too */}
         <article
           data-zen-lit={lit || undefined}
