@@ -381,6 +381,31 @@ describe('the operator’s edit', () => {
     );
     expect(stored()).toEqual([draft()]);
   });
+
+  // jsdom lays nothing out, so this holds the row's structure: on a phone
+  // the label and its marks wrap as whole one-line items, and ⤢ stays
+  // outside the wrap, pinned to the frame's right edge.
+  it('keeps the label row tidy on a narrow column: whole items wrap, ⤢ stays pinned', async () => {
+    seed(draft());
+    serve.board = waiting();
+    await mounted();
+    const f = figure('layout') as HTMLElement;
+    const row = f.firstElementChild as HTMLElement;
+    const marks = row.firstElementChild as HTMLElement;
+    expect(marks.className).toContain('flex-wrap');
+    expect(row.lastElementChild).toBe(editButton('layout'));
+    expect(editButton('layout').className).toContain('shrink-0');
+    const changed = f.querySelector<HTMLElement>('[data-drawing-changed]');
+    expect(changed?.className).toContain('truncate');
+    expect(changed?.title).toBe('Changed · goes with your answer');
+    // A phone shows "Changed"; the rest stays for a screen reader.
+    expect(changed?.querySelector('span')?.className).toContain(
+      'compact:sr-only',
+    );
+    expect(
+      within(f).getByRole('button', { name: 'REVERT' }).className,
+    ).toContain('whitespace-nowrap');
+  });
 });
 
 describe('the answer', () => {
