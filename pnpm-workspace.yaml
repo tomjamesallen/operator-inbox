@@ -16,8 +16,8 @@ catalog:
   # together: kairos-es is still pre-release, so a caret would take the next
   # release's breaking changes on the next install.
   "@effect/sql-sqlite-node": ^4.0.5
-  "@kairos-es/core": 1.0.0-alpha.5
-  "@kairos-es/store-sqlite": 1.0.0-alpha.5
+  "@kairos-es/core": 1.0.0-alpha.8
+  "@kairos-es/store-sqlite": 1.0.0-alpha.8
 
   # The web app. In Effect 4 the Atom core (Atom, AtomRegistry, AtomHttpApi,
   # AsyncResult) lives in effect/reactivity; only the React hooks stay a

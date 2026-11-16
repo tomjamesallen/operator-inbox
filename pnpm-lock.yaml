@@ -28,11 +28,11 @@ catalogs:
       specifier: ^4.0.5
       version: 4.1.2
     '@kairos-es/core':
-      specifier: 1.0.0-alpha.5
-      version: 1.0.0-alpha.5
+      specifier: 1.0.0-alpha.8
+      version: 1.0.0-alpha.8
     '@kairos-es/store-sqlite':
-      specifier: 1.0.0-alpha.5
-      version: 1.0.0-alpha.5
+      specifier: 1.0.0-alpha.8
+      version: 1.0.0-alpha.8
     '@tailwindcss/vite':
       specifier: ^4.3.3
       version: 4.3.5
@@ -142,10 +142,10 @@ importers:
         version: 4.1.2(effect@4.1.2)
       '@kairos-es/core':
         specifier: 'catalog:'
-        version: 1.0.0-alpha.5(effect@4.1.2)
+        version: 1.0.0-alpha.8(effect@4.1.2)
       '@kairos-es/store-sqlite':
         specifier: 'catalog:'
-        version: 1.0.0-alpha.5(@effect/sql-sqlite-node@4.1.2(effect@4.1.2))(@kairos-es/core@1.0.0-alpha.5(effect@4.1.2))(effect@4.1.2)
+        version: 1.0.0-alpha.8(@effect/sql-sqlite-node@4.1.2(effect@4.1.2))(@kairos-es/core@1.0.0-alpha.8(effect@4.1.2))(effect@4.1.2)
       '@operator-inbox/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -801,16 +801,16 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@kairos-es/core@1.0.0-alpha.5':
-    resolution: {integrity: sha512-uwV8ulFVfbIqQETj4LcHj3GKs8OP+OJg7cIfaECXzLwYRQTlCjY9kcHNARBr4ctx6yzy+LFbl0wT+iD1DNbo6g==}
+  '@kairos-es/core@1.0.0-alpha.8':
+    resolution: {integrity: sha512-c+MISsfef96elOhc95cDlNC7fdZqLdLQX6XVkaIGS70LZWW44/P4JLS5LVJDoaYA463jMJ18HMEz2rN/koL1cA==}
     peerDependencies:
       effect: ^4.0.5
 
-  '@kairos-es/store-sqlite@1.0.0-alpha.5':
-    resolution: {integrity: sha512-Wu/A+6RbNiMFIr/BgxwVSoKIMYn0Pn5zAwinjFBDm7WSuY+auD6dAGOsqDnSjJy207Jr9yEpYfKajTJ2zahBPg==}
+  '@kairos-es/store-sqlite@1.0.0-alpha.8':
+    resolution: {integrity: sha512-oZuPSRE708pqVP3XqxmIFo9Mx5ejcVa7svPRdGjOUZLD5ELMZw8th2KHLNV06mYfcTCNndDJSud+eRglVRzCUw==}
     peerDependencies:
       '@effect/sql-sqlite-node': ^4.0.5
-      '@kairos-es/core': ^1.0.0-alpha.5
+      '@kairos-es/core': ^1.0.0-alpha.8
       effect: ^4.0.5
 
   '@mermaid-js/parser@2.0.1':
@@ -2552,14 +2552,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@kairos-es/core@1.0.0-alpha.5(effect@4.1.2)':
+  '@kairos-es/core@1.0.0-alpha.8(effect@4.1.2)':
     dependencies:
       effect: 4.1.2
 
-  '@kairos-es/store-sqlite@1.0.0-alpha.5(@effect/sql-sqlite-node@4.1.2(effect@4.1.2))(@kairos-es/core@1.0.0-alpha.5(effect@4.1.2))(effect@4.1.2)':
+  '@kairos-es/store-sqlite@1.0.0-alpha.8(@effect/sql-sqlite-node@4.1.2(effect@4.1.2))(@kairos-es/core@1.0.0-alpha.8(effect@4.1.2))(effect@4.1.2)':
     dependencies:
       '@effect/sql-sqlite-node': 4.1.2(effect@4.1.2)
-      '@kairos-es/core': 1.0.0-alpha.5(effect@4.1.2)
+      '@kairos-es/core': 1.0.0-alpha.8(effect@4.1.2)
       effect: 4.1.2
 
   '@mermaid-js/parser@2.0.1':
