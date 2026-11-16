@@ -9,8 +9,8 @@ import {
   machineKeyOf,
 } from '@operator-inbox/core/api';
 import type { ReactNode } from 'react';
-import { clockAtom, nowMillis } from '../../clock';
 import { agoOf, drawnBoardAtom } from '../../inbox';
+import { chaseNowAtom, isStale } from '../../inbox-chase';
 import {
   type MetaNode,
   type MetaPair,
@@ -19,6 +19,7 @@ import {
   questionOnlyOf,
 } from '../../inbox-metadata-view';
 import {
+  chaseAfterMsAtom,
   colophonOpenAtom,
   inboxMetaCardAtom,
   isAsked,
@@ -26,6 +27,7 @@ import {
   type ReaderItem,
 } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
+import { ChaseLink } from './chase';
 import { Icon, Tip } from './icon';
 import { OpenSession } from './open-session';
 
@@ -260,20 +262,34 @@ export const Colophon = ({
 }) => {
   const rules = useAtomValue(metadataRulesAtom);
   const board = useAtomValue(drawnBoardAtom);
-  const now = nowMillis(useAtomValue(clockAtom));
+  // The clock, read again on the chase's tick, so the time moves on its own.
+  const now = useAtomValue(chaseNowAtom);
+  const afterMs = useAtomValue(chaseAfterMsAtom);
   const inboxMeta =
     board?.views.find((v) => v.inboxId === item.inboxId)?.metadata ?? {};
   const [open, setOpen] = useAtom(colophonOpenAtom);
   const times = timesOf(item, now);
   const latest = times.at(-1);
+  // With the agent past the threshold: the time is marked, and Chase is beside it.
+  const q = item.question;
+  const stale =
+    'answeredSeq' in q && !('processedAt' in q) && isStale(q, now, afterMs);
   return (
     <div
       className="mt-s4 flex items-center justify-between gap-s2 font-zen text-11 text-fg/40"
       data-zen-meta="colophon"
     >
       {latest !== undefined && (
-        <span title={latest.at} data-zen-when>
-          {latest.verb} {latest.ago}
+        <span className="flex items-baseline gap-s2">
+          <span
+            title={latest.at}
+            data-zen-when
+            data-stale={stale || undefined}
+            className={stale ? 'bg-orange/10 px-s1 text-orange' : undefined}
+          >
+            {latest.verb} {latest.ago}
+          </span>
+          {stale && <ChaseLink inboxId={item.inboxId} />}
         </span>
       )}
       {/* Its `<>` is over the box (`LitActions`); the card is the lit question's. */}

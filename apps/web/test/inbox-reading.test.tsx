@@ -18,6 +18,7 @@ import {
   MACHINE_BOARD,
   mount,
   mounted,
+  NO_CHASE,
   openRail,
   overBox,
   press,
@@ -192,6 +193,7 @@ describe('metadata', () => {
 
   it('lists a waiting question’s metadata in its card, and an answered one’s', async () => {
     serve.config = {
+      ...NO_CHASE,
       metadata: { extras: 'allow', keys: [rule('topic'), rule('pr')] },
     };
     serve.board = board([
@@ -336,7 +338,10 @@ describe('metadata', () => {
     };
 
     it('has the selected Inbox’s metadata behind <>', async () => {
-      serve.config = { metadata: { extras: 'allow', keys: [rule('topic')] } };
+      serve.config = {
+        ...NO_CHASE,
+        metadata: { extras: 'allow', keys: [rule('topic')] },
+      };
       serve.board = board([empty]);
       mount(`/inbox/${A}`);
       await screen.findByText('Nothing waiting on you.');
