@@ -23,7 +23,8 @@
     "check-code-lite": "biome check . && turbo check-types && turbo check-effect",
     "check-code-full": "pnpm check-code-lite && pnpm test",
     "verify": "pnpm check-code-full && pnpm build",
-    "cli": "pnpm --filter @operator-inbox/cli cli"
+    "cli": "pnpm --filter @operator-inbox/cli cli",
+    "setup": "bash scripts/setup.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

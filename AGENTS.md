@@ -14,6 +14,8 @@ A pnpm and Turborepo monorepo:
 
 The skill an agent reads is `apps/cli/assets/SKILL.md`, printed by `operator-inbox skill`.
 
+`scripts/setup.sh` (`pnpm run setup`; bare `pnpm setup` is pnpm's own command) sets the app up on a machine and rebuilds it: install, build, link the bin, the launch agent that runs `serve`, and the hooks. Its usage is in its header comment and in `README.md`.
+
 ## The stack
 
 Use these. Departing from a row is a decision to raise first, never one to make quietly.
@@ -48,6 +50,7 @@ The `@effect/language-service` plugin (`packages/typescript-config/base.json`) m
 
 - Config: `$XDG_CONFIG_HOME/operator-inbox/` (default `~/.config/operator-inbox/`): `config.json` (this machine's settings), `metadata.json` and `keybindings` (the user's preferences, which may be symlinks; the app only reads them).
 - Data: `$XDG_STATE_HOME/operator-inbox/` (default `~/.local/state/operator-inbox/`).
+- The launch agent: `~/Library/LaunchAgents/com.operator-inbox.serve.plist`, rendered per machine by `scripts/setup.sh` and never tracked; its log is `$XDG_STATE_HOME/operator-inbox/serve.log`.
 - Nothing is read from or written to the checkout at run time. The web build and the CLI's assets are found relative to the CLI package.
 - Environment variables are named `OPERATOR_INBOX_*`.
 
