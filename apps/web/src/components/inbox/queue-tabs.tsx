@@ -14,6 +14,7 @@ import {
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { Icon, Tip } from './icon';
+import { HeaderGlass } from './scope-crumb';
 
 const AskButton = () => {
   const toggle = useAtomSet(toggleAskAtom);
@@ -81,8 +82,11 @@ export const QueueTabs = ({
     <div
       ref={header}
       data-zen-header
-      className="absolute inset-x-0 top-0 z-10 h-header bg-bg/70 text-11 backdrop-blur-md compact:fixed compact:bg-bg compact:backdrop-blur-none"
+      className="absolute inset-x-0 top-0 z-10 h-header text-11 compact:fixed compact:bg-bg"
     >
+      {/* The frosted glass is a layer of its own, so it can grow down to
+          hold a stuck breadcrumb. */}
+      <HeaderGlass />
       <div
         inert={!shown}
         data-zen-queues={shown ? 'shown' : 'hidden'}

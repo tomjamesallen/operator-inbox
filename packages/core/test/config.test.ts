@@ -7,6 +7,7 @@ import {
   ConfigError,
   configHome,
   configPath,
+  DEFAULT_READOUT_VOICE,
   decodeMetadataRules,
   describeConfigFailure,
   inboxMachinesOf,
@@ -15,6 +16,7 @@ import {
   loadMetadataRules,
   loadXdgConfigHome,
   metadataPath,
+  readoutVoiceOf,
 } from '../src/config';
 import {
   BUILT_IN_METADATA_KEYS,
@@ -551,4 +553,25 @@ describe('metadata.json', () => {
         expect(bad.loaded).toBe(true);
       }).pipe(Effect.provide(NodeServices.layer)),
   );
+});
+
+describe('readout', () => {
+  const decode = Schema.decodeUnknownSync(AppConfig);
+  it('the voice is readout.voice, or bm_george when unset or blank', () => {
+    expect(DEFAULT_READOUT_VOICE).toBe('bm_george');
+    expect(readoutVoiceOf(decode({}))).toBe('bm_george');
+    expect(readoutVoiceOf(decode({ readout: {} }))).toBe('bm_george');
+    expect(readoutVoiceOf(decode({ readout: { voice: ' ' } }))).toBe(
+      'bm_george',
+    );
+    expect(readoutVoiceOf(decode({ readout: { voice: 'bf_emma' } }))).toBe(
+      'bf_emma',
+    );
+  });
+
+  it('a voice that is not a string names the key', () => {
+    expect(
+      describeConfigFailure(P, thrownBy({ readout: { voice: 3 } })),
+    ).toContain('readout.voice');
+  });
 });

@@ -33,6 +33,7 @@ import { mermaidPrefetchAtom } from '../../mermaid';
 import { introFade } from './composer';
 import { QuestionItem } from './question-item';
 import { NoQuestion } from './reader-states';
+import { EmptyCrumb } from './scope-crumb';
 
 // Every question of the queue in one scroll. The machine says who is moving the
 // list and where to; this measures the DOM and moves it, which only an element
@@ -443,6 +444,8 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
           className="flex min-h-full flex-col pt-header"
           style={{ paddingBottom: ends?.foot ?? 0 }}
         >
+          {/* The scope, top left, where a Question's breadcrumb would be. */}
+          <EmptyCrumb />
           <div
             data-zen-none
             className={`mx-auto my-auto w-full max-w-measure py-6 ${introFade(intro)}`}

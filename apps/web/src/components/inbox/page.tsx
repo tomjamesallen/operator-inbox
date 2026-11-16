@@ -15,12 +15,16 @@ import { readerFeedAtom, readerLinkAtom } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { readerSwipeAtom } from '../../inbox-swipe';
 import { keymapKeyAtom } from '../../keymap';
+import { followWatchAtom } from '../../readout/follow';
+import { playerAtoms } from '../../readout/player';
+import { readoutAudioAtom } from '../../readout/readout';
 import { KeymapHelp, PendingKeys } from '../keymap-help';
 import { QuestionSearch } from '../question-search';
 import { InboxMetaCard } from './colophon';
 import { InboxPicker } from './inbox-picker';
 import { Masthead } from './masthead';
 import { InboxReader } from './reader';
+import { stuckWatchAtom } from './scope-crumb';
 import { Rail } from './sidebar';
 
 // The widths the sidebar's fit turns on are theme tokens, so CSS says them
@@ -90,6 +94,12 @@ export const InboxPage = () => {
   useAtomMount(readerSwipeAtom);
   useAtomMount(elsewhereClearWatchAtom);
   useAtomMount(yourInboxLandingWatchAtom);
+  // Listen mode: the player, its audio element, and the list's scroll
+  // following the reading; and which breadcrumb is stuck under the header.
+  useAtomMount(playerAtoms.actor);
+  useAtomMount(readoutAudioAtom);
+  useAtomMount(followWatchAtom);
+  useAtomMount(stuckWatchAtom);
   return (
     <div className="flex h-dvh overflow-hidden bg-bg font-zen text-fg">
       <Masthead />

@@ -792,7 +792,17 @@ describe('pins', () => {
     null;
   const onlyPinned = () =>
     fireEvent.click(screen.getByRole('button', { name: 'Show only pinned' }));
-  const scope = () => document.querySelector('[data-zen-scope]')?.textContent;
+  // The scope as the breadcrumbs mark it: every crumb underlined, once each.
+  const scope = () => {
+    const marked = [
+      ...new Set(
+        [...document.querySelectorAll('[data-crumb-scope]')].map(
+          (c) => c.textContent,
+        ),
+      ),
+    ];
+    return marked.length === 0 ? undefined : marked.join(' › ');
+  };
 
   it('puts a pinned inbox first, and a pinned group first after Default', async () => {
     await open();
@@ -905,7 +915,7 @@ describe('pins', () => {
       await openRail();
       onlyPinned();
       await screen.findByText('Nothing waiting on you.');
-      await waitFor(() => expect(scope()).toBe('kiln, pinned'));
+      await waitFor(() => expect(scope()).toBe('kiln'));
     });
 
     it('names no group of its own in the pinned view', async () => {
@@ -914,7 +924,7 @@ describe('pins', () => {
       await screen.findAllByText('Loft one');
       await openRail();
       onlyPinned();
-      await waitFor(() => expect(scope()).toBe('loft, pinned'));
+      await waitFor(() => expect(scope()).toBe('loft'));
     });
 
     it('comes back pinned when unarchived, nothing written', async () => {
@@ -956,15 +966,16 @@ describe('pins', () => {
     expect(scope()).toBeUndefined();
     onlyPinned();
     await waitFor(() => expect(items()).toEqual([`${B}/1`, `${A}/3`]));
-    expect(scope()).toBe('All inboxes, pinned');
+    // Nothing is selected, so no crumb is marked.
+    expect(scope()).toBeUndefined();
   });
 
   it('says which inbox and groups the page shows', async () => {
     await open(`/inbox/${A}#group=ui&group=store`);
-    expect(scope()).toBe('orchard › ui, store');
+    expect(scope()).toBe('orchard › store › ui');
     onlyPinned();
-    // Only "ui" is pinned in orchard, so only it is named now.
-    await waitFor(() => expect(scope()).toBe('orchard › ui, pinned'));
+    // Only "ui" is pinned in orchard, so only it is marked now.
+    await waitFor(() => expect(scope()).toBe('orchard › ui'));
     await waitFor(() => expect(items()).toEqual([`${A}/3`]));
   });
 
@@ -972,13 +983,13 @@ describe('pins', () => {
     await open(`/inbox/${A}`);
     expect(scope()).toBe('orchard');
     onlyPinned();
-    await waitFor(() => expect(scope()).toBe('orchard › ui, pinned'));
+    await waitFor(() => expect(scope()).toBe('orchard › ui'));
   });
 
   it('adds nothing to the name of a pinned inbox, which shows whole', async () => {
     await open(`/inbox/${B}`);
     onlyPinned();
-    await waitFor(() => expect(scope()).toBe('quarry, pinned'));
+    await waitFor(() => expect(scope()).toBe('quarry'));
   });
 
   it('pins a group with a click', async () => {

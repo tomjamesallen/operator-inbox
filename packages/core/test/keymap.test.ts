@@ -290,6 +290,47 @@ describe('the keys that Shift or the syntax get in the way of', () => {
     );
   });
 
+  it('binds listen mode’s keys, chords that work from the answer box too', () => {
+    expect(triggersOf(undefined, 'toggle_listen')).toEqual(['ctrl+space>l']);
+    expect(triggersOf(undefined, 'play_readout')).toEqual([
+      'ctrl+space>space',
+      'alt+p',
+    ]);
+    expect(triggersOf(undefined, 'slower_readout')).toEqual(['alt+,']);
+    expect(triggersOf(undefined, 'faster_readout')).toEqual(['alt+.']);
+    expect(triggersOf(undefined, 'comment_reading')).toEqual([
+      'ctrl+space>c',
+      'alt+c',
+    ]);
+    expect(triggersOf(undefined, 'focus_answer')).toEqual([
+      'ctrl+space>r',
+      'alt+enter',
+    ]);
+    const keymap = resolveKeymap(undefined);
+    const actionOf = (p: KeyPress) => {
+      const step = stepKeymap(keymap, [], p);
+      return step._tag === 'run' ? step.binding.action.id : step._tag;
+    };
+    // A Mac's ⌥ types a character of its own: the key's place still counts.
+    expect(actionOf(press({ key: 'π', code: 'KeyP', altKey: true }))).toBe(
+      'play_readout',
+    );
+    expect(actionOf(press({ key: 'ç', code: 'KeyC', altKey: true }))).toBe(
+      'comment_reading',
+    );
+    expect(actionOf(press({ key: '≤', code: 'Comma', altKey: true }))).toBe(
+      'slower_readout',
+    );
+    expect(actionOf(press({ key: '≥', code: 'Period', altKey: true }))).toBe(
+      'faster_readout',
+    );
+    // The paragraph keys are the scroll keys, which listen mode takes over.
+    expect(triggersOf(undefined, 'scroll_up')).toEqual(['ctrl+alt+[']);
+    expect(
+      KEYMAP_ACTIONS.find((a) => a.id === 'scroll_down')?.description,
+    ).toContain('in listen mode, the next paragraph');
+  });
+
   it('shows less and greater as the characters, and reads them back from a file', () => {
     expect(keysLabel(resolveKeymap(undefined), 'previous_queue')).toBe(
       'Ctrl+<',

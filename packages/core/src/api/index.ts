@@ -12,4 +12,5 @@ export * from './inbox-api';
 export * from './inbox-config-api';
 export * from './keybindings-api';
 export * from './macros-api';
+export * from './readout-api';
 export * from './serve-timeouts';

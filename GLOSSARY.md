@@ -49,3 +49,9 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 **Keymap**: the inbox page's key bindings: every action it can bind, each bound to one or more triggers (`ctrl+b`, or a sequence after the prefix, `ctrl+space>n`). It is the defaults with `keybindings` applied in order.
 
 **Inbox machine**: a Herdr machine whose Inboxes this machine's app shows beside its own, listed in `config.json`'s `inboxMachines` with the local port its SSH tunnel listens on. Its Inboxes stay in its own log; this machine's server reads and writes them through the tunnel (`operator-inbox tunnel <machine>`). An Inbox id two machines both list is a **clash**, and is refused on both. _Avoid_: remote inbox.
+
+**Listen mode**: a per-device switch (the headphones over the answer box, or `Ctrl+Space l` by default) under which the page reads the selected Question aloud: its title, then its body block by block, with a soft band behind the sentence being read and a line under the word. A table, a code block, a diagram or a drawing is described, never read, and inline code is said as its gist. Moving to another Question pauses it and keeps its place. The audio is made by serve and cached, never logged (ADR-0005). _Avoid_: read-aloud, text to speech, TTS.
+
+**Speech script**: what listen mode says for one Question: its segments in order, each an id, the text to say and a pause after it. The page builds it from the Question as drawn, and serve makes its audio, keyed by a hash of the voice and the script. _Avoid_: transcript.
+
+**Breadcrumb**: the line over each Question naming its Inbox, its group and its **Question code**, with the **Queue** icon hanging to its left, which goes to All. The crumbs of the Inbox or group selected are underlined in yellow, and a breadcrumb holding them sticks under the page's header while its Question is read. _Avoid_: eyebrow (the code's older word for it), scope line.

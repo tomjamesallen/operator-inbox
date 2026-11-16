@@ -35,6 +35,14 @@ import { Colophon } from './colophon';
 import { CommentableBody, CommentedBody } from './comment-body';
 import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
 import { HIGHLIGHT, type Mark, MarkStack, SELECTED } from './marks';
+import { ReadoutLayer } from './readout-layer';
+import {
+  CRUMB_BOX,
+  CrumbRow,
+  crumbOf,
+  crumbScopeAtom,
+  MARKED,
+} from './scope-crumb';
 
 const highlightOf = (item: ReaderItem) =>
   'highlight' in item.question ? item.question.highlight : undefined;
@@ -55,7 +63,9 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
 //
 // It sits at the end of the eyebrow. With room in the reader's column
 // (`@code-gutter:`, a container query on the flow), it moves out to the gutter
-// left of the question's first line, past its dots. Pinned, the sidebar holds
+// left of the question's first line, past its dots, right-aligned with the
+// breadcrumb's queue icon: the breadcrumb row reaches s2 into the margin, so
+// the code hangs from its edge, s2 from the text. Pinned, the sidebar holds
 // that gutter, so the code stays in the eyebrow. Over the page (a hover's peek,
 // or a drawer) the sidebar is passing, and the code stays where it was: moving
 // it would reflow the question under the pointer.
@@ -68,7 +78,7 @@ const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
   return (
     <span
       data-question-code-place={gutter ? 'gutter' : 'eyebrow'}
-      className={`flex shrink-0 items-center ${gutter ? '@code-gutter:absolute @code-gutter:top-full @code-gutter:right-full @code-gutter:mt-s2 @code-gutter:mr-s5 @code-gutter:block @code-gutter:font-reading @code-gutter:text-18 @code-gutter:leading-card' : ''}`}
+      className={`flex shrink-0 items-center ${gutter ? '@code-gutter:absolute @code-gutter:top-full @code-gutter:right-full @code-gutter:mt-s2 @code-gutter:block @code-gutter:font-reading @code-gutter:text-18 @code-gutter:leading-card' : ''}`}
     >
       <Tip label="Copy for the agent session" keys={hint.first}>
         <button
@@ -104,6 +114,11 @@ const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
 // `desktop · atlas › group`: Local is not named, and one machine names nothing.
 // Each crumb picks what it names, as its sidebar row would: the Inbox, or the
 // Inbox narrowed to the group. The reader stays on this question.
+//
+// It also shows the page's scope (`scope-crumb.tsx`): the crumbs in it are
+// underlined in yellow, a breadcrumb in the selected Inbox sticks under the
+// header while its Question is in view, and while it is stuck the crumbs
+// outside the scope fade.
 const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
   const board = useAtomValue(drawnBoardAtom);
   const heldKey = useAtomValue(heldKeyAtom);
@@ -116,10 +131,18 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
       : undefined;
   const group = groupOf(item.question);
   const note = highlightOf(item)?.note;
+  const scope = crumbOf(useAtomValue(crumbScopeAtom), item.inboxId, group);
+  const sticky = scope.inbox;
+  const fades = sticky
+    ? 'transition-opacity group-data-stuck/crumb:opacity-0'
+    : '';
   return (
     // On a narrow screen the inbox takes the first line and the rest the next.
-    // `relative`: the code's gutter place is measured from here.
-    <div className="relative flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap">
+    // `relative` (the row's own): the code's gutter place is measured from here.
+    <CrumbRow
+      sticky={sticky}
+      className={`flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap ${CRUMB_BOX} ${sticky ? 'group/crumb sticky top-crumb-top z-20' : ''}`}
+    >
       {/* Short of room the inbox's name gives way, so the group still shows.
           A crumb's click is its own: the card's would light the question. */}
       <button
@@ -130,7 +153,8 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
           e.stopPropagation();
           pick({ key: item.key, inboxId: item.inboxId });
         }}
-        className={`min-w-0 cursor-pointer truncate text-left hover:text-fg compact:w-full ${focusRing}`}
+        data-crumb-scope={scope.inbox || undefined}
+        className={`min-w-0 cursor-pointer truncate text-left hover:text-fg compact:w-full ${scope.inbox ? MARKED : ''} ${focusRing}`}
       >
         {machine !== undefined && (
           <>
@@ -149,7 +173,11 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
       </button>
       {group !== DEFAULT_GROUP && (
         <>
-          <span className="shrink-0 compact:hidden">›</span>
+          <span
+            className={`shrink-0 compact:hidden ${scope.group ? '' : fades}`}
+          >
+            ›
+          </span>
           <button
             type="button"
             data-zen-group
@@ -158,19 +186,22 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
               e.stopPropagation();
               pick({ key: item.key, inboxId: item.inboxId, group });
             }}
-            className={`shrink-0 cursor-pointer text-fg/60 hover:text-fg ${focusRing}`}
+            data-crumb-scope={scope.group || undefined}
+            className={`shrink-0 cursor-pointer text-fg/60 hover:text-fg ${scope.group ? MARKED : fades} ${focusRing}`}
           >
             {group}
           </button>
         </>
       )}
       {note !== undefined && (
-        <span className="min-w-0 truncate text-yellow">· {note}</span>
+        <span className={`min-w-0 truncate text-yellow ${fades}`}>
+          · {note}
+        </span>
       )}
-      <span className="ml-auto flex shrink-0 items-center gap-s2">
+      <span className={`ml-auto flex shrink-0 items-center gap-s2 ${fades}`}>
         <CodeCopy item={item} />
       </span>
-    </div>
+    </CrumbRow>
   );
 };
 
@@ -311,16 +342,19 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
         </button>
       )}
       <BodyFrame item={item} state={state} comments={answer?.comments ?? []}>
-        <QuestionBody
-          question={item.question}
-          className="mt-s4 text-14 leading-prose text-fg/80"
-          drawingHost={{
-            inboxId: item.inboxId,
-            number: item.question.number,
-            key: item.key,
-            state,
-          }}
-        />
+        {/* Where listen mode finds the body's parts (`readout/locate.ts`). */}
+        <div data-readout-body>
+          <QuestionBody
+            question={item.question}
+            className="mt-s4 text-14 leading-prose text-fg/80"
+            drawingHost={{
+              inboxId: item.inboxId,
+              number: item.question.number,
+              key: item.key,
+              state,
+            }}
+          />
+        </div>
       </BodyFrame>
       {answer !== undefined &&
         (answer.text !== '' ||
@@ -371,8 +405,10 @@ export const QuestionItem = memo(
       data-zen-item={item.key}
       className="-ml-code-gutter pl-code-gutter data-zen-dark:pointer-events-none"
     >
-      {/* `relative`: the dots sit beside the question, not the gutter. */}
-      <div className="relative">
+      {/* `relative`: the dots sit beside the question, not the gutter, and
+          listen mode's cursor is drawn over it. While a tap seeks, the
+          question shows a pointer. */}
+      <div className="relative data-readout-scrub:cursor-pointer">
         <Dots item={item} />
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keys and the minimap move the focus too */}
         <article
@@ -388,6 +424,9 @@ export const QuestionItem = memo(
           </div>
           <Colophon item={item} lit={lit} />
         </article>
+        {/* After the article, so it draws over the body's own positioned
+            blocks (a wide table, a figure). */}
+        <ReadoutLayer item={item} />
       </div>
     </div>
   ),

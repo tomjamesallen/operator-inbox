@@ -309,8 +309,23 @@ export const AppConfig = Schema.Struct({
   // How a picture in a question's body is sized: `box` or `area`
   // (`DiagramSize`). Unset: `DEFAULT_DIAGRAM_SIZE`, `box`.
   diagramSize: Schema.optional(DiagramSize),
+  // Listen mode, where serve reads the Questions aloud (`readout-api.ts`).
+  // `voice` is the voice the audio is made in. Unset:
+  // `DEFAULT_READOUT_VOICE`.
+  readout: Schema.optional(
+    Schema.Struct({ voice: Schema.optional(Schema.String) }),
+  ),
 });
 export type AppConfig = typeof AppConfig.Type;
+
+/** Listen mode's voice when config.json names none: a British male Kokoro voice. */
+export const DEFAULT_READOUT_VOICE = 'bm_george';
+
+/** The voice listen mode reads in: config.json's `readout.voice`, or the default. */
+export const readoutVoiceOf = (config: Pick<AppConfig, 'readout'>): string => {
+  const voice = config.readout?.voice?.trim();
+  return voice === undefined || voice === '' ? DEFAULT_READOUT_VOICE : voice;
+};
 
 // --- where the files are -----------------------------------------------------
 

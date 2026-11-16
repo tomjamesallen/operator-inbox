@@ -456,9 +456,11 @@ describe('the All view', () => {
   it('narrows to the inboxes the hash picks, and says so', async () => {
     await mounted(`/inbox#inboxes=${B}`);
     expect(items()).toEqual([`${B}/1`]);
-    expect(document.querySelector('[data-zen-scope]')?.textContent).toBe(
-      'quarry',
-    );
+    expect(
+      [...document.querySelectorAll('[data-crumb-scope]')].map(
+        (c) => c.textContent,
+      ),
+    ).toEqual(['quarry']);
   });
 
   it('leaves the hash’s narrowing by the sidebar’s All', async () => {
@@ -471,7 +473,7 @@ describe('the All view', () => {
     await waitFor(() =>
       expect(items()).toEqual([`${A}/1`, `${B}/1`, `${A}/3`]),
     );
-    expect(document.querySelector('[data-zen-scope]')).toBeNull();
+    expect(document.querySelector('[data-crumb-scope]')).toBeNull();
   });
 
   it('posts an answer to the question’s own inbox', async () => {
