@@ -48,6 +48,8 @@ bash scripts/desktop-app.sh build
 
 It replaces an earlier build of the window, never another app at that name, and never launches it. If the window is open, quit it with ⌘Q (closing its window only hides it) and reopen it to load the new build. `--dry-run` prints the pake command and changes nothing.
 
+The window has no find bar of WebKit's own, so the build turns on Pake's: ⌘F opens a find-in-page bar at the top right (Enter and ⇧Enter step through the matches, Esc closes it), and ⌘G and ⇧⌘G step from anywhere. They are in the window's Edit menu. In a browser tab ⌘F stays the browser's own find. The app's own search is ⌘P, which searches Questions across Inboxes rather than the text on the page.
+
 `bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's `icon-any-512.png` (the "Oi" mark, written by `node scripts/web-icons/make.mjs`) with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
 
 ## Listen mode

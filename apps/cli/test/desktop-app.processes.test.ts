@@ -252,7 +252,7 @@ describe.runIf(process.platform === 'darwin')('desktop-app.sh', () => {
         const r = m.run(['build']);
         expect(r.status, r.stderr).toBe(0);
         expect(m.pakeLog().at(-1)).toBe(
-          `http://127.0.0.1:7184 --name Operator Inbox --identifier ${IDENTIFIER} --icon ${ICON} --app-version ${VERSION} --targets app --no-restore-last-url --json`,
+          `http://127.0.0.1:7184 --name Operator Inbox --identifier ${IDENTIFIER} --icon ${ICON} --app-version ${VERSION} --targets app --no-restore-last-url --enable-find --json`,
         );
         expect(m.run(['check']).status).toBe(0);
         expect(readdirSync(m.apps)).toEqual(['Operator Inbox.app']);

@@ -36,7 +36,7 @@ URL=http://127.0.0.1:7184
 # whenever anything baked into the bundle changes: the URL, the name or the
 # pake options below. (A changed icon is caught without a bump: check compares
 # the bundled icon with the committed one.)
-VERSION=1.1.0
+VERSION=1.2.0
 PAKE_MIN=3.17.4
 RUSTC_MIN=1.85
 
@@ -231,6 +231,13 @@ PAKE_ARGV=(
   # A Pake app otherwise reopens the URL it was last on, ahead of the baked-in
   # one, so a rebuild onto a new URL would still open the old one.
   --no-restore-last-url
+  # WKWebView has no find bar of its own, so Cmd+F did nothing in the window.
+  # This adds Pake's: Find, Find Next and Find Previous in the Edit menu on
+  # Cmd+F, Cmd+G and Cmd+Shift+G, opening an in-page bar Pake injects
+  # (src-tauri/src/inject/find.js; Enter and Shift+Enter step, Esc closes).
+  # The menu's accelerators fire only in the window, so in a browser tab Cmd+F
+  # stays the browser's own.
+  --enable-find
   # One JSON result on stdout, logs on stderr, Pake's own prompts off.
   --json
 )
