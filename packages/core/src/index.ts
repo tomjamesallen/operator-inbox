@@ -2,6 +2,7 @@
 // subpath (`@operator-inbox/core/api`), and so is the keymap
 // (`@operator-inbox/core/keymap`).
 
+export * from './attachment';
 export * from './claude-settings';
 export * from './comments';
 export * from './config';

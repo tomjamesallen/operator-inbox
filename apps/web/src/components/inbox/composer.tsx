@@ -6,7 +6,14 @@ import {
 } from '@effect/atom-react';
 import type { InboxId } from '@operator-inbox/core/api';
 import { AsyncResult } from 'effect/reactivity';
-import { type KeyboardEvent, type ReactNode, useCallback, useRef } from 'react';
+import {
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useRef,
+} from 'react';
+import { addFilesAtom, pendingFilesAtom } from '../../attachments';
 import { commentsAtom, commentsInOrderAtom, isCommented } from '../../comments';
 import { failureText, refusalText } from '../../failure';
 import {
@@ -51,6 +58,7 @@ import {
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { listenOnAtom } from '../../readout/readout';
+import { AttachDrop, AttachRow } from './attachments';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
@@ -108,6 +116,7 @@ const Box = ({
   onSelect,
   combobox,
   boxRef,
+  attachTo,
 }: {
   readonly value: string;
   readonly placeholder: string;
@@ -124,8 +133,18 @@ const Box = ({
     readonly controls?: string;
   };
   readonly boxRef?: { current: HTMLTextAreaElement | null };
+  // The box's place, when files pasted into it are attached to it.
+  readonly attachTo?: string;
 }) => {
   const self = useRef<HTMLTextAreaElement | null>(null);
+  const addFiles = useAtomSet(addFilesAtom);
+  // A paste that carries files, an image copied from the screen most often,
+  // attaches them; text pasted with them still goes in as text.
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (attachTo === undefined || e.clipboardData.files.length === 0) return;
+    if (e.clipboardData.getData('text/plain') === '') e.preventDefault();
+    addFiles({ place: attachTo, files: [...e.clipboardData.files] });
+  };
   // Stable, or each render would run it and take the focus back.
   const attach = useCallback(
     (el: HTMLTextAreaElement | null) => {
@@ -161,6 +180,7 @@ const Box = ({
           })}
       onChange={(e) => onChange(e.target.value, e.target)}
       onKeyDown={onKeyDown}
+      onPaste={onPaste}
       {...(onSelect === undefined
         ? {}
         : { onSelect: (e) => onSelect(e.currentTarget) })}
@@ -262,6 +282,8 @@ const AnswerBox = ({
   const commented = isCommented(useAtomValue(commentsAtom(item.key)));
   const askFocus = useAtomSet(askMacroFocusAtom);
   const self = useRef<HTMLTextAreaElement | null>(null);
+  const place = answerPlaceOf(item.key);
+  const files = useAtomValue(pendingFilesAtom(place));
   // A drawing waiting on the operator's choice holds both sends.
   const free = useAtomValue(answerDrawingConflictsAtom).length === 0;
   const setText = (text: string) =>
@@ -283,45 +305,52 @@ const AnswerBox = ({
           onPick={(m) => menu.pick(m, self.current)}
         />
       )}
-      <Frame place={answerPlaceOf(item.key)}>
-        <Box
-          boxRef={self}
-          value={draft}
-          placeholder="Write your answer"
-          combobox={menu.combobox}
-          onChange={(text, el) => {
-            setText(text);
-            menu.refresh(el);
-          }}
-          onSelect={menu.refresh}
-          onKeyDown={(e) => {
-            if (menu.onKeyDown(e)) return;
-            // Tab goes from the text into the cards, while there are any.
-            const first = firstCardStop(cards, comments);
-            if (
-              e.key === 'Tab' &&
-              !e.shiftKey &&
-              !e.metaKey &&
-              !e.ctrlKey &&
-              !e.altKey &&
-              first !== undefined
-            ) {
-              e.preventDefault();
-              askFocus({ key: item.key, to: first });
+      <AttachDrop place={place}>
+        <Frame place={place}>
+          <Box
+            boxRef={self}
+            attachTo={place}
+            value={draft}
+            placeholder="Write your answer"
+            combobox={menu.combobox}
+            onChange={(text, el) => {
+              setText(text);
+              menu.refresh(el);
+            }}
+            onSelect={menu.refresh}
+            onKeyDown={(e) => {
+              if (menu.onKeyDown(e)) return;
+              // Tab goes from the text into the cards, while there are any.
+              const first = firstCardStop(cards, comments);
+              if (
+                e.key === 'Tab' &&
+                !e.shiftKey &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.altKey &&
+                first !== undefined
+              ) {
+                e.preventDefault();
+                askFocus({ key: item.key, to: first });
+              }
+            }}
+          />
+          <Actions
+            label="Send"
+            ready={
+              !held &&
+              free &&
+              (draft.trim() !== '' ||
+                cards.length > 0 ||
+                commented ||
+                files.length > 0)
             }
-          }}
-        />
-        <Actions
-          label="Send"
-          ready={
-            !held &&
-            free &&
-            (draft.trim() !== '' || cards.length > 0 || commented)
-          }
-          deferrable={!held}
-          deferReady={free}
-        />
-      </Frame>
+            deferrable={!held}
+            deferReady={free}
+          />
+        </Frame>
+      </AttachDrop>
+      <AttachRow place={place} />
       <MacroCards
         itemKey={item.key}
         inboxId={item.inboxId}
@@ -364,16 +393,27 @@ const FollowUpBox = ({
   const [draft, setDraft] = useAtom(followUpDraftAtom(itemKey));
   const place = followUpPlaceOf(itemKey);
   const { waiting } = useAtomValue(readerAskAtom(place));
+  const files = useAtomValue(pendingFilesAtom(place));
   return (
     <>
       <AskFailure place={place} inboxId={inboxId} />
-      <Frame place={place}>
-        <Box value={draft} placeholder="Add a follow-up" onChange={setDraft} />
-        <Actions
-          label="Send"
-          ready={!held && !waiting && draft.trim() !== ''}
-        />
-      </Frame>
+      <AttachDrop place={place}>
+        <Frame place={place}>
+          <Box
+            value={draft}
+            placeholder="Add a follow-up"
+            onChange={setDraft}
+            attachTo={place}
+          />
+          <Actions
+            label="Send"
+            ready={
+              !held && !waiting && (draft.trim() !== '' || files.length > 0)
+            }
+          />
+        </Frame>
+      </AttachDrop>
+      <AttachRow place={place} />
     </>
   );
 };
@@ -387,21 +427,25 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
   return (
     <>
       <AskFailure place={place} inboxId={inboxId} />
-      <Frame place={place}>
-        <Box
-          value={draft}
-          placeholder="What do you want to ask?"
-          onChange={setDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') send({ type: 'AskClosed' });
-            else if (e.metaKey || draft !== '') return;
-            // An empty box has no line for the arrows to move between.
-            else if (e.key === 'ArrowDown') step(1);
-            else if (e.key === 'ArrowUp') step(-1);
-          }}
-        />
-        <Actions label="Ask" ready={!waiting && draft.trim() !== ''} />
-      </Frame>
+      <AttachDrop place={place}>
+        <Frame place={place}>
+          <Box
+            value={draft}
+            placeholder="What do you want to ask?"
+            onChange={setDraft}
+            attachTo={place}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') send({ type: 'AskClosed' });
+              else if (e.metaKey || draft !== '') return;
+              // An empty box has no line for the arrows to move between.
+              else if (e.key === 'ArrowDown') step(1);
+              else if (e.key === 'ArrowUp') step(-1);
+            }}
+          />
+          <Actions label="Ask" ready={!waiting && draft.trim() !== ''} />
+        </Frame>
+      </AttachDrop>
+      <AttachRow place={place} />
     </>
   );
 };

@@ -244,7 +244,10 @@ describe('drawings kept as blobs', () => {
             compact: false,
           }),
         ).toBe(MOVED);
-      }).pipe(Effect.provide(InboxLogInMemory)),
+      }).pipe(
+        Effect.provide(InboxLogInMemory),
+        Effect.provide(NodeServices.layer),
+      ),
   );
 
   it.effect('an answer with a scene the inbox refuses writes nothing', () =>
@@ -271,7 +274,10 @@ describe('drawings kept as blobs', () => {
       expect(failure._tag).toBe('AnswerRefused');
       const log = yield* InboxLog;
       expect((yield* log.readBlobs([refOf(image).sha])).size).toBe(0);
-    }).pipe(Effect.provide(InboxLogInMemory)),
+    }).pipe(
+      Effect.provide(InboxLogInMemory),
+      Effect.provide(NodeServices.layer),
+    ),
   );
 });
 

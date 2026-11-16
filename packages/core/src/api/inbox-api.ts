@@ -1,5 +1,6 @@
 import { Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
+import { Attachments } from '../attachment';
 import { QuestionComments } from '../comments';
 import { DrawingRefs } from '../drawing';
 import { HTML_BLOCK_WIDTHS, HtmlBlocks } from '../html-block';
@@ -107,6 +108,10 @@ const macros = Schema.optionalKey(MacrosInvoked);
 // The operator's comments on the Question's text, in body order (core's
 // `comments.ts`). An optional key, for the same older machines.
 const comments = Schema.optionalKey(QuestionComments);
+// The files the operator attached to their answer or their question, each
+// where it is kept on the machine that holds the Inbox (core's
+// `attachment.ts`). An optional key, for the same older machines.
+const attachments = Schema.optionalKey(Attachments);
 
 export const InboxOperatorQuestionDto = Schema.Struct({
   number: QuestionNumber,
@@ -167,6 +172,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   macros,
   comments,
   htmls,
+  attachments,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -199,6 +205,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   macros,
   comments,
   htmls,
+  attachments,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
@@ -582,6 +589,20 @@ export type QuestionDrawingsDto = typeof QuestionDrawingsDto.Type;
 export const RenamePayload = Schema.Struct({ label: Schema.String });
 export type RenamePayload = typeof RenamePayload.Type;
 
+// A file the operator attached, as the page sends it: the name and media
+// type the browser gave, and its bytes in base64. It goes in the answer's
+// own request, so the server writes the file and appends the event in one
+// write, and a write sent on to the machine that holds the Inbox carries
+// its files with it. The server makes the name safe and checks the caps
+// (core's `attachment.ts`).
+export const AttachmentUpload = Schema.Struct({
+  name: Schema.String,
+  type: Schema.String,
+  data: Schema.String,
+});
+export type AttachmentUpload = typeof AttachmentUpload.Type;
+const AttachmentUploads = Schema.Array(AttachmentUpload);
+
 // `seenRevision` is the revision the card showed when the operator typed.
 export const AnswerPayload = Schema.Struct({
   response: Schema.String,
@@ -596,6 +617,8 @@ export const AnswerPayload = Schema.Struct({
   macros,
   // The operator's comments on spans of the Question's text.
   comments,
+  // The files the operator attached, each sent whole.
+  attachments: Schema.optionalKey(AttachmentUploads),
 });
 export type AnswerPayload = typeof AnswerPayload.Type;
 
@@ -603,6 +626,8 @@ export type AnswerPayload = typeof AnswerPayload.Type;
 export const AskPayload = Schema.Struct({
   text: Schema.String,
   highlightReply,
+  // The files the operator attached, each sent whole.
+  attachments: Schema.optionalKey(AttachmentUploads),
 });
 export type AskPayload = typeof AskPayload.Type;
 

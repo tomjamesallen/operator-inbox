@@ -44,7 +44,7 @@ import { STORE_CONFIG } from './inbox-database';
  * `InboxState`, `isQuietEvent`, `inboxesOf`, or the question rows' columns.
  * A store whose rows carry another version rebuilds them on its next read.
  */
-export const READ_MODEL_VERSION = 2;
+export const READ_MODEL_VERSION = 3;
 
 /**
  * One inbox as `listAll` hands it back: its folded state and the stamp of its

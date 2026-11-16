@@ -1,4 +1,5 @@
 import {
+  type Attachment,
   DEFAULT_CHASE_AFTER_MINUTES,
   DEFAULT_DIAGRAM_SIZE,
   DEFAULT_INBOX_METADATA,
@@ -18,6 +19,12 @@ import { Effect, Exit, Option } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
+import {
+  clearSentFiles,
+  type PendingFile,
+  pendingFilesAtom,
+  uploadsOf,
+} from './attachments';
 import { cardRemovalsAtom } from './card-undo';
 import { clockAtom, nowMillis } from './clock';
 import {
@@ -567,6 +574,8 @@ export interface Answer {
   readonly macros: ReadonlyArray<MacroInvoked>;
   // The operator's comments on the Question's text, in body order.
   readonly comments: ReadonlyArray<QuestionComment>;
+  // The files the operator attached to it, in the order they added them.
+  readonly attachments: ReadonlyArray<Attachment>;
 }
 
 /** What was said to a question, under its body. */
@@ -578,6 +587,7 @@ export const answerOf = (item: ReaderItem): Answer | undefined => {
       text: macroText(deferred, response, [...macros, ...comments]),
       macros,
       comments,
+      attachments: [],
     };
   }
   const q = item.question;
@@ -588,16 +598,23 @@ export const answerOf = (item: ReaderItem): Answer | undefined => {
       text: withdrawalReason(q.reason),
       macros: [],
       comments: [],
+      attachments: [],
     };
   if (!('response' in q) || q.response === undefined) return undefined;
   const deferred = q.deferred === true;
   const macros = 'macros' in q ? (q.macros ?? []) : [];
   const comments = 'comments' in q ? (q.comments ?? []) : [];
+  const attachments = attachmentsOf(q);
   return {
     label: answerLabel(false, false, deferred),
-    text: macroText(deferred, q.response, [...macros, ...comments]),
+    text: macroText(deferred, q.response, [
+      ...macros,
+      ...comments,
+      ...attachments,
+    ]),
     macros,
     comments,
+    attachments,
   };
 };
 
@@ -612,9 +629,16 @@ const macroText = (
     ? deferralText(response)
     : response;
 
+/** The files a question's answer carries, or an operator's question itself. */
+export const attachmentsOf = (
+  q: ReaderItem['question'],
+): ReadonlyArray<Attachment> =>
+  'attachments' in q ? (q.attachments ?? []) : [];
+
 export interface FollowUp {
   readonly key: string;
   readonly text: string;
+  readonly attachments: ReadonlyArray<Attachment>;
 }
 
 /** The operator's follow-ups to `item`, oldest first. */
@@ -629,11 +653,18 @@ export const followUpsOf = (
       if (!isAsked(q) || q.response === undefined) return [];
       const { text, followsUp } = askedTextOf(q.response);
       return followsUp === item.question.number
-        ? [{ key: candidate.key, text, number: q.number }]
+        ? [
+            {
+              key: candidate.key,
+              text,
+              number: q.number,
+              attachments: attachmentsOf(q),
+            },
+          ]
         : [];
     })
     .sort((a, b) => a.number - b.number)
-    .map(({ key, text }) => ({ key, text }));
+    .map(({ key, text, attachments }) => ({ key, text, attachments }));
 
 // --- the drawings the box waits on ----------------------------------------------
 
@@ -769,6 +800,8 @@ interface AnswerWrite {
   readonly macros: ReadonlyArray<MacroInvoked>;
   // The operator's written comments, in body order.
   readonly comments: ReadonlyArray<QuestionComment>;
+  // The files the operator attached, in the order they added them.
+  readonly files: ReadonlyArray<PendingFile>;
 }
 
 // --- highlight your reply ---------------------------------------------------------
@@ -830,6 +863,7 @@ const answerWriteAtom = Atom.family((key: string) =>
         const { registry } = get;
         const { inboxId, question } = req.item;
         const what = `Your ${req.deferred ? 'deferral' : 'answer'} to #${question.number}`;
+        const attachments = yield* uploadsOf(req.files);
         const exit = yield* Effect.exit(
           sendWrite(
             get,
@@ -854,9 +888,12 @@ const answerWriteAtom = Atom.family((key: string) =>
                   : { drawings: req.drawings }),
                 ...(isNonEmpty(req.macros) ? { macros: req.macros } : {}),
                 ...(isNonEmpty(req.comments) ? { comments: req.comments } : {}),
+                ...(isNonEmpty(attachments) ? { attachments } : {}),
               },
             }),
             () => {
+              // And the files; a failed send keeps them.
+              clearSentFiles(registry, answerPlaceOf(key), req.files);
               // The drawings went with it; a failed send keeps them.
               for (const id of Object.keys(req.drawings ?? {}))
                 registry.set(drawingDraftAtom(drawingKey(key, id)), undefined);
@@ -935,6 +972,8 @@ interface AskWrite {
   readonly followUp?: string;
   // The agent is to highlight the Question it asks in reply.
   readonly highlightReply: boolean;
+  // The files the operator attached, in the order they added them.
+  readonly files: ReadonlyArray<PendingFile>;
 }
 
 /** The question just asked in `view`: the agent's newest of the operator's. */
@@ -975,6 +1014,7 @@ export const readerAskAtom = Atom.family((place: string) =>
         const client = yield* InboxClient;
         const { registry } = get;
         const { inboxId, followUp, draft } = req;
+        const attachments = yield* uploadsOf(req.files);
         const view = yield* sendWrite(
           get,
           {
@@ -999,10 +1039,12 @@ export const readerAskAtom = Atom.family((place: string) =>
             payload: {
               text: req.text,
               ...(req.highlightReply ? { highlightReply: true as const } : {}),
+              ...(isNonEmpty(attachments) ? { attachments } : {}),
             },
           }),
           () => {
             registry.set(highlightReplyAtom(place), false);
+            clearSentFiles(registry, place, req.files);
             const box =
               followUp === undefined
                 ? askDraftAtom(inboxId)
@@ -1058,10 +1100,12 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       // A written comment can be the whole answer; one never written is not
       // sent. A deferral carries them too.
       const comments = commentsToSend(ctx.get(commentsAtom(item.key)));
+      const files = ctx.get(pendingFilesAtom(answerPlaceOf(item.key)));
       if (
         (response.trim() === '' &&
           cards.length === 0 &&
           comments.length === 0 &&
+          files.length === 0 &&
           !deferred) ||
         ctx.get(write).waiting ||
         // A drawing the agent changed since the operator's edit waits on
@@ -1102,6 +1146,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         drawings: drawingsToSend(drawings, item.question),
         macros,
         comments,
+        files,
       });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;
@@ -1113,17 +1158,21 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         text,
         draft: text,
         highlightReply: ctx.get(highlightReplyAtom(askPlaceOf(inboxId))),
+        files: ctx.get(pendingFilesAtom(askPlaceOf(inboxId))),
       });
     } else if (composer._tag === 'FollowUp' && !composer.held && !deferred) {
       const { key, inboxId, question } = composer.item;
       const write = readerAskAtom(followUpPlaceOf(key));
       const draft = ctx.get(followUpDraftAtom(key));
-      if (draft.trim() === '' || ctx.get(write).waiting) return;
+      const files = ctx.get(pendingFilesAtom(followUpPlaceOf(key)));
+      if ((draft.trim() === '' && files.length === 0) || ctx.get(write).waiting)
+        return;
       ctx.set(write, {
         inboxId,
         followUp: key,
         draft,
         highlightReply: ctx.get(highlightReplyAtom(followUpPlaceOf(key))),
+        files,
         text: followUpText(
           draft,
           question.number,
