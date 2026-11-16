@@ -35,8 +35,10 @@ catalog:
   # kairos-es's reason above.
   xstate: 6.0.0-beta.1
   "@xstate/effect": 1.0.0-beta.0
-  # Mermaid draws the ```mermaid fences in question bodies, in the browser
-  # only, loaded by a dynamic import when a diagram is first opened.
+  # Mermaid draws the ```mermaid fences in question bodies in the browser,
+  # loaded by a dynamic import when a diagram is first opened. The CLI parses
+  # them with it too, under a happy-dom window, so `ask` and `edit` refuse a
+  # diagram the page could not draw.
   mermaid: ^12.1.0
   # Excalidraw draws and edits the drawings in question bodies, in the
   # browser only, loaded by a dynamic import when a drawing is first shown.

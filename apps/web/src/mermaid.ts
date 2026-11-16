@@ -47,6 +47,12 @@ const loadMermaid = Effect.tryPromise({
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
+      // On a parse error Mermaid would otherwise draw its own error picture
+      // into a scratch element on `document.body` and throw without removing
+      // it, leaving that picture on the page. Suppressed, it removes the
+      // scratch element and throws, and the diagram's frame shows the error
+      // with its source.
+      suppressErrorRendering: true,
       theme: prefersDark() ? 'dark' : 'default',
       htmlLabels: false,
       flowchart: fixedSize,
@@ -189,6 +195,16 @@ const keepDrawing = (
   }
 };
 
+// Mermaid draws in scratch elements on `document.body`: the drawing `id`
+// inside a `d<id>` div (or an `i<id>` iframe in its sandbox mode). It removes
+// them itself when it succeeds and, with its error rendering suppressed, when
+// it fails; this removes whatever any other path leaves, so a drawing never
+// shows anywhere but in its own frame.
+const removeScratch = (id: string): void => {
+  for (const scratch of [`d${id}`, `i${id}`, id])
+    document.getElementById(scratch)?.remove();
+};
+
 // One drawing per diagram source, or the reason Mermaid could not draw it.
 // One this page has drawn before resolves at once.
 export const mermaidImageAtom = Atom.family((source: string) =>
@@ -199,10 +215,11 @@ export const mermaidImageAtom = Atom.family((source: string) =>
     return Effect.gen(function* () {
       const mermaid = yield* loadMermaid;
       drawn += 1;
+      const id = `operator-inbox-mermaid-${drawn}`;
       const { svg } = yield* Effect.tryPromise({
-        try: () => mermaid.render(`operator-inbox-mermaid-${drawn}`, source),
+        try: () => mermaid.render(id, source),
         catch: (e) => (e instanceof Error ? e.message : String(e)),
-      });
+      }).pipe(Effect.ensuring(Effect.sync(() => removeScratch(id))));
       const drawing: MermaidDrawing = {
         url: svgDataUrl(svg),
         size: svgSizeOf(svg),
