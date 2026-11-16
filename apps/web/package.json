@@ -18,6 +18,7 @@
     "@base-ui/react": "catalog:",
     "@operator-inbox/core": "workspace:*",
     "@effect/atom-react": "catalog:",
+    "@excalidraw/excalidraw": "catalog:",
     "@xstate/effect": "catalog:",
     "effect": "catalog:",
     "fuse.js": "catalog:",

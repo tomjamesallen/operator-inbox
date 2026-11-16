@@ -4,6 +4,7 @@
 
 export * from './claude-settings';
 export * from './config';
+export * from './drawing';
 export * from './ids';
 export * from './inbox';
 export * from './inbox-code';

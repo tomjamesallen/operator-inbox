@@ -38,6 +38,9 @@ catalog:
   # Mermaid draws the ```mermaid fences in question bodies, in the browser
   # only, loaded by a dynamic import when a diagram is first opened.
   mermaid: ^12.1.0
+  # Excalidraw draws and edits the drawings in question bodies, in the
+  # browser only, loaded by a dynamic import when a drawing is first shown.
+  "@excalidraw/excalidraw": ^0.18.1
   # Fuse.js ranks the Cmd+P question search (title over body).
   fuse.js: ^7.5.0
   # Lucide draws the queue tabs' icons. Each icon is its own export, so the

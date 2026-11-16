@@ -27,6 +27,8 @@
 // draws it from `renderQuestionParts` instead, which splits the body at each
 // mermaid fence: the markdown around it is HTML as above, and the fence is
 // its source text, which the browser draws with Mermaid. The source never becomes HTML here.
+// An `<Excalidraw id="…"/>` line on its own is split out the same way, as the
+// id of a drawing the Question carries; the tag never becomes HTML either.
 
 import { Marked, type Token, type Tokens, type TokensList } from 'marked';
 import { highlightCode } from './code-highlight';
@@ -101,7 +103,20 @@ export const renderQuestionMarkdown = (markdown: string): string =>
 /** One part of a question's body: rendered markdown, or a Mermaid diagram. */
 export type QuestionBodyPart =
   | { readonly kind: 'html'; readonly html: string }
-  | { readonly kind: 'mermaid'; readonly source: string };
+  | { readonly kind: 'mermaid'; readonly source: string }
+  // An `<Excalidraw id="…"/>` line: the Question's drawing of that id, which
+  // the page draws from the scene the Question carries beside its body.
+  | { readonly kind: 'excalidraw'; readonly id: string };
+
+// A drawing's tag: the whole of an HTML block, on a line of its own, exactly
+// `<Excalidraw id="…"/>`. Anywhere else, inline or with any other attribute,
+// it is raw HTML like any other and stays escaped text.
+const EXCALIDRAW_TAG = /^<Excalidraw id="([a-z0-9][a-z0-9-]{0,39})"\s*\/>$/;
+
+const excalidrawId = (token: Token): string | undefined =>
+  token.type === 'html' && (token as Tokens.HTML).block
+    ? EXCALIDRAW_TAG.exec((token as Tokens.HTML).text.trim())?.[1]
+    : undefined;
 
 const isMermaid = (token: Token): token is Tokens.Code =>
   token.type === 'code' &&
@@ -129,9 +144,13 @@ export const renderQuestionParts = (
     run = [];
   };
   for (const token of tokens) {
+    const drawing = excalidrawId(token);
     if (isMermaid(token)) {
       flush();
       parts.push({ kind: 'mermaid', source: token.text });
+    } else if (drawing !== undefined) {
+      flush();
+      parts.push({ kind: 'excalidraw', id: drawing });
     } else run.push(token);
   }
   flush();

@@ -2,6 +2,7 @@
 // re-exported from core's main barrel, which pulls node-only modules; import
 // this subpath from both apps/cli and apps/web.
 
+export * from '../drawing';
 export * from '../inbox-code';
 export * from '../inbox-metadata';
 export * from './api';

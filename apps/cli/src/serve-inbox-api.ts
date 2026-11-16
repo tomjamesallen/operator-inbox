@@ -2,6 +2,7 @@ import {
   askEvents,
   awaitingAgent,
   awaitingOperator,
+  type Drawings,
   decideAnswer,
   decideArchive,
   decideDismissHighlight,
@@ -149,6 +150,7 @@ export const toInboxView = (
             seq: q.highlight.stamp?.seq ?? 0,
           },
         }),
+    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
   })),
   // Oldest answered first: the order the agent will probably process them in.
   awaitingAgent: [...awaitingAgent(state)]
@@ -172,6 +174,8 @@ export const toInboxView = (
         ? {}
         : { operatorQuestion: q.operatorQuestion }),
       ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+      ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+      ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
@@ -194,6 +198,8 @@ export const toInboxView = (
       ? {}
       : { operatorQuestion: q.operatorQuestion }),
     ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+    ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
   })),
 });
 
@@ -235,6 +241,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
   seenRevision: QuestionRevision,
   deferred?: true,
   highlightReply?: true,
+  drawings?: Drawings,
 ) {
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
@@ -245,6 +252,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
         seenRevision,
         ...(deferred === undefined ? {} : { deferred }),
         ...(highlightReply === undefined ? {} : { highlightReply }),
+        ...(drawings === undefined ? {} : { drawings }),
       }),
       (event) => ({
         events: [event],
@@ -931,6 +939,7 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.seenRevision,
             payload.deferred,
             payload.highlightReply,
+            payload.drawings,
           ),
         ),
       )

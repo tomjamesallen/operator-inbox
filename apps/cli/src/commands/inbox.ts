@@ -4,6 +4,7 @@ import {
   awaitingOperator,
   CODE_COUNT,
   codeAt,
+  type Drawings,
   decideAdopt,
   decideArchive,
   decideAsk,
@@ -19,6 +20,7 @@ import {
   decideRename,
   decideUnarchive,
   decideWithdraw,
+  drawingFileToScene,
   evolveInbox,
   type InboxCode,
   type InboxEvent,
@@ -35,6 +37,8 @@ import {
   questionCode,
   questionRef,
   type SessionId,
+  sceneElementCount,
+  summariseScene,
   WATCH_COMMAND,
   type WorkingSession,
 } from '@operator-inbox/core';
@@ -672,6 +676,8 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
   // Highlight the new Question as it is asked, in the same append: the reply
   // an answer's `highlightReply` asked for.
   readonly highlight?: boolean;
+  // Scenes by id, for the body's `<Excalidraw id="…"/>` lines.
+  readonly drawings?: Drawings;
 }) {
   const given = opts.metadata ?? emptyMetadata;
   const asked = yield* decideOrFail(opts.inboxId, (state) => {
@@ -690,6 +696,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
         title: opts.title,
         body: opts.body,
         ...(opts.metadata === undefined ? {} : { metadata: opts.metadata }),
+        ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
       }),
       (event) => {
         const asked: ReadonlyArray<InboxEvent> = askEvents(state, event);
@@ -740,7 +747,20 @@ export interface AnswerLine {
   readonly operatorQuestion?: true;
   readonly deferred?: true;
   readonly highlightReply?: true;
+  // The drawings the operator changed, by id: each the whole edited scene,
+  // parsed, as the answer sent it.
+  readonly drawings?: Readonly<Record<string, unknown>>;
 }
+
+// A scene the event holds as JSON text, parsed for `--json`. Text that will
+// not parse is passed on as it is.
+const parsedScene = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+};
 
 const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
   awaitingAgent(state).map((q) => ({
@@ -758,6 +778,16 @@ const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
     ...(q.highlightReply === undefined
       ? {}
       : { highlightReply: q.highlightReply }),
+    ...(q.sentDrawings === undefined
+      ? {}
+      : {
+          drawings: Object.fromEntries(
+            Object.entries(q.sentDrawings).map(([id, scene]) => [
+              id,
+              parsedScene(scene),
+            ]),
+          ),
+        }),
   }));
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
@@ -775,6 +805,14 @@ export const DEFERRED_LINE =
 export const HIGHLIGHT_REPLY_LINE =
   'HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight';
 
+// The line for each drawing the operator changed, and how to read it back.
+export const drawingChangedLine = (
+  ref: string,
+  id: string,
+  scene: unknown,
+): string =>
+  `DRAWING CHANGED: ${id} (${sceneElementCount(typeof scene === 'string' ? scene : JSON.stringify(scene))} elements); read it with: operator-inbox drawing ${ref} ${id} --compact`;
+
 export const renderAnswers = (
   answers: ReadonlyArray<AnswerLine>,
   json: boolean,
@@ -786,6 +824,11 @@ export const renderAnswers = (
       (a) =>
         `${a.code ?? `#${a.number}`} ${a.operatorQuestion === true ? '(the operator asks) ' : ''}${a.title}\n${[
           ...renderMetadata(a.metadata).map((m) => `meta ${m}`),
+          ...Object.entries(a.drawings ?? {})
+            .sort(([x], [y]) => x.localeCompare(y))
+            .map(([id, scene]) =>
+              drawingChangedLine(a.code ?? `${a.number}`, id, scene),
+            ),
           ...(a.deferred === true ? [DEFERRED_LINE] : []),
           ...(a.highlightReply === true ? [HIGHLIGHT_REPLY_LINE] : []),
           ...(a.deferred === true && a.response === ''
@@ -894,6 +937,8 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
   readonly number: number;
   readonly title?: string;
   readonly body?: string;
+  // Drawings to set, by id; the Question's others stay.
+  readonly drawings?: Drawings;
 }) {
   if (!Number.isInteger(opts.number) || opts.number < 1)
     return yield* new InputError({
@@ -905,6 +950,7 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
     number,
     ...(opts.title === undefined ? {} : { title: opts.title }),
     ...(opts.body === undefined ? {} : { body: opts.body }),
+    ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
   };
   const edited = yield* decideOrFail(opts.inboxId, (state) =>
     Result.map(decideEdit(state, input), (e) => ({
@@ -913,6 +959,47 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
     })),
   );
   return `edited ${edited}`;
+});
+
+// --- drawing -----------------------------------------------------------------------
+
+/**
+ * One drawing of a Question: the scene the operator sent with their answer if
+ * they changed it, else the agent's own. `compact` prints the summary an agent
+ * reads (`summariseScene`), headed by whose scene it is; otherwise the scene's
+ * JSON, as stored.
+ */
+export const dispatchDrawing = Effect.fnUntraced(function* (opts: {
+  readonly inboxId: InboxId;
+  readonly number: number;
+  readonly id: string;
+  readonly compact: boolean;
+}) {
+  const state = yield* readState(opts.inboxId);
+  const number = QuestionNumber.make(Math.max(1, Math.trunc(opts.number)));
+  const ref = questionRef(state.code, number);
+  const q = state.questions.find(
+    (x) => x.number === opts.number && x.state !== 'moved',
+  );
+  if (q === undefined)
+    return yield* new InputError({
+      message: `inbox drawing: there is no question ${ref}`,
+    });
+  const sent = q.sentDrawings?.[opts.id];
+  const own = q.drawings?.[opts.id]?.scene;
+  const scene = sent ?? own;
+  if (scene === undefined) {
+    const ids = Object.keys(q.drawings ?? {}).sort();
+    return yield* new InputError({
+      message: `inbox drawing: ${ref} has no drawing named "${opts.id}"${ids.length === 0 ? '; it has none' : `; it has ${ids.join(', ')}`}`,
+    });
+  }
+  if (!opts.compact) return scene;
+  const whose =
+    sent === undefined
+      ? `drawing ${opts.id} of ${ref}: yours, as asked; the operator has not changed it`
+      : `drawing ${opts.id} of ${ref}: the operator's, sent with their answer`;
+  return `${whose}\n${summariseScene(scene)}`.trimEnd();
 });
 
 /**
@@ -1172,6 +1259,44 @@ const metaJsonOpt = Flag.KeyValuePair('meta-json').pipe(
   Flag.optional,
 );
 
+// `--drawing id=file`, repeatable: a drawing the body shows with
+// `<Excalidraw id="id"/>`.
+const drawingOpt = Flag.KeyValuePair('drawing').pipe(
+  Flag.withDescription(
+    'A drawing as id=file, for a body line <Excalidraw id="id"/>; repeat it for more than one. The file is the compact form (one element per line; see `operator-inbox skill`), an Excalidraw skeleton, or a full scene',
+  ),
+  Flag.optional,
+);
+
+// Each `--drawing` file read and, in the compact form, converted to a scene.
+// Undefined when none was given. Whether a scene may be kept is the
+// decision's to say (`checkDrawings`).
+export const drawingsOf = Effect.fnUntraced(function* (
+  verb: string,
+  given: Option.Option<Record<string, string>>,
+) {
+  if (Option.isNone(given)) return undefined;
+  const fs = yield* FileSystem.FileSystem;
+  const out: Record<string, string> = {};
+  for (const [id, file] of Object.entries(given.value)) {
+    const text = yield* fs.readFileString(file).pipe(
+      Effect.mapError(
+        () =>
+          new InputError({
+            message: `inbox ${verb}: cannot read the drawing ${id} at ${file}`,
+          }),
+      ),
+    );
+    const scene = drawingFileToScene(text);
+    if (Result.isFailure(scene))
+      return yield* new InputError({
+        message: `inbox ${verb}: drawing ${id} (${file}) is not one the inbox can read:\n${scene.failure.map((e) => `  ${e}`).join('\n')}`,
+      });
+    out[id] = scene.success;
+  }
+  return out;
+});
+
 // The flags as one dictionary; undefined when neither was given.
 const metadataOf = Effect.fnUntraced(function* (
   meta: Option.Option<Record<string, string>>,
@@ -1353,18 +1478,21 @@ const askCommand = Command.make(
       ),
       Flag.withDefault(false),
     ),
+    drawing: drawingOpt,
   },
-  ({ title, bodyFile, inbox, meta, metaJson, highlight }) =>
+  ({ title, bodyFile, inbox, meta, metaJson, highlight, drawing }) =>
     print(
       Effect.gen(function* () {
         const inboxId = yield* resolved(inbox);
         const body = yield* readBody('ask', bodyFile);
+        const drawings = yield* drawingsOf('ask', drawing);
         const rules = yield* readMetadataRules;
         const metadata = yield* metadataOf(meta, metaJson, rules);
         const asked = yield* dispatchAsk({
           inboxId,
           title,
           body,
+          ...(drawings === undefined ? {} : { drawings }),
           ...(metadata === undefined ? {} : { metadata }),
           ...(rules === undefined ? {} : { rules }),
           ...(highlight ? { highlight: true } : {}),
@@ -1582,8 +1710,9 @@ const editCommand = Command.make(
       Flag.optional,
     ),
     inbox: inboxOpt,
+    drawing: drawingOpt,
   },
-  ({ number, title, bodyFile, inbox }) =>
+  ({ number, title, bodyFile, inbox, drawing }) =>
     print(
       Effect.gen(function* () {
         const {
@@ -1594,17 +1723,50 @@ const editCommand = Command.make(
         const read = yield* readBody('edit', bodyFile);
         const body =
           Option.isNone(bodyFile) && read.length === 0 ? undefined : read;
+        const drawings = yield* drawingsOf('edit', drawing);
         return yield* dispatchEdit({
           inboxId,
           number: n,
           ...(Option.isSome(title) ? { title: title.value } : {}),
           ...(body === undefined ? {} : { body }),
+          ...(drawings === undefined ? {} : { drawings }),
         });
       }),
     ),
 ).pipe(
   Command.withDescription(
-    'Rewrite a question the operator has not answered yet (title, body or both)',
+    'Rewrite a question the operator has not answered yet (title, body, drawings)',
+  ),
+);
+
+const drawingCommand = Command.make(
+  'drawing',
+  {
+    number: questionArg('The question the drawing is in'),
+    id: Argument.String('id').pipe(
+      Argument.withDescription('The drawing, by the id its tag names'),
+    ),
+    compact: Flag.Boolean('compact').pipe(
+      Flag.withDescription(
+        'Print the summary, one line per element, rather than the scene JSON: the way to read a drawing',
+      ),
+      Flag.withDefault(false),
+    ),
+    inbox: inboxOpt,
+  },
+  ({ number, id, compact, inbox }) =>
+    print(
+      Effect.gen(function* () {
+        const {
+          inboxId,
+          numbers: [n = 0],
+        } = yield* questionsOf('drawing', [number], inbox);
+        return yield* dispatchDrawing({ inboxId, number: n, id, compact });
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "Print one drawing of a question: the operator's, if they changed it and sent it with their answer, else yours (--compact for the summary)",
   ),
 );
 
@@ -1805,6 +1967,7 @@ export const inboxSubcommands = [
   waitCommand,
   doneCommand,
   editCommand,
+  drawingCommand,
   withdrawCommand,
   metaCommand,
   keysCommand,

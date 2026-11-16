@@ -11,6 +11,13 @@ import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
 import { clockAtom, nowMillis } from './clock';
 import {
+  drawingConflicts,
+  drawingDraftAtom,
+  drawingKey,
+  drawingsToSend,
+  questionDrawingDraftsAtom,
+} from './drawings';
+import {
   failureText,
   isUnconfirmed,
   refusalText,
@@ -504,6 +511,31 @@ export const followUpsOf = (
     .sort((a, b) => a.number - b.number)
     .map(({ key, text }) => ({ key, text }));
 
+// --- the drawings the box waits on ----------------------------------------------
+
+/**
+ * The drawings of the question in the answer box whose draft the agent's
+ * change has overtaken, by id. While there are any, the box sends nothing,
+ * answer or deferral, and its foot note says why: an answer never carries a
+ * scene drawn on a drawing the agent has since changed, as it never carries a
+ * reply to a question changed since it was read (`seenRevision`).
+ */
+export const answerDrawingConflictsAtom = Atom.make(
+  (get): ReadonlyArray<string> => {
+    const composer = get(composerAtom);
+    if (composer._tag !== 'Answer' && composer._tag !== 'Held') return [];
+    const { item } = composer;
+    return drawingConflicts(
+      get(questionDrawingDraftsAtom(item.key)),
+      item.question,
+    );
+  },
+);
+
+/** What the foot note says while drawings wait on the operator's choice. */
+export const drawingConflictText = (ids: ReadonlyArray<string>): string =>
+  `The agent changed ${ids.length === 1 ? 'the drawing' : 'the drawings'} ${ids.map((id) => `“${id}”`).join(', ')} since you edited ${ids.length === 1 ? 'it' : 'them'}: choose Keep mine or Take theirs before you send.`;
+
 // --- the foot note --------------------------------------------------------------
 
 export type FootTone = 'red' | 'orange' | 'quiet';
@@ -535,6 +567,8 @@ export const footNoteOf = (
   words: MachineWords,
   askMachine: InboxMachineKey | undefined,
   progress: AskProgress = undefined,
+  // The drawings the box waits on (`answerDrawingConflictsAtom`).
+  drawingConflicts: ReadonlyArray<string> = [],
 ): FootNote | undefined => {
   const missed = (machine: InboxMachineKey, what: string) =>
     words.greyed.has(machine)
@@ -565,6 +599,8 @@ export const footNoteOf = (
       const { item } = composer;
       const trouble = troubles.find((t) => t.key === item.key);
       if (trouble !== undefined) return { tone: 'red', text: trouble.text };
+      if (drawingConflicts.length > 0)
+        return { tone: 'orange', text: drawingConflictText(drawingConflicts) };
       return composer._tag === 'Held'
         ? cannotReach(item.machine)
         : missed(item.machine, 'a send may not reach it.');
@@ -603,6 +639,8 @@ interface AnswerWrite {
   readonly response: string;
   readonly deferred: boolean;
   readonly highlightReply: boolean;
+  // The drawings the operator changed, by id, each the whole edited scene.
+  readonly drawings: Readonly<Record<string, string>> | undefined;
 }
 
 // --- highlight your reply ---------------------------------------------------------
@@ -680,9 +718,15 @@ const answerWriteAtom = Atom.family((key: string) =>
                 ...(req.highlightReply
                   ? { highlightReply: true as const }
                   : {}),
+                ...(req.drawings === undefined
+                  ? {}
+                  : { drawings: req.drawings }),
               },
             }),
             () => {
+              // The drawings went with it; a failed send keeps them.
+              for (const id of Object.keys(req.drawings ?? {}))
+                registry.set(drawingDraftAtom(drawingKey(key, id)), undefined);
               registry.set(responseDraftAtom(key), {
                 inboxId,
                 number: question.number,
@@ -865,7 +909,14 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       const { item } = composer;
       const write = answerWriteAtom(item.key);
       const response = ctx.get(responseDraftAtom(item.key));
-      if ((response.trim() === '' && !deferred) || ctx.get(write).waiting)
+      const drawings = ctx.get(questionDrawingDraftsAtom(item.key));
+      if (
+        (response.trim() === '' && !deferred) ||
+        ctx.get(write).waiting ||
+        // A drawing the agent changed since the operator's edit waits on
+        // their choice (`answerDrawingConflictsAtom`).
+        drawingConflicts(drawings, item.question).length > 0
+      )
         return;
       ctx.set(inboxReaderAtoms.send, {
         type: 'AnswerSent',
@@ -878,6 +929,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         response,
         deferred,
         highlightReply: ctx.get(highlightReplyAtom(answerPlaceOf(item.key))),
+        drawings: drawingsToSend(drawings, item.question),
       });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;

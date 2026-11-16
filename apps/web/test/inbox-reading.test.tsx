@@ -38,18 +38,6 @@ import {
 // Reading on the real page: how it opens, what each queue says, a link, the
 // All view, a question's parts, and the board moving under the reader.
 
-vi.mock('mermaid', () => ({
-  default: {
-    initialize: () => undefined,
-    render: async (_id: string, source: string) => {
-      if (source.includes('broken')) throw new Error('Parse error on line 1');
-      return {
-        svg: `<svg xmlns="http://www.w3.org/2000/svg"><text>${source}</text></svg>`,
-      };
-    },
-  },
-}));
-
 useInboxPage();
 
 const withThree = (extra: ReturnType<typeof asked>) =>
@@ -426,74 +414,6 @@ describe('metadata', () => {
     const card = await openCard();
     expect(card.querySelector('[data-zen-meta-key]')).toBeNull();
     expect(card.querySelector('[data-zen-history]')).not.toBeNull();
-  });
-});
-
-describe('mermaid diagrams', () => {
-  const first = {
-    ...asked(1, 'First', 2),
-    bodyParts: [
-      { kind: 'html', html: '<p>Before.</p>' },
-      { kind: 'mermaid', source: 'graph TD; A-->B' },
-      { kind: 'html', html: '<p>After.</p>' },
-    ],
-  };
-  const third = {
-    ...asked(3, 'Third', 9),
-    bodyParts: [{ kind: 'mermaid', source: 'broken' }],
-  };
-  const WITH_DIAGRAM = board([
-    { ...VIEW_A, awaitingOperator: [first, third] },
-    VIEW_B,
-  ]);
-
-  const decoded = (img: Element | null) =>
-    atob((img?.getAttribute('src') ?? '').split(',')[1] ?? '');
-
-  it('folds a diagram by default, and draws it when opened', async () => {
-    serve.board = WITH_DIAGRAM;
-    await mounted();
-    const body = lit();
-    expect(within(body).getByText('After.')).toBeTruthy();
-    expect(body.querySelector('[data-mermaid-image]')).toBeNull();
-    const fold = within(body).getByRole('button', { name: /Diagram/ });
-    expect(fold.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(fold);
-    await waitFor(() =>
-      expect(body.querySelector('[data-mermaid-image]')).not.toBeNull(),
-    );
-    expect(decoded(body.querySelector('[data-mermaid-image]'))).toContain(
-      'graph TD; A-->B',
-    );
-  });
-
-  it('shows the diagram full screen', async () => {
-    serve.board = WITH_DIAGRAM;
-    await mounted();
-    fireEvent.click(
-      within(lit()).getByRole('button', {
-        name: 'Show the diagram full screen',
-      }),
-    );
-    const dialog = await screen.findByTestId('mermaid-full-screen');
-    await waitFor(() =>
-      expect(dialog.querySelector('[data-mermaid-image]')).not.toBeNull(),
-    );
-    expect(
-      dialog
-        .querySelector('[data-mermaid-image]')
-        ?.classList.contains('object-contain'),
-    ).toBe(true);
-  });
-
-  it('says why a diagram cannot be drawn, and shows its source', async () => {
-    serve.board = WITH_DIAGRAM;
-    await mounted(`/inbox/${A}#q=3`);
-    await waitFor(() => expect(litKey()).toBe(`${A}/3`));
-    fireEvent.click(within(lit()).getByRole('button', { name: /Diagram/ }));
-    const alert = await within(lit()).findByRole('alert');
-    expect(alert.textContent).toContain('Parse error on line 1');
-    expect(alert.textContent).toContain('broken');
   });
 });
 

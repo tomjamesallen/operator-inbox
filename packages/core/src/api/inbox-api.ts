@@ -1,6 +1,12 @@
 import { Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
-import { Metadata, QuestionNumber, QuestionRevision } from '../inbox';
+import {
+  Drawings,
+  Metadata,
+  QuestionDrawing,
+  QuestionNumber,
+  QuestionRevision,
+} from '../inbox';
 import { SessionLink } from '../inbox-metadata';
 import {
   InboxCode,
@@ -54,9 +60,20 @@ export type InboxHighlightDto = typeof InboxHighlightDto.Type;
 export const QuestionBodyPartDto = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('html'), html: Schema.String }),
   Schema.Struct({ kind: Schema.Literal('mermaid'), source: Schema.String }),
+  // An `<Excalidraw id="…"/>` line: the Question's drawing of that id.
+  Schema.Struct({ kind: Schema.Literal('excalidraw'), id: Schema.String }),
 ]);
 export type QuestionBodyPartDto = typeof QuestionBodyPartDto.Type;
 const bodyParts = Schema.optionalKey(Schema.Array(QuestionBodyPartDto));
+
+// The Question's drawings, by id (core's `InboxQuestion.drawings`): each scene
+// as JSON text and the revision that last set it. Optional keys, so a machine
+// on an older build, which never sends them, still decodes.
+const drawings = Schema.optionalKey(
+  Schema.Record(Schema.String, QuestionDrawing),
+);
+// The drawings the operator changed and sent with their answer, by id.
+const sentDrawings = Schema.optionalKey(Drawings);
 
 export const InboxOperatorQuestionDto = Schema.Struct({
   number: QuestionNumber,
@@ -69,6 +86,7 @@ export const InboxOperatorQuestionDto = Schema.Struct({
   askedSeq: Schema.Int,
   askedAt: at,
   highlight: Schema.optionalKey(InboxHighlightDto),
+  drawings,
 });
 export type InboxOperatorQuestionDto = typeof InboxOperatorQuestionDto.Type;
 
@@ -107,6 +125,8 @@ export const InboxAgentQuestionDto = Schema.Struct({
   // `response` is their question, and there is no body.
   operatorQuestion,
   deferred,
+  drawings,
+  sentDrawings,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -132,6 +152,8 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   answeredAt: at,
   operatorQuestion,
   deferred,
+  drawings,
+  sentDrawings,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
@@ -482,6 +504,8 @@ export const AnswerPayload = Schema.Struct({
   deferred,
   // "Highlight reply": the agent highlights the Question it asks in reply.
   highlightReply,
+  // The drawings the operator changed, by id: each the whole edited scene.
+  drawings: Schema.optionalKey(Drawings),
 });
 export type AnswerPayload = typeof AnswerPayload.Type;
 

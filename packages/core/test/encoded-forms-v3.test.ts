@@ -391,6 +391,77 @@ describe('highlightReply as stored in the log', () => {
   });
 });
 
+// Drawings: on an ask, an edit, an answer and a move, which came after the
+// event goldens above were pinned and so have their own file.
+const SCENE =
+  '{"type":"excalidraw","version":2,"elements":[{"type":"rectangle","id":"a","x":0,"y":0,"width":100,"height":50}]}';
+const EDITED_SCENE =
+  '{"type":"excalidraw","version":2,"elements":[{"type":"rectangle","id":"a","x":40,"y":0,"width":100,"height":50,"version":3}]}';
+
+const DRAWING_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Is this the layout?',
+    body: 'Move the box.\n\n<Excalidraw id="layout"/>\n',
+    drawings: { layout: SCENE },
+  },
+  {
+    _tag: 'QuestionEdited',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Is this the layout?',
+    body: 'Move the box.\n\n<Excalidraw id="layout"/>\n',
+    drawings: { layout: EDITED_SCENE },
+  },
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(1),
+    response: 'Moved it.',
+    drawings: { layout: EDITED_SCENE },
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Is this the layout?',
+      body: '<Excalidraw id="layout"/>',
+      revision: rev(2),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: 'Moved it.',
+      withdrawn: false,
+      drawings: { layout: { scene: SCENE, revision: 2 } },
+      sentDrawings: { layout: EDITED_SCENE },
+    },
+  },
+];
+
+describe('drawings as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = DRAWING_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-drawing-events.jsonl', lines);
+    const read = golden('inbox-drawing-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(DRAWING_EVENTS);
+  });
+
+  it('reads an ask, an edit and an answer logged before drawings with none', () => {
+    for (const line of [
+      `{"_tag":"QuestionAsked","inboxId":"${INBOX_A}","number":1,"title":"T","body":"B"}`,
+      `{"_tag":"QuestionEdited","inboxId":"${INBOX_A}","number":1,"title":"T","body":"B2"}`,
+      `{"_tag":"QuestionAnswered","inboxId":"${INBOX_A}","number":1,"response":"Yes"}`,
+    ])
+      expect(decodeEvent(line)).not.toHaveProperty('drawings');
+  });
+});
+
 // ================================================================================
 // Frontmatter — what the `plan*` builders hand `serialiseFrontmatter`, the
 // production write path of every `new-*` command, and what `parseFrontmatter`
@@ -563,6 +634,11 @@ const DTOS = [
     response: 'An answer.',
     seenRevision: rev(2),
     highlightReply: true,
+  }),
+  dtoCase('dto-payload-answer-drawings.json', AnswerPayload, {
+    response: 'Moved it.',
+    seenRevision: rev(2),
+    drawings: { layout: EDITED_SCENE },
   }),
   dtoCase('dto-payload-ask-highlight-reply.json', AskPayload, {
     text: 'Can you check X?',
