@@ -1,0 +1,37 @@
+name: CI
+
+# The full gate, on every PR to main of the public repo. Each of those comes
+# from a publish/ branch. Only those run it, so a PR in a copy of this repo that
+# is not the public one spends no runner minutes.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'publish/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      # A tree with no lockfile, such as the first commit's README alone, has
+      # nothing to install or verify, so the job passes with the steps skipped.
+      - uses: pnpm/action-setup@v4
+        if: hashFiles('pnpm-lock.yaml') != ''
+      - uses: actions/setup-node@v5
+        if: hashFiles('pnpm-lock.yaml') != ''
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: hashFiles('pnpm-lock.yaml') != ''
+      - run: pnpm verify
+        if: hashFiles('pnpm-lock.yaml') != ''
