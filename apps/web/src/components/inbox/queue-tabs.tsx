@@ -79,9 +79,14 @@ export const QueueTabs = ({
     // with a solid background and no backdrop filter; without one it lays its
     // own soft fade over the top of the page, washing out this row and the line
     // under it. Wider screens keep the frosted row over the reader.
+    // In the desktop window the header is the title strip: its empty space,
+    // and the row's, moves the window (`data-tauri-drag-region`, which only an
+    // element itself answers to, never its children). The row is the strip's
+    // height, so the icons line up with the traffic lights and the burger.
     <div
       ref={header}
       data-zen-header
+      data-tauri-drag-region
       className="absolute inset-x-0 top-0 z-10 h-header text-11 compact:fixed compact:bg-bg"
     >
       {/* The frosted glass is a layer of its own, so it can grow down to
@@ -90,7 +95,8 @@ export const QueueTabs = ({
       <div
         inert={!shown}
         data-zen-queues={shown ? 'shown' : 'hidden'}
-        className={`relative flex h-full items-center justify-center transition-opacity ease-fade compact:justify-end compact:pr-s2 ${shown ? 'opacity-100 delay-800 duration-500' : 'opacity-0 duration-200'}`}
+        data-tauri-drag-region
+        className={`relative flex h-full items-center titlebar:h-titlebar justify-center transition-opacity ease-fade compact:justify-end compact:pr-s2 ${shown ? 'opacity-100 delay-800 duration-500' : 'opacity-0 duration-200'}`}
       >
         {/* Asking, no queue is on. The page below is the panel of whichever is. */}
         <Tabs.Root
@@ -101,6 +107,7 @@ export const QueueTabs = ({
         >
           <Tabs.List
             aria-label="Queues"
+            data-tauri-drag-region
             className="flex items-center gap-s4 compact:gap-s2"
           >
             {QUEUE_NAMES.map((q) => {
@@ -131,12 +138,14 @@ export const QueueTabs = ({
                       className={glyph.size}
                     />
                     {/* An eyebrow, out of the flow so a count changing moves no
-                        tab. Nothing to clear: an empty queue shows none. */}
+                        tab. Nothing to clear: an empty queue shows none. In the
+                        desktop window's strip it sits 2px lower, clear of the
+                        window's top edge. */}
                     {q !== 'processed' && count > 0 && (
                       <span
                         data-zen-count
                         aria-hidden="true"
-                        className={`absolute bottom-full left-full -mb-1 text-9 leading-none font-medium tabular-nums ${on ? 'text-fg/70' : 'text-fg/35 group-hover:text-fg/60'}`}
+                        className={`absolute bottom-full left-full -mb-1 text-9 titlebar:-mb-1.5 leading-none font-medium tabular-nums ${on ? 'text-fg/70' : 'text-fg/35 group-hover:text-fg/60'}`}
                       >
                         {count}
                       </span>

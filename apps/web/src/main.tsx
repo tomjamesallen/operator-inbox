@@ -3,11 +3,15 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { refreshOnNewBuild } from './build-refresh';
+import { markTitleBar } from './desktop-titlebar';
 import './index.css';
 import { installRowContextMenu } from './pake-row-menu';
 
 // A sidebar row's right-click, past Pake's own link menu (`pake-row-menu.ts`).
 installRowContextMenu();
+
+// The desktop window's title strip, which the page draws into (`desktop-titlebar.ts`).
+markTitleBar();
 
 const root = document.getElementById('root');
 if (root === null) throw new Error('index.html has no #root');

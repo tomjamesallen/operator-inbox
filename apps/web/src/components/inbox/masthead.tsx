@@ -142,7 +142,7 @@ export const Masthead = () => {
   return (
     // Its own layer: under Safari the header's backdrop blur can take in what
     // sits over it.
-    <div className="pointer-events-none fixed top-0 left-s4 z-30 flex h-header transform-gpu items-center gap-s2 compact:left-s3 compact:gap-s1">
+    <div className="pointer-events-none fixed top-0 left-s4 z-30 flex h-header transform-gpu items-center gap-s2 compact:left-s3 compact:gap-s1 titlebar:left-traffic-lights titlebar:h-titlebar">
       <Burger />
       <Wordmark open={intro || !shut} />
     </div>

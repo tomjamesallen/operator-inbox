@@ -300,6 +300,9 @@ const Aside = () => {
     <aside
       ref={self}
       data-inbox-sidebar={rail}
+      // In the desktop window, its empty head under the title strip moves the
+      // window; anywhere else the attribute does nothing.
+      data-tauri-drag-region
       style={
         stored === null
           ? undefined

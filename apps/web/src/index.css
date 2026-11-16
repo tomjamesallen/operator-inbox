@@ -114,6 +114,12 @@
   --spacing-crumb-lift: calc((42px - 34px) * var(--ui-scale));
   --spacing-header-crumb: calc((34px + 30px) * var(--ui-scale));
   --spacing-rail: calc(218px * var(--ui-scale));
+  /* The desktop window's title strip, which the page draws into when the
+     window hides its title bar (`titlebar:`): how tall it is, and how far in
+     from the left its traffic lights reach. macOS draws both at a fixed size,
+     so neither follows `--ui-scale`. */
+  --spacing-titlebar: 32px;
+  --spacing-traffic-lights: 78px;
   /* A card field's first row: its label and its control are both this tall,
      so a label sits level with the control's first line however many lines
      the control wraps to. */
@@ -449,6 +455,27 @@
   @media (height < 30rem) {
     @slot;
   }
+}
+
+/* The desktop window (`scripts/desktop-app.sh`) hides its title bar, so the
+   page runs up under the traffic lights; `desktop-titlebar.ts` marks the root
+   `data-titlebar="overlay"` there. The header's row is then the strip: the
+   burger and the wordmark sit in it right of the lights, the queue icons level
+   with them. Declared after `compact`, so it wins over the `compact:` value it
+   replaces. In a browser no root carries the mark and it never applies. */
+@custom-variant titlebar {
+  :where([data-titlebar="overlay"]) & {
+    @slot;
+  }
+}
+
+/* Pake lays a transparent bar of its own over the window's top edge to drag
+   it by (`#pake-top-dom`, fixed, full width, above everything), and it would
+   swallow every click on the header's icons. It is Pake's element, so no
+   utility can reach it. The page marks its own empty header and sidebar head
+   `data-tauri-drag-region` instead, which Tauri drags by. */
+:where([data-titlebar="overlay"]) #pake-top-dom {
+  display: none;
 }
 
 /* config.json's `wideBlocks`, which the reader carries as
