@@ -37,10 +37,23 @@ const AskButton = () => {
 };
 
 // Each queue's tab is an icon; its title is the tab's name and its tooltip.
-const QUEUE_ICONS: Readonly<Record<QueueName, LucideIcon>> = {
-  inbox: Inbox,
-  agent: Bot,
-  processed: Archive,
+// Lucide's bot draws its head 16 units wide where the tray and the box run
+// 20, so at one size it reads small beside them. It gets a box a step larger,
+// and a stroke scaled down by the same ratio (14/16), so all three draw the
+// same line weight.
+const QUEUE_ICONS: Readonly<
+  Record<
+    QueueName,
+    {
+      readonly Icon: LucideIcon;
+      readonly size: string;
+      readonly stroke: number;
+    }
+  >
+> = {
+  inbox: { Icon: Inbox, size: 'size-3.5', stroke: 2 },
+  agent: { Icon: Bot, size: 'size-4', stroke: 1.75 },
+  processed: { Icon: Archive, size: 'size-3.5', stroke: 2 },
 };
 
 // The three queues, on the row the burger and the wordmark share. They go at
@@ -84,7 +97,7 @@ export const QueueTabs = ({
             {QUEUE_NAMES.map((q) => {
               const on = q === queue && !asking;
               const count = queues[q].length;
-              const QueueIcon = QUEUE_ICONS[q];
+              const glyph = QUEUE_ICONS[q];
               return (
                 <Tip
                   key={q}
@@ -103,10 +116,10 @@ export const QueueTabs = ({
                     }
                     className={`group relative flex cursor-pointer items-center ${on ? 'text-fg/70' : 'text-fg/25 hover:text-fg/60'}`}
                   >
-                    <QueueIcon
+                    <glyph.Icon
                       aria-hidden="true"
-                      strokeWidth={2}
-                      className="size-3.5"
+                      strokeWidth={glyph.stroke}
+                      className={glyph.size}
                     />
                     {/* An eyebrow, out of the flow so a count changing moves no
                         tab. Nothing to clear: an empty queue shows none. */}
