@@ -83,21 +83,35 @@ export const DrawingBlock = ({
 
 // --- the frame ------------------------------------------------------------------------
 
+// The label row: the label and its marks wrap as whole items, each on one
+// line, so on a narrow column a mark drops under the label rather than
+// folding into a column of words; ⤢ (`open`) sits outside the wrap, pinned
+// to the right edge, so it never leaves the frame.
 const Figure = ({
   id,
   marks,
+  open,
   notice,
   children,
 }: {
   readonly id: string;
-  readonly marks: ReactNode;
+  readonly marks?: ReactNode;
+  readonly open: ReactNode;
   readonly notice?: ReactNode;
   readonly children: ReactNode;
 }) => (
   <figure className="my-s2 border border-fg/13" data-drawing={id}>
     <div className="flex items-center gap-s2 px-s2 py-0.5">
-      <span className={`flex-1 ${label}`}>Drawing · {id}</span>
-      {marks}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-s2 gap-y-0.5">
+        <span
+          className={`min-w-0 flex-auto truncate ${label}`}
+          title={`Drawing · ${id}`}
+        >
+          Drawing · {id}
+        </span>
+        {marks}
+      </div>
+      {open}
     </div>
     {notice}
     <div className="border-t border-fg/10 p-s2">{children}</div>
@@ -105,7 +119,7 @@ const Figure = ({
 );
 
 const SentMark = () => (
-  <span className="text-11 text-fg/45" data-drawing-sent>
+  <span className="min-w-0 truncate text-11 text-fg/45" data-drawing-sent>
     Sent with your answer
   </span>
 );
@@ -123,12 +137,8 @@ const ShownDrawing = ({
 }) => (
   <Figure
     id={id}
-    marks={
-      <>
-        {sent && <SentMark />}
-        <Viewer id={id} scene={scene} />
-      </>
-    }
+    marks={sent && <SentMark />}
+    open={<Viewer id={id} scene={scene} />}
   >
     <DrawingPicture scene={scene} />
   </Figure>
@@ -164,7 +174,7 @@ const Viewer = ({
 }) => (
   <Dialog.Root>
     <Dialog.Trigger
-      className={`${headerButton()} ${focusRing}`}
+      className={`shrink-0 ${headerButton()} ${focusRing}`}
       aria-label="Show the drawing full screen"
       title="Full screen"
     >
@@ -223,27 +233,36 @@ const LiveDrawing = ({
       marks={
         <>
           {draft !== undefined && (
-            <span className="text-11 text-orange" data-drawing-changed>
-              Changed · goes with your answer
+            // On a phone it reads "Changed", the rest kept for a screen
+            // reader and as the title.
+            <span
+              className="min-w-0 truncate text-11 text-orange"
+              title="Changed · goes with your answer"
+              data-drawing-changed
+            >
+              Changed
+              <span className="compact:sr-only"> · goes with your answer</span>
             </span>
           )}
           {draft !== undefined && (
             <button
               type="button"
-              className={`${headerButton()} ${focusRing}`}
+              className={`whitespace-nowrap ${headerButton()} ${focusRing}`}
               onClick={() => setDraft(undefined)}
               title="Throw your changes away and show the agent’s drawing"
             >
               REVERT
             </button>
           )}
-          <Editor
-            id={id}
-            drawingKey={key}
-            scene={draft?.scene ?? drawing.scene}
-            onEdit={edit}
-          />
         </>
+      }
+      open={
+        <Editor
+          id={id}
+          drawingKey={key}
+          scene={draft?.scene ?? drawing.scene}
+          onEdit={edit}
+        />
       }
       notice={
         conflict && (
@@ -333,7 +352,7 @@ const Editor = ({
       }}
     >
       <Dialog.Trigger
-        className={`${headerButton()} ${focusRing}`}
+        className={`shrink-0 ${headerButton()} ${focusRing}`}
         aria-label="Edit the drawing full screen"
         title="Edit full screen"
       >
