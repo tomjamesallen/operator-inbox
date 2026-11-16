@@ -263,7 +263,8 @@ export const inboxMachinesOf = (
 // --- config.json: serve ------------------------------------------------------
 
 // Serve over the tailnet: `tailscale serve` proxies `http(s)://<host>` on the
-// tailnet to serve on 127.0.0.1, and serve answers such a request only when
+// tailnet, or `http(s)://<host>:<serve's own port>` when 80 and 443 are taken,
+// to serve on 127.0.0.1, and serve answers such a request only when
 // the peer Tailscale names is in `allowFrom`. `host` is this machine's
 // MagicDNS name (`tailscale status --json`, `Self.DNSName`, without its
 // trailing dot); each `allowFrom` entry is a peer's tailnet address, as

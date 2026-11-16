@@ -62,7 +62,10 @@ export const SERVE_HOST = '127.0.0.1';
 
 // --- The tailnet ---
 // When config.json sets `serve.tailnet`, `tailscale serve` proxies
-// `https://<tailnet host>` to this listener, and such a request is answered
+// `https://<tailnet host>`, `http://<tailnet host>`, or the tailnet host on
+// this listener's own port (`tailscale serve --http=7184`, for a machine whose
+// 80 and 443 already proxy something else) to this listener, and such a
+// request is answered
 // too, but only from a peer in `allowFrom`. The listener still binds
 // 127.0.0.1 only: the tailnet reaches it through Tailscale's proxy, never
 // directly. The proxy names the peer in `X-Forwarded-For`, APPENDING to any
@@ -99,14 +102,26 @@ const judgeTailnetRequest = (
     readonly origin: string | undefined;
     readonly forwardedFor: string;
   },
+  port: number | undefined,
   tailnet: ServeTailnet | undefined,
 ): LocalOnlyVerdict => {
   if (tailnet === undefined) return 'misdirected';
   const host = headers.host?.toLowerCase();
-  // `tailscale serve` over https (443) or plain http (80): the traffic is
-  // WireGuard-encrypted on the tailnet either way, and https only adds the
-  // certificate (and its name in the public CT logs).
-  const ownHosts = [tailnet.host, `${tailnet.host}:443`, `${tailnet.host}:80`];
+  // `tailscale serve` over https (443) or plain http (80), or on this
+  // listener's own port: the traffic is WireGuard-encrypted on the tailnet
+  // either way, and https only adds the certificate (and its name in the
+  // public CT logs). The own port needs no config key: the port the tailnet
+  // proxies to is the one this server listens on, so the two match. A
+  // listener with no TCP port adds none.
+  const authorities = [
+    tailnet.host,
+    ...(port === undefined ? [] : [`${tailnet.host}:${port}`]),
+  ];
+  const ownHosts = [
+    ...authorities,
+    `${tailnet.host}:443`,
+    `${tailnet.host}:80`,
+  ];
   if (host === undefined || !ownHosts.includes(host)) return 'misdirected';
   const peer = forwardedPeer(headers.forwardedFor);
   if (peer === undefined || !tailnet.allowFrom.includes(peer)) {
@@ -115,8 +130,9 @@ const judgeTailnetRequest = (
   const origin = headers.origin?.toLowerCase();
   if (
     origin !== undefined &&
-    origin !== `https://${tailnet.host}` &&
-    origin !== `http://${tailnet.host}`
+    !authorities.some(
+      (a) => origin === `https://${a}` || origin === `http://${a}`,
+    )
   ) {
     return 'cross-site';
   }
@@ -139,6 +155,7 @@ export const judgeLocalRequest = (
         origin: headers.origin,
         forwardedFor: headers.forwardedFor,
       },
+      port,
       tailnet,
     );
   }

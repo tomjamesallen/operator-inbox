@@ -331,7 +331,7 @@ describe('operator-inbox serve answers only local requests', () => {
     );
   });
 
-  it('answers the tailnet name only from an allowed peer, by the last X-Forwarded-For entry', () => {
+  it('answers the tailnet name, bare, on 80 or 443, or on its own port, only from an allowed peer, by the last X-Forwarded-For entry', () => {
     const tailnet = {
       host: 'mac.tail0000.ts.net',
       allowFrom: ['100.64.0.7'],
@@ -364,6 +364,39 @@ describe('operator-inbox serve answers only local requests', () => {
     expect(
       at('mac.tail0000.ts.net', '100.64.0.7', 'http://mac.tail0000.ts.net'),
     ).toBe('allow');
+    // The tailnet name on this listener's own port (tailscale serve
+    // --http=7184), from an allowed peer and its own origin only.
+    expect(at('mac.tail0000.ts.net:7184', '100.64.0.7')).toBe('allow');
+    expect(at('mac.tail0000.ts.net:7184', '100.64.0.8')).toBe('peer-refused');
+    expect(
+      at(
+        'mac.tail0000.ts.net:7184',
+        '100.64.0.7',
+        'http://mac.tail0000.ts.net:7184',
+      ),
+    ).toBe('allow');
+    expect(
+      at(
+        'mac.tail0000.ts.net:7184',
+        '100.64.0.7',
+        'https://mac.tail0000.ts.net:7184',
+      ),
+    ).toBe('allow');
+    expect(
+      at('mac.tail0000.ts.net:7184', '100.64.0.7', 'http://evil.example:7184'),
+    ).toBe('cross-site');
+    // Only the port this listener bound: another port is not this server.
+    expect(
+      judgeLocalRequest(
+        {
+          host: 'mac.tail0000.ts.net:7184',
+          origin: undefined,
+          forwardedFor: '100.64.0.7',
+        },
+        7185,
+        tailnet,
+      ),
+    ).toBe('misdirected');
     expect(at('mac.tail0000.ts.net:8080', '100.64.0.7')).toBe('misdirected');
     expect(
       at(
