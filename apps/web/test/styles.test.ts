@@ -104,6 +104,20 @@ describe('the stylesheet', () => {
     );
   });
 
+  // A column grows to fit its text only up to a comfortable line, at every
+  // width, so a long sentence in a cell wraps rather than running across a
+  // wide table. The phone's minimum stays under it.
+  it('caps each table column at a reading measure', async () => {
+    const css = await build([]);
+    const cell = css.match(/\[data-question-body\] :is\(th, td\) \{([^}]*)\}/);
+    expect(cell?.[1]).toContain('max-width: var(--container-cell-measure);');
+    expect(css).toContain('--container-cell-measure: 45ch');
+    // Not only on a phone: the cap sits outside the `compact` media query.
+    expect(css).not.toMatch(
+      /@media \(width < 48rem\) \{\s*\[data-question-body\] :is\(th, td\) \{[^}]*max-width/,
+    );
+  });
+
   // In the reading column a code block keeps the text's left edge and runs
   // right only. A picture (a table, an svg diagram, a Mermaid diagram's or a
   // drawing's figure) follows config.json's `wideBlocks`, which the reader

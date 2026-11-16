@@ -162,6 +162,13 @@
      at the table's size, so its words wrap between columns rather than
      inside them. Past what the screen holds, the table scrolls sideways. */
   --container-cell: 12ch;
+  /* The widest a table's column grows to fit its text: a comfortable line
+     for prose in a table, at the table's size, so a long sentence in a cell
+     wraps rather than running across the reader. A column of short text
+     keeps its own width. A table narrower than the text column still fills
+     it, so there the spare width may take a column past this, never past
+     the text column. */
+  --container-cell-measure: 45ch;
   /* How far a code block may run in the inbox reader: from the column's left
      edge to the right edge of the `@container` around it, so its lines keep
      the text's left edge. `%` is the column, `cqw` the room. A table or a
@@ -644,8 +651,10 @@
   [data-question-body] table {
     @apply w-full border-collapse text-11.5;
   }
+  /* Each column stops at the measure for a table's prose, so a long cell
+     wraps. */
   [data-question-body] :is(th, td) {
-    @apply border border-fg/12 px-1.5 py-0.75 text-left align-top;
+    @apply border border-fg/12 px-1.5 py-0.75 text-left align-top max-w-cell-measure;
   }
   /* On a phone a column keeps a readable width, so a table too wide for the
      screen scrolls in its box instead. */
