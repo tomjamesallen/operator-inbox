@@ -1,6 +1,7 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime';
 import { ConfigProvider, Console, Effect, Layer } from 'effect';
 import { CliError, Command } from 'effect/cli';
+import { importLogCommand } from './commands/import-log';
 import { inboxSubcommands } from './commands/inbox';
 import { infoCommand } from './commands/info';
 import { installCommand } from './commands/install';
@@ -33,6 +34,7 @@ const mainCommand = Command.make('operator-inbox', {}).pipe(
     machineTunnelCommand,
     installCommand,
     installClaudeHooksCommand,
+    importLogCommand,
     infoCommand,
     skillCommand,
   ]),
