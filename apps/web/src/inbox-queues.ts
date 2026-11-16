@@ -27,11 +27,14 @@ export const QUEUE_TITLES: Readonly<Record<QueueName, string>> = {
 export const answerKey = (inboxId: InboxId, number: number): string =>
   `${inboxId}/${number}`;
 
+// `inboxCode` is the Inbox's code, when it has one: with the question's
+// number it makes the code the card shows (`ab-xyz#12`).
 const queueItem = <Q extends Schema.Top>(question: Q) =>
   Schema.Struct({
     key: Schema.String,
     inboxId: InboxId,
     inboxLabel: Schema.String,
+    inboxCode: Schema.optionalKey(Schema.String),
     machine: InboxMachineKey,
     question,
   });
@@ -116,6 +119,7 @@ const itemsOf = <
       key: answerKey(v.inboxId, question.number),
       inboxId: v.inboxId,
       inboxLabel: v.label,
+      ...(v.code === undefined ? {} : { inboxCode: v.code }),
       machine: machineKeyOf(v),
       question,
     })),

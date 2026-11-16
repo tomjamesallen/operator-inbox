@@ -7,7 +7,9 @@ Each file here is the exact bytes the core writes for the fixed, literal input b
 What is here:
 
 - `inbox-events.jsonl`: every `InboxEvent` variant as the inbox log stores it, one encoded event per line.
+- `inbox-code-events.jsonl`: `InboxCodeAssigned`, which came after `inbox-events.jsonl` was pinned and so has its own file.
 - `dto-inbox-board.json`, `dto-inbox-index.json`: the inbox API's two read DTOs.
+- `dto-inbox-board-coded.json`: the board read with an Inbox's `code` on its row and its view, pinned apart for the same reason.
 - `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, rename).
 - `http-error-bodies.json`: the body of every error the inbox API sends. The messages of `InboxConfigUnreadable` and `KeybindingsUnreadable` name the app's own config paths.
 - `http-status.json`: the status of every error the inbox API sends, and every endpoint's method, path, successes and errors.

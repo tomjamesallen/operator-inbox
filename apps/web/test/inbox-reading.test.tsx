@@ -172,6 +172,52 @@ describe('the settled queues', () => {
   });
 });
 
+describe('question codes', () => {
+  const coded = () => board([{ ...VIEW_A, code: 'ex-abc' }, VIEW_B]);
+
+  it('shows the code where the copy button was, and copies what it copied', async () => {
+    serve.board = coded();
+    await mounted();
+    await onQueue(/Processed/);
+    await waitFor(() => expect(litKey()).toBe(`${A}/5`));
+    const code = within(lit()).getByRole('button', {
+      name: 'Copy ex-abc#5 for the agent session',
+    });
+    expect(code.textContent).toBe('ex-abc#5');
+    expect(code.hasAttribute('data-copy')).toBe(true);
+    const writeText = stubClipboard();
+    fireEvent.click(code);
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(
+        `Inbox ${A} · #5 — Fifth\nBody of **Fifth**\n\nWithdrawn: Settled in the session instead.`,
+      ),
+    );
+    await waitFor(() => expect(code.getAttribute('data-mark')).toBe('ok'));
+    expect(code.textContent).toBe('ex-abc#5');
+  });
+
+  it('shows #n for an Inbox with no code yet', async () => {
+    await mounted();
+    await waitFor(() => expect(litKey()).not.toBeUndefined());
+    expect(lit().querySelector('[data-question-code]')?.textContent).toMatch(
+      /^#\d+$/,
+    );
+  });
+
+  it('may go to the gutter with the sidebar shut, and stays in the eyebrow while it is open', async () => {
+    serve.board = coded();
+    await mounted();
+    const place = () =>
+      lit()
+        .querySelector('[data-question-code-place]')
+        ?.getAttribute('data-question-code-place');
+    await waitFor(() => expect(place()).toBe('gutter'));
+    fireEvent.click(burger());
+    await waitFor(() => expect(aside()).not.toBeNull());
+    await waitFor(() => expect(place()).toBe('eyebrow'));
+  });
+});
+
 describe('metadata', () => {
   const rule = (key: string) => ({
     key,

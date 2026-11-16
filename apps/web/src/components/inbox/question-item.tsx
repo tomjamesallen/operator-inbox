@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
-import { LOCAL_MACHINE_KEY } from '@operator-inbox/core/api';
+import { LOCAL_MACHINE_KEY, questionRef } from '@operator-inbox/core/api';
 import { memo } from 'react';
 import {
   copyMarkAtom,
@@ -16,13 +16,14 @@ import {
   heldKeyAtom,
   linkKeyAtom,
   type ReaderItem,
+  railStateAtom,
   shownQueuesAtom,
 } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { QuestionBody } from '../question-body';
 import { Colophon } from './colophon';
-import { ICON_COPY, ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
+import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
 import { HIGHLIGHT, type Mark, MarkStack, SELECTED } from './marks';
 
 const highlightOf = (item: ReaderItem) =>
@@ -37,29 +38,42 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
   ];
 };
 
-// A question's ⧉: its text, for discussing it with the agent's session.
-const CopyItem = ({ item }: { readonly item: ReaderItem }) => {
+// A question's code, `ab-xyz#12` (`#12` while its Inbox has none), and the
+// control that copies its text for discussing it with the agent's session:
+// the code underlined, and ✓ or ✗ beside it for a moment once clicked.
+//
+// It sits at the end of the eyebrow. With the sidebar shut and room in the
+// reader's column (`@code-gutter:`, a container query on the flow), it moves
+// out to the gutter left of the question's first line, past its dots. Open,
+// the sidebar covers that gutter, so the code stays in the eyebrow.
+const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
   const mark = useAtomValue(copyMarkAtom(item.key));
   const copy = useAtomSet(copyQuestionAtom(item.key));
   const hint = useAtomValue(keyHintAtom('copy_question'));
-  const { number } = item.question;
+  const gutter = useAtomValue(railStateAtom) === 'shut';
+  const code = questionRef(item.inboxCode, item.question.number);
   return (
-    <Tip label="Copy for the agent session" keys={hint.first}>
-      <button
-        type="button"
-        aria-label={`Copy #${number} for the agent session`}
-        data-mark={mark}
-        data-copy
-        onClick={() => copy(questionClipText(item.inboxId, item.question))}
-        className={`flex cursor-pointer items-center ${mark === 'ok' ? 'text-green' : mark === 'bad' ? 'text-red' : 'text-fg/30 hover:text-fg'}`}
-      >
-        <Icon
-          d={
-            mark === 'ok' ? ICON_DONE : mark === 'bad' ? ICON_FAILED : ICON_COPY
-          }
-        />
-      </button>
-    </Tip>
+    <span
+      data-question-code-place={gutter ? 'gutter' : 'eyebrow'}
+      className={`flex shrink-0 items-center ${gutter ? '@code-gutter:absolute @code-gutter:top-full @code-gutter:right-full @code-gutter:mt-s2 @code-gutter:mr-s5 @code-gutter:block @code-gutter:font-reading @code-gutter:text-18 @code-gutter:leading-card' : ''}`}
+    >
+      <Tip label="Copy for the agent session" keys={hint.first}>
+        <button
+          type="button"
+          aria-label={`Copy ${code} for the agent session`}
+          data-mark={mark}
+          data-copy
+          data-question-code={code}
+          onClick={() => copy(questionClipText(item.inboxId, item.question))}
+          className={`inline-flex cursor-pointer items-center gap-1 font-zen text-11 whitespace-nowrap tabular-nums underline decoration-current/40 underline-offset-2 focus-visible:decoration-current ${mark === 'ok' ? 'text-green' : mark === 'bad' ? 'text-red' : 'text-fg/40 hover:text-fg focus-visible:text-fg'}`}
+        >
+          {mark !== 'idle' && (
+            <Icon d={mark === 'ok' ? ICON_DONE : ICON_FAILED} />
+          )}
+          {code}
+        </button>
+      </Tip>
+    </span>
   );
 };
 
@@ -77,7 +91,8 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
   const note = highlightOf(item)?.note;
   return (
     // On a narrow screen the inbox takes the first line and the rest the next.
-    <div className="flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap">
+    // `relative`: the code's gutter place is measured from here.
+    <div className="relative flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap">
       {/* Short of room the inbox's name gives way, so the group still shows. */}
       <span className="min-w-0 truncate compact:w-full" data-zen-eyebrow>
         {machine !== undefined && (
@@ -107,7 +122,7 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
         <span className="min-w-0 truncate text-yellow">· {note}</span>
       )}
       <span className="ml-auto flex shrink-0 items-center gap-s2">
-        <CopyItem item={item} />
+        <CodeCopy item={item} />
       </span>
     </div>
   );

@@ -33,7 +33,7 @@ import {
   QuestionNumber,
   QuestionRevision,
 } from '../src/inbox';
-import { InboxId, SessionId } from '../src/schema';
+import { InboxCode, InboxId, SessionId } from '../src/schema';
 
 // Golden fixtures for every inbox form core encodes or decodes, in the v3
 // encoding: a clean type-check cannot see a silent change to the bytes. Each
@@ -223,11 +223,17 @@ describe('InboxEvent as stored in the log', () => {
   it('covers every tag of the union', () => {
     // A `Record` over the tag union, so tsc fails when a variant is added.
     // Inbox mode's two events and the mutes are not in the v3 encoding, so
-    // they have no v3 golden.
+    // they have no v3 golden. `InboxCodeAssigned` came after this golden was
+    // pinned, so it has its own (`inbox-code-events.jsonl`, below) and this
+    // one stays byte for byte as it was.
     const every: Record<
       Exclude<
         InboxEventTag,
-        'InboxModeOn' | 'InboxModeOff' | 'InboxMuted' | 'InboxUnmuted'
+        | 'InboxModeOn'
+        | 'InboxModeOff'
+        | 'InboxMuted'
+        | 'InboxUnmuted'
+        | 'InboxCodeAssigned'
       >,
       true
     > = {
@@ -272,6 +278,24 @@ describe('InboxEvent as stored in the log', () => {
       `{"_tag":"InboxOpened","inboxId":"${INBOX_B}","label":"Bare inbox"}`,
     );
     expect(Object.keys(decoded)).toStrictEqual(['_tag', 'inboxId', 'label']);
+  });
+});
+
+// `InboxCodeAssigned`, pinned on its own so the golden above is untouched.
+const CODE_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'InboxCodeAssigned',
+    inboxId: INBOX_A,
+    code: InboxCode.make('ex-abc'),
+  },
+];
+
+describe('InboxCodeAssigned as stored in the log', () => {
+  it('encodes to its golden JSON line and decodes back', () => {
+    const lines = CODE_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-code-events.jsonl', lines);
+    const read = golden('inbox-code-events.jsonl').split('\n').filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(CODE_EVENTS);
   });
 });
 
@@ -398,6 +422,26 @@ const INBOX_BOARD: InboxBoardDto = {
   ],
 };
 
+// The same reads with an Inbox's code on its row and its view, in goldens of
+// their own, so the two above stay as they were pinned.
+const INBOX_BOARD_CODED: InboxBoardDto = {
+  inboxes: [{ ...SUMMARY_B, code: InboxCode.make('ba-xyz') }],
+  totalAwaitingOperator: 0,
+  views: [
+    {
+      inboxId: INBOX_B,
+      label: 'Bare inbox',
+      code: InboxCode.make('ba-xyz'),
+      metadata: {},
+      archived: true,
+      pinnedGroups: [],
+      awaitingOperator: [],
+      awaitingAgent: [],
+      processed: [],
+    },
+  ],
+};
+
 const INBOX_INDEX: InboxIndexDto = {
   inboxes: [SUMMARY_A, SUMMARY_B],
   totalAwaitingOperator: 1,
@@ -418,6 +462,7 @@ const dtoCase = <T, E>(name: string, schema: Schema.Codec<T, E>, value: T) => ({
 const DTOS = [
   dtoCase('dto-inbox-board.json', InboxBoardDto, INBOX_BOARD),
   dtoCase('dto-inbox-index.json', InboxIndexDto, INBOX_INDEX),
+  dtoCase('dto-inbox-board-coded.json', InboxBoardDto, INBOX_BOARD_CODED),
   dtoCase('dto-payload-answer.json', AnswerPayload, {
     response: 'An answer.',
     seenRevision: rev(2),

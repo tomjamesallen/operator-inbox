@@ -65,6 +65,7 @@ export const answered = (
 export interface WireView {
   readonly inboxId: string;
   readonly label: string;
+  readonly code?: string;
   readonly metadata: Meta;
   readonly pinnedGroups: ReadonlyArray<string>;
   readonly archived: boolean;

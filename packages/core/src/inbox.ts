@@ -1,4 +1,5 @@
 import { Data, Effect, Result, Schema } from 'effect';
+import { questionRef } from './inbox-code';
 import {
   emptyMetadata,
   GROUP_KEY,
@@ -6,7 +7,7 @@ import {
   type MetadataValue,
   metadataPatch,
 } from './inbox-metadata';
-import { InboxId, SessionId } from './schema/identifiers';
+import { InboxCode, InboxId, SessionId } from './schema/identifiers';
 
 // The Inbox: a session's shared question queue with the operator, held as an
 // event log on this machine. This module is the pure half — the events, the
@@ -144,6 +145,19 @@ export const InboxRenamed = Schema.TaggedStruct('InboxRenamed', {
   previousLabel: Schema.optionalKey(Schema.String),
 });
 export type InboxRenamed = typeof InboxRenamed.Type;
+
+// The Inbox was given its code (`inbox-code.ts`): `ab-xyz`, which with a
+// Question's number is that Question's code, `ab-xyz#12`. Assigned once, in
+// the same append as `InboxOpened` for a new Inbox, and by serve at start-up
+// for one opened before codes. The first one folded is the Inbox's code for
+// good: a rename never changes it. The store tags it with the code, so a read
+// of a code's tag finds the Inbox holding it and an assignment conditioned on
+// that tag cannot hand one code to two Inboxes.
+export const InboxCodeAssigned = Schema.TaggedStruct('InboxCodeAssigned', {
+  inboxId: InboxId,
+  code: InboxCode,
+});
+export type InboxCodeAssigned = typeof InboxCodeAssigned.Type;
 
 // The agent put an Inbox away: its questions leave the All view, and the
 // Inbox moves into the sidebar's collapsed Archived section. Nothing is lost: an archived Inbox keeps its
@@ -331,6 +345,7 @@ export const InboxEvent = Schema.Union([
   InboxOpened,
   InboxAdopted,
   InboxRenamed,
+  InboxCodeAssigned,
   InboxArchived,
   InboxUnarchived,
   QuestionAsked,
@@ -428,6 +443,8 @@ export interface InboxState {
   // into this Inbox from a move out of it.
   readonly inboxId?: InboxId;
   readonly label: string;
+  // Its code, from its first `InboxCodeAssigned`; absent until it has one.
+  readonly code?: InboxCode;
   readonly metadata: Metadata;
   // True after `InboxArchived`, false again after `InboxUnarchived`.
   readonly archived: boolean;
@@ -481,6 +498,8 @@ export const evolveInbox = (
       return state;
     case 'InboxRenamed':
       return { ...state, label: event.label };
+    case 'InboxCodeAssigned':
+      return state.code === undefined ? { ...state, code: event.code } : state;
     case 'InboxArchived':
       return { ...state, archived: true };
     case 'InboxUnarchived':
@@ -713,6 +732,7 @@ export const recentlyProcessed = (
 export interface InboxSummary {
   readonly inboxId: InboxId;
   readonly label: string;
+  readonly code?: InboxCode;
   readonly archived: boolean;
   readonly muted: boolean;
   readonly awaitingOperator: number;
@@ -728,6 +748,7 @@ export const summariseInbox = (
 ): InboxSummary => ({
   inboxId,
   label: state.label,
+  ...(state.code === undefined ? {} : { code: state.code }),
   archived: state.archived,
   muted: state.muted,
   awaitingOperator: awaitingOperator(state).length,
@@ -861,7 +882,8 @@ export type InboxRefusalReason =
   | 'not-waiting'
   | 'not-highlighted'
   | 'moved'
-  | 'same-inbox';
+  | 'same-inbox'
+  | 'code-taken';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
 // name, so the agent can look at it and adopt it.
@@ -894,15 +916,18 @@ const find = (state: InboxState, number: QuestionNumber) =>
 const missing = (state: InboxState, number: QuestionNumber) => {
   const moved = state.questions.find((q) => q.number === number)?.movedTo;
   return moved === undefined
-    ? refuse('unknown-question', `there is no question #${number}`)
+    ? refuse(
+        'unknown-question',
+        `there is no question ${questionRef(state.code, number)}`,
+      )
     : refuse(
         'moved',
-        `#${number} was moved to inbox ${moved.inboxId}, where it is #${moved.number}`,
+        `${questionRef(state.code, number)} was moved to inbox ${moved.inboxId}, where it is #${moved.number}`,
       );
 };
 
-const withdrawnSentence = (number: QuestionNumber) =>
-  `#${number} was withdrawn; it no longer needs an answer`;
+const withdrawnSentence = (ref: string) =>
+  `${ref} was withdrawn; it no longer needs an answer`;
 
 /**
  * The question the agent may still change: asked, not yet answered. Shared by
@@ -920,14 +945,17 @@ const changeable = (
     case 'awaiting-agent':
       return refuse(
         'already-answered',
-        `#${number} is already answered; use \`inbox done\``,
+        `${questionRef(state.code, number)} is already answered; use \`inbox done\``,
       );
     case 'processed':
       return q.withdrawn
-        ? refuse('withdrawn', `#${number} was already withdrawn`)
+        ? refuse(
+            'withdrawn',
+            `${questionRef(state.code, number)} was already withdrawn`,
+          )
         : refuse(
             'already-processed',
-            `#${number} was already answered and processed`,
+            `${questionRef(state.code, number)} was already answered and processed`,
           );
     case 'awaiting-operator':
       return Result.succeed(q);
@@ -1027,6 +1055,65 @@ export const decideOpen = (
       ...(metadata === undefined ? {} : { metadata }),
     }),
   );
+};
+
+// --- codes ---------------------------------------------------------------------------
+
+/**
+ * The Inboxes holding `code`, from the events its code tag holds (the store
+ * hands back exactly those, oldest first): each Inbox whose first assignment
+ * gave it that code. Every assignment carries the tag, so the read is the
+ * whole answer, with no older log to consult as names have.
+ */
+export const codeHolders = (
+  code: InboxCode,
+  events: ReadonlyArray<InboxEvent>,
+): ReadonlyArray<InboxId> => {
+  const first = new Map<InboxId, InboxCode>();
+  for (const event of events)
+    if (event._tag === 'InboxCodeAssigned' && !first.has(event.inboxId))
+      first.set(event.inboxId, event.code);
+  return [...first].filter(([, c]) => c === code).map(([id]) => id);
+};
+
+/**
+ * The first of `candidates` no Inbox other than `self` holds, given the
+ * events of every candidate's code tag; none when all are taken.
+ */
+export const firstFreeCode = (input: {
+  readonly candidates: ReadonlyArray<InboxCode>;
+  readonly self: InboxId;
+  readonly codeEvents: ReadonlyArray<InboxEvent>;
+}): InboxCode | undefined =>
+  input.candidates.find((code) =>
+    codeHolders(code, input.codeEvents).every((id) => id === input.self),
+  );
+
+/**
+ * Give an Inbox its code: `code` is the first free one the edge's candidates
+ * gave (`firstFreeCode`), undefined when every one is taken. An Inbox that
+ * has a code keeps it (`unchanged`), so the assignment is safe to repeat.
+ */
+export const decideAssignCode = (
+  state: InboxState,
+  input: { readonly inboxId: InboxId; readonly code: InboxCode | undefined },
+): Result.Result<InboxCodeAssigned, InboxRefusal> => {
+  if (!state.opened) return notFound(input.inboxId);
+  if (state.code !== undefined)
+    return refuse(
+      'unchanged',
+      `inbox ${input.inboxId} already has its code, ${state.code}`,
+    );
+  if (input.code === undefined)
+    return refuse(
+      'code-taken',
+      `every code drawn for inbox ${input.inboxId} is taken; run it again to draw more`,
+    );
+  return Result.succeed({
+    _tag: 'InboxCodeAssigned',
+    inboxId: input.inboxId,
+    code: input.code,
+  });
 };
 
 /**
@@ -1204,7 +1291,11 @@ export const decideQuestionMetadata = (
   const q = find(state, input.number);
   if (q === undefined) return missing(state, input.number);
   return Result.map(
-    metadataChange(q.metadata, input, `#${input.number}'s`),
+    metadataChange(
+      q.metadata,
+      input,
+      `${questionRef(state.code, input.number)}'s`,
+    ),
     ({ set, unset }): QuestionMetadataChanged => ({
       _tag: 'QuestionMetadataChanged',
       inboxId: input.inboxId,
@@ -1236,18 +1327,22 @@ export const decideAnswer = (
   if (q.state === 'awaiting-agent')
     return refuse(
       'already-answered',
-      `#${input.number} was already answered; the agent has it`,
+      `${questionRef(state.code, input.number)} was already answered; the agent has it`,
     );
-  if (q.withdrawn) return refuse('withdrawn', withdrawnSentence(input.number));
+  if (q.withdrawn)
+    return refuse(
+      'withdrawn',
+      withdrawnSentence(questionRef(state.code, input.number)),
+    );
   if (q.state === 'processed')
     return refuse(
       'already-processed',
-      `#${input.number} was already answered and the agent has dealt with it`,
+      `${questionRef(state.code, input.number)} was already answered and the agent has dealt with it`,
     );
   if (input.seenRevision !== undefined && q.revision > input.seenRevision)
     return refuse(
       'changed',
-      `#${input.number} changed after you opened it; read it again before answering`,
+      `${questionRef(state.code, input.number)} changed after you opened it; read it again before answering`,
     );
   if (input.deferred !== true && input.response.trim().length === 0)
     return refuse('empty', 'an answer cannot be empty');
@@ -1274,13 +1369,17 @@ export const decideProcess = (
   if (q.state === 'awaiting-operator')
     return refuse(
       'not-answered',
-      `#${input.number} has not been answered yet, so it cannot be processed`,
+      `${questionRef(state.code, input.number)} has not been answered yet, so it cannot be processed`,
     );
-  if (q.withdrawn) return refuse('withdrawn', `#${input.number} was withdrawn`);
+  if (q.withdrawn)
+    return refuse(
+      'withdrawn',
+      `${questionRef(state.code, input.number)} was withdrawn`,
+    );
   if (q.state === 'processed')
     return refuse(
       'already-processed',
-      `#${input.number} was already processed`,
+      `${questionRef(state.code, input.number)} was already processed`,
     );
   return Result.succeed({
     _tag: 'AnswerProcessed',
@@ -1314,7 +1413,7 @@ export const decideEdit = (
     if (title === q.title && body === q.body)
       return refuse(
         'unchanged',
-        `#${input.number} already says that; nothing changed`,
+        `${questionRef(state.code, input.number)} already says that; nothing changed`,
       );
     return Result.succeed({
       _tag: 'QuestionEdited',
@@ -1378,7 +1477,7 @@ export const decideHighlight = (
     if (q.state !== 'awaiting-operator')
       return refuse(
         'not-waiting',
-        `#${number} is not waiting for the operator; only a question in their inbox can be highlighted`,
+        `${questionRef(state.code, number)} is not waiting for the operator; only a question in their inbox can be highlighted`,
       );
     events.push({
       _tag: 'QuestionHighlighted',
@@ -1423,7 +1522,10 @@ export const decideDismissHighlight = (
     const q = find(state, number);
     if (q === undefined) return missing(state, number);
     if (q.highlight === undefined)
-      return refuse('not-highlighted', `#${number} is not highlighted`);
+      return refuse(
+        'not-highlighted',
+        `${questionRef(state.code, number)} is not highlighted`,
+      );
     events.push(dismiss(number));
   }
   return Result.succeed(events);
