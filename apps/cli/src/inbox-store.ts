@@ -20,7 +20,6 @@ import {
   type InboxRefusal,
   type InboxState,
   inboxState,
-  inboxStateStamped,
   nameHolder,
   normaliseInboxLabel,
   priorityHolderOf,
@@ -62,6 +61,19 @@ import {
   resolveInboxDatabaseEdge,
   STORE_CONFIG,
 } from './inbox-database';
+import {
+  catchUpReadModel,
+  ensureReadModelTables,
+  InboxReadModel,
+  InboxReadModelInMemory,
+  inboxesOf,
+  type ListedInbox,
+  listReadModel,
+  makeInboxReadModelSql,
+  type QuestionCounts,
+} from './inbox-read-model';
+
+export type { ListedInbox } from './inbox-read-model';
 
 // The inbox event log: one machine-local, append-only
 // kairos-es store behind the `InboxLog` service. Which questions await whom is
@@ -158,18 +170,6 @@ export interface PairRead {
   readonly head: Position;
 }
 
-/**
- * One inbox as `listAll` hands it back: its folded state and the stamp of its
- * newest event (the seq is what core's `orderInboxes` sorts on; the time is
- * for display and never for ordering).
- */
-export interface ListedInbox {
-  readonly inboxId: InboxId;
-  // Folded with stamps, so every question knows when it moved.
-  readonly state: InboxState;
-  readonly lastActivity: EventStamp;
-}
-
 /** An event's stamp: its global position as a number, its time as ISO. */
 const stampOf = (position: Position, occurredAt: DateTime.Utc): EventStamp => ({
   seq: Number(position),
@@ -236,11 +236,18 @@ export class InboxLog extends Context.Service<
     readonly readSession: (
       sessionId: SessionId,
     ) => Effect.Effect<InboxRead, InputError>;
-    /** Every inbox on the machine, in the order they were opened. */
+    /**
+     * Every inbox on the machine, in the order they were opened, served from
+     * the list's read model (`inbox-read-model.ts`) once it is caught up.
+     */
     readonly listAll: () => Effect.Effect<
       ReadonlyArray<ListedInbox>,
       InputError
     >;
+    /** Counts over every Question, from the same read model. */
+    readonly countQuestions: (
+      since: string,
+    ) => Effect.Effect<QuestionCounts, InputError>;
     readonly append: (
       events: Arr.NonEmptyReadonlyArray<InboxEvent>,
       guard: InboxGuard,
@@ -336,38 +343,36 @@ const priorityBoundary = (inboxId: InboxId) =>
     query.item({ tags: [priorityTag] }),
   ]);
 
-/** Every inbox an event belongs to: its own, and a move's destination. */
-const inboxesOf = (event: InboxEvent): ReadonlyArray<InboxId> =>
-  event._tag === 'QuestionMoved'
-    ? [event.inboxId, event.toInboxId]
-    : [event.inboxId];
-
-// A mode switch is the session's, and a priority mark the operator's own
-// arrangement, as a pin is; neither is news in the Inbox.
-const isQuietEvent = (event: InboxEvent) =>
-  event._tag === 'InboxModeOn' ||
-  event._tag === 'InboxModeOff' ||
-  event._tag === 'InboxPriorityMarked' ||
-  event._tag === 'InboxPriorityCleared';
-
-/** `InboxLog` over whatever `DcbEventStore` and `InboxBlobs` are provided. */
+/**
+ * `InboxLog` over whatever `DcbEventStore`, `InboxBlobs` and `InboxReadModel`
+ * are provided.
+ */
 export const makeInboxLog = Effect.gen(function* () {
   const store = yield* DcbEventStore;
   const blobs = yield* InboxBlobs;
-  const collectSequenced = (q: ReturnType<typeof query.all>) =>
+  const readModel = yield* InboxReadModel;
+  const collectSequenced = (
+    q: ReturnType<typeof query.all>,
+    after?: Position,
+  ) =>
     Effect.gen(function* () {
-      const response = yield* store.read(q);
+      const response = yield* store.read(
+        q,
+        after === undefined ? undefined : { after },
+      );
       const sequenced = yield* Stream.runCollect(response.events);
       return { sequenced, head: response.head };
     });
-  const collect = (q: ReturnType<typeof query.all>) =>
-    Effect.map(collectSequenced(q), ({ sequenced, head }): InboxRead => {
+  const collect = (q: ReturnType<typeof query.all>, after?: Position) =>
+    Effect.map(collectSequenced(q, after), ({ sequenced, head }): InboxRead => {
       const stamped = sequenced.map((s) => ({
         event: decodeEvent(textDecoder.decode(s.event.data)),
         stamp: stampOf(s.position, s.event.occurredAt),
       }));
       return { events: stamped.map((e) => e.event), stamped, head };
     });
+  // The list's read model catches up from the log after its checkpoint.
+  const readAfter = (after: Position) => collect(query.all(), after);
   return InboxLog.of({
     putBlob: blobs.put,
     readBlobs: blobs.get,
@@ -434,33 +439,12 @@ export const makeInboxLog = Effect.gen(function* () {
         Option.fromNullishOr(sessionInboxMode(sessionId, stamped).inboxId),
       ),
     readSession: (sessionId) => collect(query.tags([sessionTag(sessionId)])),
-    listAll: () =>
-      Effect.map(collect(query.all()), ({ stamped }) => {
-        const byInbox = new Map<
-          InboxId,
-          Array<{ readonly event: InboxEvent; readonly stamp: EventStamp }>
-        >();
-        for (const entry of stamped)
-          for (const inboxId of inboxesOf(entry.event)) {
-            const list = byInbox.get(inboxId) ?? [];
-            list.push(entry);
-            byInbox.set(inboxId, list);
-          }
-        return [...byInbox].flatMap(([inboxId, list]): Array<ListedInbox> => {
-          // A mode switch or a priority mark is not news in the Inbox, so it
-          // does not move the Inbox up the operator's list.
-          const last =
-            list.filter((e) => !isQuietEvent(e.event)).at(-1) ?? list.at(-1);
-          if (last === undefined) return [];
-          return [
-            {
-              inboxId,
-              state: inboxStateStamped(list),
-              lastActivity: last.stamp,
-            },
-          ];
-        });
-      }),
+    listAll: () => listReadModel(readModel, readAfter),
+    countQuestions: (since) =>
+      Effect.andThen(
+        catchUpReadModel(readModel, readAfter),
+        readModel.counts(since),
+      ),
     append: (events, guard) =>
       Effect.gen(function* () {
         const occurredAt = yield* DateTime.now;
@@ -538,8 +522,9 @@ export const decideAndAppend = <A>(
 /**
  * The same cycle for a decision that takes a name — opening an inbox, or
  * renaming one. One read covers the inbox and the name's label tag, and the
- * full index is read too, for inboxes named before the label tags existed
- * (core's `nameHolder`). The append is conditioned on the inbox AND the name,
+ * full index is read too, from the list's read model, for inboxes named
+ * before the label tags existed (core's `nameHolder`). The index only finds
+ * the name's likely holder: the append is conditioned on the inbox AND the name,
  * so of two sessions racing for one name, the second's append fails, and its
  * re-read finds the first holding it and refuses with that inbox's id.
  *
@@ -871,6 +856,7 @@ export const connectInboxLog = (
         const migrated = Layer.effectDiscard(
           Effect.andThen(addMetadataColumn, ensureSchema(STORE_CONFIG)).pipe(
             Effect.andThen(ensureBlobTable),
+            Effect.andThen(ensureReadModelTables),
             Effect.provideServiceEffect(SqlClient.SqlClient, SqliteClient),
           ),
         );
@@ -882,9 +868,18 @@ export const connectInboxLog = (
             Effect.provideServiceEffect(SqlClient.SqlClient, SqliteClient),
           ),
         );
+        // The list's read model on the same client, so its rows sit in the
+        // same file as the events they are folded from.
+        const readModel = Layer.effect(
+          InboxReadModel,
+          makeInboxReadModelSql.pipe(
+            Effect.provideServiceEffect(SqlClient.SqlClient, SqliteClient),
+          ),
+        );
         return Layer.effect(InboxLog, makeInboxLog).pipe(
           Layer.provide(storeLayer(STORE_CONFIG)),
           Layer.provide(blobs),
+          Layer.provide(readModel),
           Layer.provide(migrated),
           Layer.provide(clientLayer({ filename: resolved.path })),
         );
@@ -911,11 +906,18 @@ export const inboxLogLive: Layer.Layer<
   FileSystem.FileSystem
 > = Layer.unwrap(Effect.map(resolveInboxDatabaseEdge, connectInboxLog));
 
-/** The in-memory log, for tests: kairos-es's own in-memory store, and blobs in memory. */
+/**
+ * The in-memory log, for tests: kairos-es's own in-memory store, and blobs
+ * and the list's read model in memory.
+ */
 export const InboxLogInMemory: Layer.Layer<InboxLog> = Layer.effect(
   InboxLog,
   makeInboxLog,
-).pipe(Layer.provide(DcbEventStoreInMemory), Layer.provide(InboxBlobsInMemory));
+).pipe(
+  Layer.provide(DcbEventStoreInMemory),
+  Layer.provide(InboxBlobsInMemory),
+  Layer.provide(InboxReadModelInMemory),
+);
 
 // --- lazy acquisition --------------------------------------------------------------
 
@@ -1052,6 +1054,7 @@ export const makeInboxLogLazy = <R>(
         readSession: (sessionId) =>
           bounded((log) => log.readSession(sessionId)),
         listAll: () => bounded((log) => log.listAll()),
+        countQuestions: (since) => bounded((log) => log.countQuestions(since)),
         append: (events, guard) => bounded((log) => log.append(events, guard)),
         putBlob: (blob) => bounded((log) => log.putBlob(blob)),
         readBlobs: (shas) => bounded((log) => log.readBlobs(shas)),
