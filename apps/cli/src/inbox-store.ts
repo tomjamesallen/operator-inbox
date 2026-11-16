@@ -9,8 +9,11 @@ import {
   Tag,
 } from '@kairos-es/core';
 import {
+  codeHolders,
   describeInboxDatabase,
   type EventStamp,
+  firstFreeCode,
+  type InboxCode,
   InboxEvent,
   type InboxId,
   type InboxRefusal,
@@ -77,12 +80,16 @@ import {
 //   means two sessions racing for one name cannot both win;
 // - `QuestionMoved` also carries `inbox:<toInboxId>`: it belongs to both
 //   Inboxes, so a read of either sees it, and its append is conditioned on
-//   both.
+//   both;
+// - `InboxCodeAssigned` carries `inbox-code:<code>`, so a read of a code's
+//   tag finds who holds it (`findByCode`), and an assignment conditioned on
+//   it means two Inboxes racing for one code cannot both win.
 
 const inboxTag = (inboxId: InboxId) => Tag.make(`inbox:${inboxId}`);
 const sessionTag = (sessionId: SessionId) => Tag.make(`session:${sessionId}`);
 const labelTag = (label: string) =>
   Tag.make(`inbox-label:${normaliseInboxLabel(label)}`);
+const codeTag = (code: InboxCode) => Tag.make(`inbox-code:${code}`);
 
 const EventJson = Schema.fromJsonString(InboxEvent);
 const encodeEvent = Schema.encodeSync(EventJson);
@@ -103,13 +110,16 @@ export interface InboxRead {
 
 /**
  * One inbox's events and the events that took or released one name, read
- * together so one head conditions the append on both (`readNamed`).
+ * together so one head conditions the append on both (`readNamed`), with
+ * the events of any codes it may take.
  */
 export interface NamedRead {
   // The inbox's own events, oldest first.
   readonly inbox: ReadonlyArray<InboxEvent>;
-  // Every event the name's label tag holds, oldest first.
+  // Every event the name's label tag holds, oldest first; none with no name.
   readonly label: ReadonlyArray<InboxEvent>;
+  // Every event the codes' tags hold, oldest first; none with no codes.
+  readonly codes: ReadonlyArray<InboxEvent>;
   readonly head: Position;
 }
 
@@ -141,23 +151,35 @@ const stampOf = (position: Position, occurredAt: DateTime.Utc): EventStamp => ({
 /**
  * Append only if no event tagged with the inboxes the events touch landed
  * after `after` — nor, when `label` is given, any event tagged with that
- * name. With `session`, the condition is that session's tag alone, the query
+ * name, nor, when `codes` are, any tagged with one of them. With `session`, the condition is that session's tag alone, the query
  * `readSession` reads: a decision taken from the session's events is
  * conditioned on what it read, and nothing else (`decideSessionAndAppend`).
  */
 export type InboxGuard =
-  | { readonly after: Position; readonly label?: string }
+  | {
+      readonly after: Position;
+      readonly label?: string;
+      readonly codes?: ReadonlyArray<InboxCode>;
+    }
   | { readonly after: Position; readonly session: SessionId };
 
 export class InboxLog extends Context.Service<
   InboxLog,
   {
     readonly read: (inboxId: InboxId) => Effect.Effect<InboxRead, InputError>;
-    /** One inbox and one name's label tag, in one read with one head. */
+    /**
+     * One inbox, one name's label tag (none when `label` is undefined) and
+     * the tags of `codes`, in one read with one head.
+     */
     readonly readNamed: (
       inboxId: InboxId,
-      label: string,
+      label: string | undefined,
+      codes?: ReadonlyArray<InboxCode>,
     ) => Effect.Effect<NamedRead, InputError>;
+    /** The inbox holding `code`, if any. */
+    readonly findByCode: (
+      code: InboxCode,
+    ) => Effect.Effect<Option.Option<InboxId>, InputError>;
     /** Two inboxes in one read with one head, for a move between them. */
     readonly readPair: (
       a: InboxId,
@@ -213,6 +235,7 @@ const tagsFor = (event: InboxEvent) => {
     tags.push(labelTag(event.label));
   }
   if (event._tag === 'QuestionMoved') tags.push(inboxTag(event.toInboxId));
+  if (event._tag === 'InboxCodeAssigned') tags.push(codeTag(event.code));
   if (event._tag === 'InboxRenamed') {
     tags.push(labelTag(event.label));
     if (event.previousLabel !== undefined) {
@@ -224,20 +247,27 @@ const tagsFor = (event: InboxEvent) => {
 };
 
 /**
- * The boundary an append is conditioned on: every inbox it touches, and a
- * name if given. Each `query.item` matches one tag, so the items together
- * match an event carrying any of them.
+ * The boundary an append is conditioned on: every inbox it touches, a name
+ * if given, and any codes. Each `query.item` matches one tag, so the items
+ * together match an event carrying any of them.
  */
 const boundary = (
   inboxIds: ReadonlyArray<InboxId>,
   label: string | undefined,
+  codes: ReadonlyArray<InboxCode> = [],
 ) => {
   const [only, ...more] = inboxIds;
-  if (only !== undefined && more.length === 0 && label === undefined)
+  if (
+    only !== undefined &&
+    more.length === 0 &&
+    label === undefined &&
+    codes.length === 0
+  )
     return query.tags([inboxTag(only)]);
   const [head, ...tail] = [
     ...inboxIds.map((id) => query.item({ tags: [inboxTag(id)] })),
     ...(label === undefined ? [] : [query.item({ tags: [labelTag(label)] })]),
+    ...codes.map((code) => query.item({ tags: [codeTag(code)] })),
   ];
   // Every caller names at least one inbox.
   return head === undefined ? query.all() : query.or([head, ...tail]);
@@ -270,21 +300,29 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
     });
   return InboxLog.of({
     read: (inboxId) => collect(query.tags([inboxTag(inboxId)])),
-    readNamed: (inboxId, label) =>
+    readNamed: (inboxId, label, codes = []) =>
       Effect.map(
-        collectSequenced(boundary([inboxId], label)),
+        collectSequenced(boundary([inboxId], label, codes)),
         ({ sequenced, head }): NamedRead => {
           const own = inboxTag(inboxId);
-          const name = labelTag(label);
+          const name = label === undefined ? undefined : labelTag(label);
+          const coded = new Set(codes.map(codeTag));
           const inbox: Array<InboxEvent> = [];
           const named: Array<InboxEvent> = [];
+          const codeEvents: Array<InboxEvent> = [];
           for (const s of sequenced) {
             const event = decodeEvent(textDecoder.decode(s.event.data));
             if (s.event.tags.includes(own)) inbox.push(event);
-            if (s.event.tags.includes(name)) named.push(event);
+            if (name !== undefined && s.event.tags.includes(name))
+              named.push(event);
+            if (s.event.tags.some((t) => coded.has(t))) codeEvents.push(event);
           }
-          return { inbox, label: named, head };
+          return { inbox, label: named, codes: codeEvents, head };
         },
+      ),
+    findByCode: (code) =>
+      Effect.map(collect(query.tags([codeTag(code)])), ({ events }) =>
+        Option.fromNullishOr(codeHolders(code, events)[0]),
       ),
     readPair: (a, b) =>
       Effect.map(
@@ -357,7 +395,11 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
         const failIfEventsMatch =
           'session' in guard
             ? query.tags([sessionTag(guard.session)])
-            : boundary([...new Set(events.flatMap(inboxesOf))], guard.label);
+            : boundary(
+                [...new Set(events.flatMap(inboxesOf))],
+                guard.label,
+                guard.codes,
+              );
         yield* store.append([first, ...rest], {
           failIfEventsMatch,
           after: guard.after,
@@ -409,10 +451,16 @@ export const decideAndAppend = <A>(
  * (core's `nameHolder`). The append is conditioned on the inbox AND the name,
  * so of two sessions racing for one name, the second's append fails, and its
  * re-read finds the first holding it and refuses with that inbox's id.
+ *
+ * With `codes` (an open, which assigns the new inbox its code), the same read
+ * covers those codes' tags too, the decision is handed the first one no other
+ * inbox holds (`free`, core's `firstFreeCode`), and the append is conditioned
+ * on them as well, so a code taken meanwhile sends the cycle round again.
  */
 export type NamedDecision<A> = (
   state: InboxState,
   holder: InboxId | undefined,
+  free: InboxCode | undefined,
 ) => Result.Result<
   { readonly events: ReadonlyArray<InboxEvent>; readonly result: A },
   InboxRefusal
@@ -422,17 +470,19 @@ export const decideNamedAndAppend = <A>(
   inboxId: InboxId,
   label: string,
   decide: NamedDecision<A>,
+  codes: ReadonlyArray<InboxCode> = [],
 ) =>
   // An empty name has no label tag to read; the decision refuses it on the
   // inbox's own read.
   normaliseInboxLabel(label) === ''
-    ? decideAndAppend(inboxId, (state) => decide(state, undefined))
-    : decideNamedCycle(inboxId, label, decide);
+    ? decideAndAppend(inboxId, (state) => decide(state, undefined, undefined))
+    : decideNamedCycle(inboxId, label, decide, codes);
 
 const decideNamedCycle = <A>(
   inboxId: InboxId,
   label: string,
   decide: NamedDecision<A>,
+  codes: ReadonlyArray<InboxCode>,
 ) =>
   Effect.flatMap(InboxLog, (log) =>
     retryOnConflict(
@@ -440,18 +490,66 @@ const decideNamedCycle = <A>(
         const index = (yield* log.listAll())
           .filter((i) => i.state.opened)
           .map((i) => ({ inboxId: i.inboxId, label: i.state.label }));
-        const read = yield* log.readNamed(inboxId, label);
+        const read = yield* log.readNamed(inboxId, label, codes);
         const holder = nameHolder({
           label,
           self: inboxId,
           labelEvents: read.label,
           index,
         });
-        const decided = decide(inboxState(read.inbox), holder);
+        const free = firstFreeCode({
+          candidates: codes,
+          self: inboxId,
+          codeEvents: read.codes,
+        });
+        const decided = decide(inboxState(read.inbox), holder, free);
         if (Result.isFailure(decided)) return Result.fail(decided.failure);
         const [first, ...rest] = decided.success.events;
         if (first !== undefined)
-          yield* log.append([first, ...rest], { after: read.head, label });
+          yield* log.append([first, ...rest], {
+            after: read.head,
+            label,
+            ...(codes.length === 0 ? {} : { codes }),
+          });
+        return Result.succeed(decided.success.result);
+      }),
+      Schedule.recurs(1),
+    ),
+  );
+
+/**
+ * The cycle for giving an inbox a code: one read of the inbox and of the
+ * candidate codes' tags, a decision handed the first code no other inbox
+ * holds (`free`), and an append conditioned on the inbox and every
+ * candidate, retried once on a conflict.
+ */
+export type CodeDecision<A> = (
+  state: InboxState,
+  free: InboxCode | undefined,
+) => Result.Result<
+  { readonly events: ReadonlyArray<InboxEvent>; readonly result: A },
+  InboxRefusal
+>;
+
+export const decideCodedAndAppend = <A>(
+  inboxId: InboxId,
+  codes: ReadonlyArray<InboxCode>,
+  decide: CodeDecision<A>,
+) =>
+  Effect.flatMap(InboxLog, (log) =>
+    retryOnConflict(
+      Effect.gen(function* () {
+        const read = yield* log.readNamed(inboxId, undefined, codes);
+        const free = firstFreeCode({
+          candidates: codes,
+          self: inboxId,
+          codeEvents: read.codes,
+        });
+        const decided = decide(inboxState(read.inbox), free);
+        if (Result.isFailure(decided)) return Result.fail(decided.failure);
+        const [first, ...rest] = decided.success.events;
+        if (first !== undefined)
+          yield* log.append([first, ...rest], { after: read.head, codes });
         return Result.succeed(decided.success.result);
       }),
       Schedule.recurs(1),
@@ -803,8 +901,9 @@ export const makeInboxLogLazy = <R>(
         );
       return InboxLog.of({
         read: (inboxId) => bounded((log) => log.read(inboxId)),
-        readNamed: (inboxId, label) =>
-          bounded((log) => log.readNamed(inboxId, label)),
+        readNamed: (inboxId, label, codes) =>
+          bounded((log) => log.readNamed(inboxId, label, codes)),
+        findByCode: (code) => bounded((log) => log.findByCode(code)),
         readPair: (a, b) => bounded((log) => log.readPair(a, b)),
         findBySession: (sessionId) =>
           bounded((log) => log.findBySession(sessionId)),

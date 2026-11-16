@@ -3,6 +3,7 @@ import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
 import { Metadata, QuestionNumber, QuestionRevision } from '../inbox';
 import { SessionLink } from '../inbox-metadata';
 import {
+  InboxCode,
   InboxId,
   InboxMachineKey,
   type InboxMachinePort,
@@ -164,6 +165,12 @@ export const machineKeyOf = (x: {
   readonly machine?: InboxMachineRef;
 }): InboxMachineKey => x.machine?.key ?? LOCAL_MACHINE_KEY;
 
+// The Inbox's code (core's `InboxCodeAssigned`), `ab-xyz`: with a question's
+// number it is that question's code, `ab-xyz#12`, which the page shows on the
+// card and the agent's CLI takes. Absent for an Inbox not yet given one, and
+// from a machine whose serve predates codes.
+const code = Schema.optionalKey(InboxCode);
+
 // The three columns. `awaitingOperator` is oldest asked first (the page sorts
 // it either way); `awaitingAgent` is oldest answered first, the order the
 // agent will probably process them in; `processed` is
@@ -174,6 +181,7 @@ export const machineKeyOf = (x: {
 export const InboxViewDto = Schema.Struct({
   inboxId: InboxId,
   label: Schema.String,
+  code,
   metadata: Metadata,
   archived: Schema.Boolean,
   // The operator muted it: greyed in the sidebar, its groups folded away and
@@ -195,6 +203,7 @@ export type InboxViewDto = typeof InboxViewDto.Type;
 export const InboxSummaryDto = Schema.Struct({
   inboxId: InboxId,
   label: Schema.String,
+  code,
   archived: Schema.Boolean,
   // The operator pinned it: the sidebar puts it above the unpinned ones.
   pinned: Schema.Boolean,

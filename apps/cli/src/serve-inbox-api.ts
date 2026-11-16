@@ -126,6 +126,7 @@ export const toInboxView = (
 ): InboxViewDto => ({
   inboxId,
   label: state.label,
+  ...(state.code === undefined ? {} : { code: state.code }),
   metadata: state.metadata,
   archived: state.archived,
   muted: state.muted,
@@ -321,6 +322,7 @@ const toIndex = (
   inboxes: ordered.map((s) => ({
     inboxId: s.inboxId,
     label: s.label,
+    ...(s.code === undefined ? {} : { code: s.code }),
     archived: s.archived,
     pinned: s.listed.state.pinned,
     muted: s.listed.state.muted,

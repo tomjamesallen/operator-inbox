@@ -20,6 +20,7 @@ import {
 import { Command, Flag } from 'effect/cli';
 import { HttpServer } from 'effect/http';
 import { InputError } from '../errors';
+import { assignMissingCodesAtStart } from '../inbox-codes';
 import {
   type InboxMachinesRead,
   machinesOffOf,
@@ -268,6 +269,9 @@ export const serveCommand = Command.make(
       const webDist = Option.isSome(staticDir)
         ? path.resolve(staticDir.value)
         : yield* locateWebDist();
+      // Inboxes opened before codes get theirs from the log this serve
+      // serves, in the background so the listener never waits on the store.
+      yield* Effect.forkScoped(assignMissingCodesAtStart);
       return yield* serveOn(
         port,
         webDist,

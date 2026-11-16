@@ -2,9 +2,12 @@ import {
   askEvents,
   awaitingAgent,
   awaitingOperator,
+  CODE_SUFFIX_COUNT,
+  codeSuffixAt,
   decideAdopt,
   decideArchive,
   decideAsk,
+  decideAssignCode,
   decideDismissHighlight,
   decideEdit,
   decideHighlight,
@@ -16,15 +19,23 @@ import {
   decideRename,
   decideUnarchive,
   decideWithdraw,
+  evolveInbox,
+  type InboxCode,
   type InboxEvent,
   InboxId,
   InboxRefusal,
   type InboxState,
+  inboxCodeOf,
+  inboxCodePrefix,
   inboxState,
   loadMetadataRules,
   type Metadata,
   newId,
+  parseInboxCode,
+  parseQuestionCode,
   QuestionNumber,
+  questionCode,
+  questionRef,
   type SessionId,
   WATCH_COMMAND,
   type WorkingSession,
@@ -55,6 +66,7 @@ import {
   Effect,
   FileSystem,
   Option,
+  Random,
   Result,
 } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
@@ -163,8 +175,9 @@ const decideNamedOrFail = <A>(
   inboxId: InboxId,
   label: string,
   decide: NamedDecision<A>,
+  codes: ReadonlyArray<InboxCode> = [],
 ) =>
-  decideNamedAndAppend(inboxId, label, decide).pipe(
+  decideNamedAndAppend(inboxId, label, decide, codes).pipe(
     Effect.catchTag('AppendConditionFailed', () => Effect.fail(conflicted())),
     Effect.flatMap(unwrapDecided),
   );
@@ -188,7 +201,7 @@ export const resolveInbox = Effect.fnUntraced(function* (
   given: Option.Option<string>,
   session: Option.Option<InboxSession>,
 ) {
-  if (Option.isSome(given)) return InboxId.make(given.value);
+  if (Option.isSome(given)) return yield* inboxOfFlag(given.value);
   if (Option.isNone(session))
     return yield* new InputError({
       message:
@@ -204,8 +217,84 @@ export const resolveInbox = Effect.fnUntraced(function* (
   return found.value;
 });
 
+/**
+ * An inbox named by `--inbox` or `--to`: its id, or its code (`ab-xyz`),
+ * which is looked up.
+ */
+export const inboxOfFlag = Effect.fnUntraced(function* (given: string) {
+  const code = parseInboxCode(given);
+  if (code === undefined) return InboxId.make(given);
+  return yield* inboxOfCode(code);
+});
+
+const inboxOfCode = Effect.fnUntraced(function* (code: InboxCode) {
+  const log = yield* InboxLog;
+  const found = yield* log.findByCode(code);
+  if (Option.isNone(found))
+    return yield* new InputError({
+      message: `inbox: no inbox has the code ${code}; \`operator-inbox list\` shows every inbox with its code`,
+    });
+  return found.value;
+});
+
+/**
+ * The questions a verb was given, each a number or a question code
+ * (`ab-xyz#3`), and the inbox they are in. Numbers are in `--inbox`, or this
+ * session's inbox; codes name their own inbox, so they need neither. One
+ * verb works in one inbox, so codes from two inboxes, a code with plain
+ * numbers, or a code from another inbox than `--inbox` names, are refused.
+ */
+export const resolveQuestions = Effect.fnUntraced(function* (
+  verb: string,
+  given: ReadonlyArray<string>,
+  inbox: Option.Option<string>,
+  session: Option.Option<InboxSession>,
+) {
+  const numbers: Array<number> = [];
+  const codes = new Set<InboxCode>();
+  let plain = false;
+  for (const raw of given) {
+    const text = raw.trim();
+    if (/^-?[0-9]+$/.test(text)) {
+      plain = true;
+      numbers.push(Number(text));
+      continue;
+    }
+    const parsed = parseQuestionCode(text);
+    if (parsed === undefined)
+      return yield* new InputError({
+        message: `inbox ${verb}: "${raw}" is neither a question number (3) nor a question code (ab-xyz#3)`,
+      });
+    codes.add(parsed.code);
+    numbers.push(parsed.number);
+  }
+  const [code, ...others] = codes;
+  if (code === undefined)
+    return { inboxId: yield* resolveInbox(inbox, session), numbers };
+  if (others.length > 0)
+    return yield* new InputError({
+      message: `inbox ${verb}: the codes name ${codes.size} inboxes (${[...codes].join(', ')}); name the questions of one inbox at a time`,
+    });
+  if (plain)
+    return yield* new InputError({
+      message: `inbox ${verb}: give every question as a code (${questionCode(code, 3)}) or every one as a number, not both`,
+    });
+  const inboxId = yield* inboxOfCode(code);
+  if (Option.isSome(inbox)) {
+    const named = yield* inboxOfFlag(inbox.value);
+    if (named !== inboxId)
+      return yield* new InputError({
+        message: `inbox ${verb}: ${code} is inbox ${inboxId}, not the --inbox ${inbox.value} given; leave --inbox out with a code`,
+      });
+  }
+  return { inboxId, numbers };
+});
+
+const codeNote = (state: InboxState) =>
+  state.code === undefined ? '' : ` [${state.code}]`;
+
 const describe = (inboxId: InboxId, state: InboxState, how: string) =>
-  `inbox ${inboxId} — ${state.label} (${how}${state.archived ? ', archived' : ''})\n${inboxUrl(inboxId)}`;
+  `inbox ${inboxId} — ${state.label}${codeNote(state)} (${how}${state.archived ? ', archived' : ''})\n${inboxUrl(inboxId)}`;
 
 // --- metadata rules ----------------------------------------------------------------
 
@@ -389,6 +478,10 @@ export const dispatchOpen = Effect.fnUntraced(function* (opts: {
   readonly desktopSession?: WorkingSession;
   // This machine's metadata rules. Left out, nothing is checked.
   readonly rules?: InboxMetadataRules;
+  // Three-letter suffixes drawn at the edge, tried in order for a new
+  // inbox's code (`ab-` from its name, then one of these). Left out, a new
+  // inbox opens without a code, as one opened before codes did.
+  readonly codeSuffixes?: ReadonlyArray<string>;
 }) {
   const metadata = withSessionTitle(
     withSessionLink(
@@ -468,19 +561,45 @@ export const dispatchOpen = Effect.fnUntraced(function* (opts: {
   const sessionId = Option.getOrUndefined(
     Option.map(opts.session, (s) => s.sessionId),
   );
-  yield* decideNamedOrFail(opts.freshId, label, (state, holder) =>
-    Result.map(
-      decideOpen(state, {
-        inboxId: opts.freshId,
-        label,
-        holder,
-        cwd,
-        ...(sessionId === undefined ? {} : { sessionId }),
-        ...(metadata === undefined ? {} : { metadata }),
-      }),
-      (event) => ({ events: [event], result: undefined }),
-    ),
+  const prefix = inboxCodePrefix(label.trim());
+  const candidates = [
+    ...new Set((opts.codeSuffixes ?? []).map((s) => inboxCodeOf(prefix, s))),
+  ];
+  const coded = yield* decideNamedOrFail(
+    opts.freshId,
+    label,
+    (state, holder, free) =>
+      Result.map(
+        decideOpen(state, {
+          inboxId: opts.freshId,
+          label,
+          holder,
+          cwd,
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(metadata === undefined ? {} : { metadata }),
+        }),
+        (opened) => {
+          if (candidates.length === 0)
+            return { events: [opened], result: true };
+          // The code goes in the same append as the open, so a new inbox
+          // never exists without one. Every candidate taken leaves it
+          // without a code rather than refusing the open; serve's start-up
+          // assignment gives it one.
+          const assigned = decideAssignCode(evolveInbox(state, opened), {
+            inboxId: opts.freshId,
+            code: free,
+          });
+          return Result.isSuccess(assigned)
+            ? { events: [opened, assigned.success], result: true }
+            : { events: [opened], result: false };
+        },
+      ),
+    candidates,
   );
+  if (!coded)
+    yield* Console.error(
+      `inbox: every code drawn for this inbox was taken, so it has none yet; \`operator-inbox serve\` gives it one when it next starts`,
+    );
   return yield* finish(opts.freshId, 'opened');
 });
 
@@ -553,7 +672,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
   readonly rules?: InboxMetadataRules;
 }) {
   const given = opts.metadata ?? emptyMetadata;
-  const number = yield* decideOrFail(opts.inboxId, (state) => {
+  const asked = yield* decideOrFail(opts.inboxId, (state) => {
     // A key already on the Inbox counts as present: the question inherits it.
     const refusal =
       valueRefusal(opts.rules, opts.metadata) ??
@@ -572,7 +691,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
       }),
       (event) => ({
         events: askEvents(state, event),
-        result: event.number,
+        result: questionRef(state.code, event.number),
       }),
     );
   });
@@ -585,7 +704,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
     );
     if (missing.length > 0) yield* Console.error(expectedKeysWarning(missing));
   }
-  return `#${number}`;
+  return asked;
 });
 
 // --- answers / wait ---------------------------------------------------------------
@@ -594,8 +713,10 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
 // the app: `response` is then their question, not an answer to one of the
 // agent's. `deferred` marks an answer that hands the decision to the agent:
 // `response` is then the operator's optional note.
+// `code` is the question's code (`ab-xyz#3`), set once its inbox has one.
 export interface AnswerLine {
   readonly number: QuestionNumber;
+  readonly code?: string;
   readonly title: string;
   readonly response: string;
   readonly metadata: Metadata;
@@ -606,6 +727,9 @@ export interface AnswerLine {
 const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
   awaitingAgent(state).map((q) => ({
     number: q.number,
+    ...(state.code === undefined
+      ? {}
+      : { code: questionCode(state.code, q.number) }),
     title: q.title,
     response: q.response ?? '',
     metadata: q.metadata,
@@ -634,7 +758,7 @@ export const renderAnswers = (
   return answers
     .map(
       (a) =>
-        `#${a.number} ${a.operatorQuestion === true ? '(the operator asks) ' : ''}${a.title}\n${[
+        `${a.code ?? `#${a.number}`} ${a.operatorQuestion === true ? '(the operator asks) ' : ''}${a.title}\n${[
           ...renderMetadata(a.metadata).map((m) => `meta ${m}`),
           ...(a.deferred === true ? [DEFERRED_LINE] : []),
           ...(a.deferred === true && a.response === ''
@@ -723,10 +847,13 @@ export const dispatchDone = Effect.fnUntraced(function* (opts: {
           decideProcess(state, { inboxId: opts.inboxId, number }),
         ),
       ),
-      (events) => ({ events, result: numbers }),
+      (events) => ({
+        events,
+        result: numbers.map((n) => questionRef(state.code, n)),
+      }),
     ),
   );
-  return `processed ${processed.map((n) => `#${n}`).join(', ')}`;
+  return `processed ${processed.join(', ')}`;
 });
 
 // --- edit / withdraw ---------------------------------------------------------------
@@ -752,10 +879,13 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
     ...(opts.title === undefined ? {} : { title: opts.title }),
     ...(opts.body === undefined ? {} : { body: opts.body }),
   };
-  const event = yield* decideOrFail(opts.inboxId, (state) =>
-    Result.map(decideEdit(state, input), (e) => ({ events: [e], result: e })),
+  const edited = yield* decideOrFail(opts.inboxId, (state) =>
+    Result.map(decideEdit(state, input), (e) => ({
+      events: [e],
+      result: questionRef(state.code, e.number),
+    })),
   );
-  return `edited #${event.number}`;
+  return `edited ${edited}`;
 });
 
 /**
@@ -780,10 +910,13 @@ export const dispatchWithdraw = Effect.fnUntraced(function* (opts: {
           }),
         ),
       ),
-      (events) => ({ events, result: numbers }),
+      (events) => ({
+        events,
+        result: numbers.map((n) => questionRef(state.code, n)),
+      }),
     ),
   );
-  return `withdrew ${withdrawn.map((n) => `#${n}`).join(', ')}`;
+  return `withdrew ${withdrawn.join(', ')}`;
 });
 
 // --- highlight -----------------------------------------------------------------------
@@ -799,17 +932,20 @@ export const dispatchHighlight = Effect.fnUntraced(function* (opts: {
   readonly note?: string;
 }) {
   const numbers = yield* questionNumbers('highlight', opts.numbers);
-  yield* decideOrFail(opts.inboxId, (state) =>
+  const highlighted = yield* decideOrFail(opts.inboxId, (state) =>
     Result.map(
       decideHighlight(state, {
         inboxId: opts.inboxId,
         numbers,
         ...(opts.note === undefined ? {} : { note: opts.note }),
       }),
-      (events) => ({ events, result: undefined }),
+      (events) => ({
+        events,
+        result: numbers.map((n) => questionRef(state.code, n)),
+      }),
     ),
   );
-  return `highlighted ${numbers.map((n) => `#${n}`).join(', ')}`;
+  return `highlighted ${highlighted.join(', ')}`;
 });
 
 /** Take highlights away: the named questions, or every one in the inbox. */
@@ -825,10 +961,13 @@ export const dispatchUnhighlight = Effect.fnUntraced(function* (opts: {
         numbers,
         by: 'agent',
       }),
-      (events) => ({ events, result: events.map((e) => e.number) }),
+      (events) => ({
+        events,
+        result: events.map((e) => questionRef(state.code, e.number)),
+      }),
     ),
   );
-  return `unhighlighted ${dismissed.map((n) => `#${n}`).join(', ')}`;
+  return `unhighlighted ${dismissed.join(', ')}`;
 });
 
 // --- move ------------------------------------------------------------------------
@@ -853,15 +992,16 @@ export const dispatchMove = Effect.fnUntraced(function* (opts: {
           numbers,
           toInboxId: opts.toInboxId,
         }),
-        (events) => ({ events, result: events }),
+        (events) => ({
+          events,
+          result: events.map(
+            (e) =>
+              `moved ${questionRef(from.code, e.number)} to inbox ${e.toInboxId} as ${questionRef(to.code, e.toNumber)}`,
+          ),
+        }),
       ),
   );
-  return [
-    ...moved.map(
-      (e) => `moved #${e.number} to inbox ${e.toInboxId} as #${e.toNumber}`,
-    ),
-    inboxUrl(opts.toInboxId),
-  ].join('\n');
+  return [...moved, inboxUrl(opts.toInboxId)].join('\n');
 });
 
 // --- meta --------------------------------------------------------------------------
@@ -933,14 +1073,15 @@ export const dispatchList = Effect.fnUntraced(function* () {
   const log = yield* InboxLog;
   const all = (yield* log.listAll()).filter((i) => i.state.opened);
   if (all.length === 0) return 'no inboxes';
-  // The active inboxes first, then the archived, each in the order opened.
+  // The active inboxes first, then the archived, each in the order opened;
+  // each with its code after its id, once it has one.
   return [
     ...all.filter((i) => !i.state.archived),
     ...all.filter((i) => i.state.archived),
   ]
     .map(
       ({ inboxId, state }) =>
-        `${inboxId}  ${state.label}  ${awaitingOperator(state).length} awaiting you, ${awaitingAgent(state).length} with the agent${state.archived ? '  (archived)' : ''}`,
+        `${inboxId}  ${state.code === undefined ? '' : `${state.code}  `}${state.label}  ${awaitingOperator(state).length} awaiting you, ${awaitingAgent(state).length} with the agent${state.archived ? '  (archived)' : ''}`,
     )
     .join('\n');
 });
@@ -978,7 +1119,7 @@ export const desktopSessionOf = (
 
 const inboxOpt = Flag.String('inbox').pipe(
   Flag.withDescription(
-    'The inbox id (default: the inbox this session opened or adopted)',
+    'The inbox, by id or by code (ab-xyz) (default: the inbox this session opened or adopted)',
   ),
   Flag.optional,
 );
@@ -1027,6 +1168,16 @@ const print = <E, R>(effect: Effect.Effect<string, E, R>) =>
 const resolved = (inbox: Option.Option<string>) =>
   Effect.flatMap(currentSession, (session) => resolveInbox(inbox, session));
 
+// The questions a verb's arguments name, and their inbox (`resolveQuestions`).
+const questionsOf = (
+  verb: string,
+  given: ReadonlyArray<string>,
+  inbox: Option.Option<string>,
+) =>
+  Effect.flatMap(currentSession, (session) =>
+    resolveQuestions(verb, given, inbox, session),
+  );
+
 // A taken name also prints the holder's id alone on stdout, for an agent to
 // parse; the sentence goes to stderr through the error boundary as usual.
 export const printingHolder = <E, R>(effect: Effect.Effect<string, E, R>) =>
@@ -1035,6 +1186,30 @@ export const printingHolder = <E, R>(effect: Effect.Effect<string, E, R>) =>
       e instanceof InboxNameTaken
         ? Console.log(e.conflictingInboxId)
         : Effect.void,
+    ),
+  );
+
+// How many suffixes a new inbox's code may try: enough that a clash with
+// every one is out of reach until its two letters' 17,576 are nearly used.
+const CODE_DRAWS = 16;
+
+// The suffixes a new inbox's code tries, from Effect's injected `Random`, so a
+// test can seed it. The only randomness codes have, kept here at the edge.
+const drawCodeSuffixes = Effect.forEach(
+  Array.from({ length: CODE_DRAWS }),
+  () =>
+    Effect.map(
+      Random.nextIntBetween(0, CODE_SUFFIX_COUNT, { halfOpen: true }),
+      codeSuffixAt,
+    ),
+);
+
+// A question argument: its number, or its code (`ab-xyz#3`), which also
+// names its inbox.
+const questionArg = (description: string) =>
+  Argument.String('n').pipe(
+    Argument.withDescription(
+      `${description}: each a number, or a question code such as ab-xyz#3, which names its inbox too`,
     ),
   );
 
@@ -1072,6 +1247,7 @@ const openCommand = Command.make(
           inbox,
           label,
           freshId: InboxId.make(newId()),
+          codeSuffixes: yield* drawCodeSuffixes,
           cwd,
           ...(metadata === undefined ? {} : { metadata }),
           ...(desktopSession === undefined ? {} : { desktopSession }),
@@ -1177,7 +1353,11 @@ const askCommand = Command.make(
         return asked;
       }),
     ),
-).pipe(Command.withDescription('Ask the operator a question; prints #n'));
+).pipe(
+  Command.withDescription(
+    'Ask the operator a question; prints its code (ab-xyz#n), or #n for an inbox that has no code yet',
+  ),
+);
 
 const watchCommand = Command.make(
   'watch',
@@ -1341,16 +1521,15 @@ const waitCommand = Command.make(
 const doneCommand = Command.make(
   'done',
   {
-    numbers: Argument.Int('n').pipe(
-      Argument.withDescription('The question numbers to mark processed'),
+    numbers: questionArg('The questions to mark processed').pipe(
       Argument.atLeast(1),
     ),
     inbox: inboxOpt,
   },
   ({ numbers, inbox }) =>
     print(
-      Effect.flatMap(resolved(inbox), (inboxId) =>
-        dispatchDone({ inboxId, numbers }),
+      Effect.flatMap(questionsOf('done', numbers, inbox), (q) =>
+        dispatchDone(q),
       ),
     ),
 ).pipe(
@@ -1362,9 +1541,7 @@ const doneCommand = Command.make(
 const editCommand = Command.make(
   'edit',
   {
-    number: Argument.Int('n').pipe(
-      Argument.withDescription('The question number to edit'),
-    ),
+    number: questionArg('The question to edit'),
     title: Flag.String('title').pipe(
       Flag.withDescription('The new title (default: unchanged)'),
       Flag.optional,
@@ -1380,14 +1557,17 @@ const editCommand = Command.make(
   ({ number, title, bodyFile, inbox }) =>
     print(
       Effect.gen(function* () {
-        const inboxId = yield* resolved(inbox);
+        const {
+          inboxId,
+          numbers: [n = 0],
+        } = yield* questionsOf('edit', [number], inbox);
         // An empty stdin means no new body; an empty --body-file clears it.
         const read = yield* readBody('edit', bodyFile);
         const body =
           Option.isNone(bodyFile) && read.length === 0 ? undefined : read;
         return yield* dispatchEdit({
           inboxId,
-          number,
+          number: n,
           ...(Option.isSome(title) ? { title: title.value } : {}),
           ...(body === undefined ? {} : { body }),
         });
@@ -1402,10 +1582,7 @@ const editCommand = Command.make(
 const withdrawCommand = Command.make(
   'withdraw',
   {
-    numbers: Argument.Int('n').pipe(
-      Argument.withDescription('The question numbers to withdraw'),
-      Argument.atLeast(1),
-    ),
+    numbers: questionArg('The questions to withdraw').pipe(Argument.atLeast(1)),
     reason: Flag.String('reason').pipe(
       Flag.withDescription(
         'Why it no longer needs an answer; the operator reads it in Processed',
@@ -1415,8 +1592,8 @@ const withdrawCommand = Command.make(
   },
   ({ numbers, reason, inbox }) =>
     print(
-      Effect.flatMap(resolved(inbox), (inboxId) =>
-        dispatchWithdraw({ inboxId, numbers, reason }),
+      Effect.flatMap(questionsOf('withdraw', numbers, inbox), (q) =>
+        dispatchWithdraw({ ...q, reason }),
       ),
     ),
 ).pipe(
@@ -1428,9 +1605,9 @@ const withdrawCommand = Command.make(
 const metaCommand = Command.make(
   'meta',
   {
-    number: Argument.Int('n').pipe(
+    number: Argument.String('n').pipe(
       Argument.withDescription(
-        "A question number: its metadata instead of the inbox's",
+        "A question, by number or by code (ab-xyz#3): its metadata instead of the inbox's",
       ),
       Argument.optional,
     ),
@@ -1448,11 +1625,14 @@ const metaCommand = Command.make(
   ({ number, meta, metaJson, unset, inbox, json }) =>
     print(
       Effect.gen(function* () {
-        const inboxId = yield* resolved(inbox);
+        const { inboxId, numbers } = Option.isSome(number)
+          ? yield* questionsOf('meta', [number.value], inbox)
+          : { inboxId: yield* resolved(inbox), numbers: [] };
+        const [n] = numbers;
         const rules = yield* readMetadataRules;
         return yield* dispatchMeta({
           inboxId,
-          ...(Option.isSome(number) ? { number: number.value } : {}),
+          ...(n === undefined ? {} : { number: n }),
           set: (yield* metadataOf(meta, metaJson, rules)) ?? {},
           unset,
           json,
@@ -1477,8 +1657,7 @@ const keysCommand = Command.make('keys', { json: jsonOpt }, ({ json }) =>
 const highlightCommand = Command.make(
   'highlight',
   {
-    numbers: Argument.Int('n').pipe(
-      Argument.withDescription('The question numbers to highlight'),
+    numbers: questionArg('The questions to highlight').pipe(
       Argument.atLeast(1),
     ),
     note: Flag.String('note').pipe(
@@ -1491,10 +1670,9 @@ const highlightCommand = Command.make(
   },
   ({ numbers, note, inbox }) =>
     print(
-      Effect.flatMap(resolved(inbox), (inboxId) =>
+      Effect.flatMap(questionsOf('highlight', numbers, inbox), (q) =>
         dispatchHighlight({
-          inboxId,
-          numbers,
+          ...q,
           ...(Option.isSome(note) ? { note: note.value } : {}),
         }),
       ),
@@ -1508,18 +1686,15 @@ const highlightCommand = Command.make(
 const unhighlightCommand = Command.make(
   'unhighlight',
   {
-    numbers: Argument.Int('n').pipe(
-      Argument.withDescription(
-        'The question numbers to unhighlight (default: every highlighted one)',
-      ),
-      Argument.variadic(),
-    ),
+    numbers: questionArg(
+      'The questions to unhighlight (default: every highlighted one)',
+    ).pipe(Argument.variadic()),
     inbox: inboxOpt,
   },
   ({ numbers, inbox }) =>
     print(
-      Effect.flatMap(resolved(inbox), (inboxId) =>
-        dispatchUnhighlight({ inboxId, numbers }),
+      Effect.flatMap(questionsOf('unhighlight', numbers, inbox), (q) =>
+        dispatchUnhighlight(q),
       ),
     ),
 ).pipe(
@@ -1531,20 +1706,23 @@ const unhighlightCommand = Command.make(
 const moveCommand = Command.make(
   'move',
   {
-    numbers: Argument.Int('n').pipe(
-      Argument.withDescription('The question numbers to move'),
-      Argument.atLeast(1),
-    ),
+    numbers: questionArg('The questions to move').pipe(Argument.atLeast(1)),
     to: Flag.String('to').pipe(
-      Flag.withDescription('The id of the inbox to move them to'),
+      Flag.withDescription(
+        'The inbox to move them to: its id, or its code (ab-xyz)',
+      ),
     ),
     inbox: inboxOpt,
   },
   ({ numbers, to, inbox }) =>
     print(
-      Effect.flatMap(resolved(inbox), (inboxId) =>
-        dispatchMove({ inboxId, numbers, toInboxId: InboxId.make(to) }),
-      ),
+      Effect.gen(function* () {
+        const q = yield* questionsOf('move', numbers, inbox);
+        return yield* dispatchMove({
+          ...q,
+          toInboxId: yield* inboxOfFlag(to),
+        });
+      }),
     ),
 ).pipe(
   Command.withDescription(

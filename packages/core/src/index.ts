@@ -6,6 +6,7 @@ export * from './claude-settings';
 export * from './config';
 export * from './ids';
 export * from './inbox';
+export * from './inbox-code';
 export * from './inbox-database';
 export * from './inbox-machines';
 export * from './inbox-metadata';
