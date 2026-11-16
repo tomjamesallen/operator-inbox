@@ -9,6 +9,9 @@
 # `operator-inbox serve` and (re)load it, install the Claude Code hooks
 # (unless --no-hooks), then check the server answers.
 #
+# Both modes end by saying whether the optional desktop window is installed
+# and current (scripts/desktop-app.sh check). Neither builds it.
+#
 # rebuild: install the dependencies, build, and, only if the launch agent is
 # already loaded, restart it and check the server answers, exiting non-zero
 # when it does not. The installed plist is kept as it is, with one exception:
@@ -52,7 +55,7 @@ PNPM_LINK="${OPERATOR_INBOX_PNPM_LINK:-pnpm}"
 DOMAIN="gui/$(id -u)"
 
 usage() {
-  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 MODE=all
@@ -457,6 +460,15 @@ if ((AGENT_RUNNING)); then
       note "serve did NOT answer at $HEALTH_URL yet; see $AGENT_LOG"
     fi
   fi
+fi
+
+# --- Desktop window --------------------------------------------------------
+
+# The window is optional and its build takes minutes, so setup never builds
+# it: it only says whether it is installed and current (read-only).
+DESKTOP_APP="$ROOT/scripts/desktop-app.sh"
+if [[ -f "$DESKTOP_APP" ]]; then
+  note "$(bash "$DESKTOP_APP" check || true)"
 fi
 
 echo

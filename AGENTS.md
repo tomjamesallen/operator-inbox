@@ -16,6 +16,8 @@ The skill an agent reads is `apps/cli/assets/SKILL.md`, printed by `operator-inb
 
 `scripts/setup.sh` (`pnpm run setup`; bare `pnpm setup` is pnpm's own command) sets the app up on a machine and rebuilds it: install, build, link the bin, the launch agent that runs `serve`, and the hooks. Its `rebuild` mode installs and builds only, and touches a launch agent only when it is already loaded: it restarts it and keeps its plist as installed, except that a `node` the plist names that no longer exists is replaced, that path alone, with this shell's `node`, and the agent reloaded. It never points the agent at the checkout it runs from. After restarting it, it checks the server answers and exits non-zero, naming the log the installed plist writes, when it does not. Its usage is in its header comment and in `README.md`.
 
+`scripts/desktop-app.sh` builds the optional desktop window, `~/Applications/Operator Inbox.app` (`com.operator-inbox.desktop`), with Pake onto 127.0.0.1:7184 (`build`), and says whether it is installed and current (`check`, which `setup.sh` runs and which never changes anything). A build needs Rust and pake and takes minutes, so nothing runs it but the operator. Bump its `VERSION` whenever anything baked into the bundle changes; `check` calls a window of another version stale.
+
 ## The stack
 
 Use these. Departing from a row is a decision to raise first, never one to make quietly.
