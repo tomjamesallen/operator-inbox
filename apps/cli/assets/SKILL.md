@@ -268,6 +268,8 @@ Under `--json` they are `"macros": [{ "macro", "instruction", "args" }]`. An ans
 3. **Say in the session what you did for each macro**, one line each: `/todo: added "Book the room" at priority 2`. If one cannot be done, say why, and carry on with the rest.
 4. Run `operator-inbox done <code>` once they are all carried out, as for any answer.
 
+An answer may also carry the operator's **comments** on quoted spans of your Question, printed after its text as a numbered block of `On “quote”: comment` lines (`"comments": [{ "quote", "prefix", "suffix", "at", "text" }]` under `--json`): read each as part of the answer, about that span.
+
 ### An answer that asks for your reply highlighted
 
 The operator can mark an answer, or a Question they ask you, **Highlight reply**. `answers` then opens it with `HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight` (`"highlightReply": true` under `--json`). It means the operator will look for your reply among many: **the Question you ask in response must be highlighted.** Ask it with `--highlight`, which highlights it as it is asked:

@@ -37,6 +37,8 @@ import {
   newId,
   parseInboxCode,
   parseQuestionCode,
+  type QuestionComment,
+  type QuestionComments,
   QuestionNumber,
   questionCode,
   questionRef,
@@ -787,6 +789,10 @@ export interface AnswerLine {
   // The macros the operator invoked, in order: each its name, the
   // instruction it carried and its arguments, an empty one `null`.
   readonly macros?: MacrosInvoked;
+  // The operator's comments on spans of the question's text, in body order:
+  // each the quote with its context either side, where it sat, and what they
+  // said.
+  readonly comments?: QuestionComments;
 }
 
 // A scene the event holds as JSON text, parsed for `--json`. Text that will
@@ -832,6 +838,7 @@ const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
           ),
         }),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
+    ...(q.comments === undefined ? {} : { comments: q.comments }),
   }));
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
@@ -876,6 +883,25 @@ export const macroLines = (
     ];
   });
 
+// One numbered block for the comments, after the response: what the operator
+// said about each span of the question, in the body's order. The quote is of
+// the rendered text, so it reads as the operator saw it.
+export const commentLines = (
+  comments: ReadonlyArray<QuestionComment>,
+): ReadonlyArray<string> =>
+  comments.length === 0
+    ? []
+    : [
+        `COMMENTS on the question (${comments.length}):`,
+        ...comments.flatMap((c, i) => {
+          const [first = '', ...rest] = c.text.trim().split('\n');
+          return [
+            `${i + 1}. On “${c.quote}”: ${first}`,
+            ...rest.map((line) => `   ${line}`),
+          ];
+        }),
+      ];
+
 export const renderAnswers = (
   answers: ReadonlyArray<AnswerLine>,
   json: boolean,
@@ -896,9 +922,11 @@ export const renderAnswers = (
           ...(a.highlightReply === true ? [HIGHLIGHT_REPLY_LINE] : []),
           ...(a.deferred === true && a.response === ''
             ? []
-            : a.macros !== undefined && a.response.trim() === ''
+            : (a.macros !== undefined || a.comments !== undefined) &&
+                a.response.trim() === ''
               ? []
               : a.response.split('\n')),
+          ...commentLines(a.comments ?? []),
           ...macroLines(a.macros ?? []),
         ]
           .map((line) => `  ${line}`)

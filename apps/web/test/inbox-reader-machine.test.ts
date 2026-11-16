@@ -140,6 +140,7 @@ const send = (key: string): Event => ({
   response: 'Go ahead',
   deferred: false,
   macros: [],
+  comments: [],
 });
 
 const failed = (key: string): Event => ({

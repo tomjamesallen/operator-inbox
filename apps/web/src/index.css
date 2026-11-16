@@ -97,8 +97,24 @@
   /* Fixed parts of the layout. */
   --spacing-header: calc(42px * var(--ui-scale));
   --spacing-rail: calc(218px * var(--ui-scale));
+  /* A card field's first row: its label and its control are both this tall,
+     so a label sits level with the control's first line however many lines
+     the control wraps to. */
+  --spacing-field: calc(24px * var(--ui-scale));
+  /* What a text-13 line at leading-card leaves of that row, each side: the
+     padding that makes a textarea's first line fill it. */
+  --spacing-field-pad: calc((24px - 13px * 1.4) / 2 * var(--ui-scale));
+  /* The soft edge of a scrolling list (the card stack, the ask list): about
+     a line, faded where there is more to scroll to. A focused row keeps this
+     far from the edge (`scroll-my-fade`), so it is never under the fade. */
+  --spacing-fade: calc(18px * var(--ui-scale));
+  /* Where a faded edge's mask turns opaque, measured from the far edge. */
+  --fade-from: calc(100% - var(--spacing-fade));
 
   --max-height-body: 46vh;
+  /* The cards under the answer box, comments and macros: about three before
+     the stack scrolls, so the box itself never leaves the screen. */
+  --max-height-cards: min(32vh, calc(220px * var(--ui-scale)));
   /* The tallest a picture in a question's body is drawn inline: an Excalidraw
      drawing's preview and a Mermaid diagram alike. A taller one scales down
      to fit, and its full-screen view shows it larger. */

@@ -63,4 +63,27 @@ describe('the stylesheet', () => {
       ':is(:where(.group\\/greyed)[data-greyed] .group-data-greyed\\/greyed\\:not-focus-visible\\:not-has-focus-visible\\:opacity-50):not(:focus-visible):not(:has(:focus-visible)) {\n    opacity: 50%;',
     );
   });
+
+  // The card stack and the ask list: their height, their rows' first line,
+  // and the soft edge drawn from a theme token, never a bracketed literal.
+  it('draws the card stack’s and the ask list’s tokens', async () => {
+    const css = await build([
+      'max-h-cards',
+      'h-field',
+      'py-field-pad',
+      'scroll-my-fade',
+      'data-fade-top:mask-t-from-(--fade-from)',
+      'data-fade-bottom:mask-b-from-(--fade-from)',
+    ]);
+    expect(css).toContain('max-height: var(--max-height-cards)');
+    expect(css).toContain('height: var(--spacing-field)');
+    expect(css).toContain('var(--spacing-field-pad)');
+    expect(css).toContain('scroll-margin-block: var(--spacing-fade)');
+    expect(css).toMatch(
+      /\[data-fade-top\][\s\S]*--tw-mask-top-from-position: var\(--fade-from\)/,
+    );
+    expect(css).toMatch(
+      /\[data-fade-bottom\][\s\S]*--tw-mask-bottom-from-position: var\(--fade-from\)/,
+    );
+  });
 });

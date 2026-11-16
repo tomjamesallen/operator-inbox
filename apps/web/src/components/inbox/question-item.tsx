@@ -3,9 +3,10 @@ import {
   LOCAL_MACHINE_KEY,
   type MacroArg,
   type MacroInvoked,
+  type QuestionComment,
   questionRef,
 } from '@operator-inbox/core/api';
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import {
   copyMarkAtom,
   copyQuestionAtom,
@@ -31,6 +32,7 @@ import { keyHintAtom } from '../../keymap';
 import { QuestionBody } from '../question-body';
 import { focusRing } from '../styles';
 import { Colophon } from './colophon';
+import { CommentableBody, CommentedBody } from './comment-body';
 import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
 import { HIGHLIGHT, type Mark, MarkStack, SELECTED } from './marks';
 
@@ -200,15 +202,44 @@ const SentMacros = ({
   </ul>
 );
 
+// The comments an answer carried, numbered as the body's highlights are: the
+// quote, then what was said about it.
+const SentComments = ({
+  comments,
+}: {
+  readonly comments: ReadonlyArray<QuestionComment>;
+}) => (
+  <ol
+    className="mt-s1 flex flex-col gap-0.5 font-zen text-12"
+    data-sent-comments
+  >
+    {comments.map((c, i) => (
+      <li
+        // Comments carry no id of their own; their place is what they are.
+        key={i}
+        className="flex items-baseline gap-s2"
+      >
+        <span className="shrink-0 font-medium text-yellow">❝ {i + 1}</span>
+        <span className="min-w-0">
+          <span className="text-fg/40 italic">“{c.quote}”</span>{' '}
+          <span className="whitespace-pre-wrap text-fg/70">{c.text}</span>
+        </span>
+      </li>
+    ))}
+  </ol>
+);
+
 const Said = ({
   label,
   text,
   macros = [],
+  comments = [],
   className,
 }: {
   readonly label: string;
   readonly text: string;
   readonly macros?: ReadonlyArray<MacroInvoked>;
+  readonly comments?: ReadonlyArray<QuestionComment>;
   readonly className: string;
 }) => (
   <div className={`${className} max-w-measure text-14 leading-prose`}>
@@ -216,15 +247,44 @@ const Said = ({
     {text !== '' && (
       <p className="mt-s1 whitespace-pre-wrap text-fg/80">{text}</p>
     )}
+    {comments.length > 0 && <SentComments comments={comments} />}
     {macros.length > 0 && <SentMacros macros={macros} />}
   </div>
 );
+
+// A body waiting on the operator takes comments; an answered one shows the
+// comments its answer carried, read-only; any other is the body alone.
+const BodyFrame = ({
+  item,
+  state,
+  comments,
+  children,
+}: {
+  readonly item: ReaderItem;
+  readonly state: 'open' | 'sending' | 'answered';
+  readonly comments: ReadonlyArray<QuestionComment>;
+  readonly children: ReactNode;
+}) =>
+  state === 'open' ? (
+    <CommentableBody itemKey={item.key}>{children}</CommentableBody>
+  ) : comments.length > 0 ? (
+    <CommentedBody itemKey={item.key} comments={comments}>
+      {children}
+    </CommentedBody>
+  ) : (
+    children
+  );
 
 const Content = ({ item }: { readonly item: ReaderItem }) => {
   const queues = useAtomValue(shownQueuesAtom);
   const send = useAtomSet(inboxReaderAtoms.send);
   const { title, caption, followsUp } = headOf(item);
   const answer = answerOf(item);
+  const state = isSending(item)
+    ? 'sending'
+    : 'answeredSeq' in item.question || 'processedSeq' in item.question
+      ? 'answered'
+      : 'open';
   return (
     <>
       {caption !== undefined && (
@@ -244,27 +304,28 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
           Follow-up to #{followsUp.slice(followsUp.lastIndexOf('/') + 1)}
         </button>
       )}
-      <QuestionBody
-        question={item.question}
-        className="mt-s4 text-14 leading-prose text-fg/80"
-        drawingHost={{
-          inboxId: item.inboxId,
-          number: item.question.number,
-          key: item.key,
-          state: isSending(item)
-            ? 'sending'
-            : 'answeredSeq' in item.question || 'processedSeq' in item.question
-              ? 'answered'
-              : 'open',
-        }}
-      />
+      <BodyFrame item={item} state={state} comments={answer?.comments ?? []}>
+        <QuestionBody
+          question={item.question}
+          className="mt-s4 text-14 leading-prose text-fg/80"
+          drawingHost={{
+            inboxId: item.inboxId,
+            number: item.question.number,
+            key: item.key,
+            state,
+          }}
+        />
+      </BodyFrame>
       {answer !== undefined &&
-        (answer.text !== '' || answer.macros.length > 0) && (
+        (answer.text !== '' ||
+          answer.macros.length > 0 ||
+          answer.comments.length > 0) && (
           <Said
             className="mt-s5"
             label={answer.label}
             text={answer.text}
             macros={answer.macros}
+            comments={answer.comments}
           />
         )}
       {followUpsOf(queues, item).map((f) => (

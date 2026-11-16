@@ -37,6 +37,7 @@ import {
   ownerLookupMachines,
   ownersOfClaims,
   planInboxOwnerLookup,
+  type QuestionComments,
   type QuestionNumber,
   type QuestionRevision,
   recentlyProcessed,
@@ -182,6 +183,7 @@ export const toInboxView = (
       ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
       ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
       ...(q.macros === undefined ? {} : { macros: q.macros }),
+      ...(q.comments === undefined ? {} : { comments: q.comments }),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
@@ -207,6 +209,7 @@ export const toInboxView = (
     ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
+    ...(q.comments === undefined ? {} : { comments: q.comments }),
   })),
 });
 
@@ -250,6 +253,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
   highlightReply?: true,
   drawings?: Drawings,
   macros?: MacrosInvoked,
+  comments?: QuestionComments,
 ) {
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
@@ -262,6 +266,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
         ...(highlightReply === undefined ? {} : { highlightReply }),
         ...(drawings === undefined ? {} : { drawings }),
         ...(macros === undefined ? {} : { macros }),
+        ...(comments === undefined ? {} : { comments }),
       }),
       (event) => ({
         events: [event],
@@ -983,6 +988,7 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.highlightReply,
             payload.drawings,
             payload.macros,
+            payload.comments,
           ),
         ),
       )

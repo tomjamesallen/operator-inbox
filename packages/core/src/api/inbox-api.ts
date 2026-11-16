@@ -1,5 +1,6 @@
 import { Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
+import { QuestionComments } from '../comments';
 import {
   Drawings,
   Metadata,
@@ -78,6 +79,9 @@ const sentDrawings = Schema.optionalKey(Drawings);
 // The macros the operator invoked with their answer, in order (core's
 // `macros.ts`). An optional key, so a machine on an older build still decodes.
 const macros = Schema.optionalKey(MacrosInvoked);
+// The operator's comments on the Question's text, in body order (core's
+// `comments.ts`). An optional key, for the same older machines.
+const comments = Schema.optionalKey(QuestionComments);
 
 export const InboxOperatorQuestionDto = Schema.Struct({
   number: QuestionNumber,
@@ -132,6 +136,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   drawings,
   sentDrawings,
   macros,
+  comments,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -160,6 +165,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   drawings,
   sentDrawings,
   macros,
+  comments,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
@@ -520,6 +526,8 @@ export const AnswerPayload = Schema.Struct({
   drawings: Schema.optionalKey(Drawings),
   // The macros the operator invoked, in order, each with its instruction.
   macros,
+  // The operator's comments on spans of the Question's text.
+  comments,
 });
 export type AnswerPayload = typeof AnswerPayload.Type;
 

@@ -2,6 +2,7 @@ import {
   InboxId,
   InboxMachineKey,
   MacroInvoked,
+  QuestionComment,
 } from '@operator-inbox/core/api';
 import { setupEffect } from '@xstate/effect';
 import { createActorAtoms } from '@xstate/effect/atom';
@@ -49,6 +50,8 @@ const SendingAnswer = Schema.Struct({
   deferred: Schema.Boolean,
   // The macros it carries, shown with it as it goes.
   macros: Schema.Array(MacroInvoked),
+  // And the comments, in body order.
+  comments: Schema.Array(QuestionComment),
   landed: Schema.Boolean,
 });
 export type SendingAnswer = typeof SendingAnswer.Type;
@@ -358,6 +361,7 @@ const setup = setupEffect({
         response: Schema.String,
         deferred: Schema.Boolean,
         macros: Schema.Array(MacroInvoked),
+        comments: Schema.Array(QuestionComment),
       }),
       AnswerLanded: Schema.Struct(Key),
       AnswerFailed: Schema.Struct({
@@ -606,6 +610,7 @@ export const readerMachine = setup.createMachine({
                 response: event.response,
                 deferred: event.deferred,
                 macros: event.macros,
+                comments: event.comments,
                 landed: false,
               },
             ],

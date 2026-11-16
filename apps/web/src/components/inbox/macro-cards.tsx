@@ -21,12 +21,16 @@ import {
   missingMacroParams,
 } from '@operator-inbox/core/api';
 import type { KeyboardEvent } from 'react';
+import {
+  commentStop,
+  commentsInOrderAtom,
+  removeCommentAtom,
+} from '../../comments';
 import { boxFocusAskedAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
 import {
   askMacroFocusAtom,
   cardRefOf,
-  focusedMacroCardAtom,
   type MacroCard,
   type MacroFocus,
   macroCardsAtom,
@@ -44,6 +48,9 @@ import {
   withArg,
   withCard,
 } from '../../macros';
+import { CardShell } from './card-shell';
+import { CommentCard } from './comment-card';
+import { edgeFade, fadeEdges } from './edge-fade';
 
 // The macros of the answer box: the `/` menu over it and a card per macro
 // invoked under it. A card is its header (`/name`, the "i", its description,
@@ -227,7 +234,7 @@ export const MacroMenuList = ({
 );
 
 const pill =
-  'cursor-pointer border border-fg/15 px-s2 py-0.5 text-fg/55 outline-none select-none hover:text-fg/85 focus-visible:border-fg/70 focus-visible:text-fg';
+  'inline-flex h-field cursor-pointer items-center border border-fg/15 px-s2 text-fg/55 outline-none select-none hover:text-fg/85 focus-visible:border-fg/70 focus-visible:text-fg';
 
 const Field = ({
   stop,
@@ -249,7 +256,7 @@ const Field = ({
           value={typeof value === 'string' ? value : ''}
           placeholder={param.placeholder ?? ''}
           onValueChange={(v) => set(v === '' ? undefined : v)}
-          className="w-full border-b border-fg/20 bg-transparent py-0.5 font-reading text-13 text-fg outline-none placeholder:text-fg/25 focus:border-fg/60 pointer-coarse:text-field"
+          className="h-field w-full border-b border-fg/20 bg-transparent font-reading text-13 text-fg outline-none placeholder:text-fg/25 focus:border-fg/60 pointer-coarse:text-field"
         />
       );
     case 'number':
@@ -260,7 +267,7 @@ const Field = ({
           {...(param.min === undefined ? {} : { min: param.min })}
           {...(param.max === undefined ? {} : { max: param.max })}
         >
-          <NumberField.Group className="flex w-fit items-center border border-fg/15 focus-within:border-fg/60">
+          <NumberField.Group className="flex h-field w-fit items-center border border-fg/15 focus-within:border-fg/60">
             <NumberField.Decrement
               tabIndex={-1}
               aria-label={`Less ${param.name}`}
@@ -387,35 +394,23 @@ const Card = ({
   const { macro } = card;
   const ref = cardRefOf(itemKey, card.id);
   const [openRefs, setOpen] = useAtom(macroInfoOpenAtom);
-  const setFocused = useAtomSet(focusedMacroCardAtom);
-  const bumpBoxFocus = useAtomSet(boxFocusAskedAtom);
   const sendHint = useAtomValue(keyHintAtom('send_response'));
   const missing = missingMacroParams(macro, card.args);
   const waiting = held && missing.length > 0;
   const bare = macro.params.length === 0;
   return (
-    <section
-      data-macro-card={ref}
-      data-macro-held={waiting || undefined}
-      aria-label={`/${macro.name}`}
-      // A card with nothing to fill is still a stop, so ⌘⌫ can reach it.
-      tabIndex={bare ? 0 : undefined}
-      onFocus={() => setFocused(ref)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
-          setFocused((at) => (at === ref ? undefined : at));
+    <CardShell
+      cardRef={ref}
+      label={`/${macro.name}`}
+      stop={bare}
+      waiting={waiting}
+      remove={remove}
+      // The first Esc shuts the "i"; the next goes back to the text.
+      onEscape={() => {
+        if (!openRefs.includes(ref)) return false;
+        setOpen(toggledIn(openRefs, ref, false));
+        return true;
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          // The first Esc shuts the "i"; the next goes back to the text.
-          if (openRefs.includes(ref)) setOpen(toggledIn(openRefs, ref, false));
-          else bumpBoxFocus((n) => n + 1);
-        } else if (e.key === 'Backspace' && (e.metaKey || e.ctrlKey)) remove();
-        else return;
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      className={`relative border px-s2 py-s1 font-zen text-12 outline-none ${waiting ? 'border-orange' : 'border-fg/12 focus-within:border-fg/30 focus-visible:border-fg/50'}`}
     >
       <header className="flex items-baseline gap-s2">
         <span className="shrink-0 font-medium text-fg/85">/{macro.name}</span>
@@ -447,14 +442,13 @@ const Card = ({
           {macro.params.map((param, index) => {
             const empty = !isMacroValueFilled(card.args[param.name]);
             return (
-              <div key={param.name} className="flex items-baseline gap-s2">
+              // Label and control share a first row of `h-field`, so the
+              // label sits level with the control's first line.
+              <div key={param.name} className="flex items-start gap-s2">
                 <span
-                  className={`w-20 shrink-0 ${waiting && empty && param.required !== false ? 'text-orange' : 'text-fg/40'}`}
+                  className={`flex h-field w-20 shrink-0 items-center ${waiting && empty && param.required !== false ? 'text-orange' : 'text-fg/40'}`}
                 >
                   {param.name}
-                  {param.required === false && (
-                    <span className="text-fg/25"> optional</span>
-                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <Field
@@ -464,16 +458,26 @@ const Card = ({
                     set={(v) => setArg(param.name, v)}
                   />
                 </div>
+                {param.required === false && (
+                  <span className="flex h-field shrink-0 items-center text-fg/25">
+                    optional
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
       )}
-    </section>
+    </CardShell>
   );
 };
 
-/** The cards of one answer, under its box, scrolling once taller than the body. */
+/**
+ * The cards of one answer, under its box, one stack scrolling once taller than
+ * its token: the comments on the Question (in body order), then the
+ * macros. Every card is the same kind of stop, so Tab, Esc, ⌘⌫ and the focus a
+ * removal leaves behind are the same for both.
+ */
 export const MacroCards = ({
   itemKey,
   inboxId,
@@ -484,6 +488,8 @@ export const MacroCards = ({
   readonly number: QuestionNumber;
 }) => {
   const [cards, setCards] = useAtom(macroCardsAtom(itemKey));
+  const comments = useAtomValue(commentsInOrderAtom(itemKey));
+  const removeComment = useAtomSet(removeCommentAtom);
   const heldOn = useAtomValue(macroHeldAtom(itemKey));
   const askFocus = useAtomSet(askMacroFocusAtom);
   const bumpBoxFocus = useAtomSet(boxFocusAskedAtom);
@@ -503,15 +509,35 @@ export const MacroCards = ({
       if (el !== null) focusStop(el);
     });
   });
-  if (cards.length === 0) return null;
+  if (cards.length === 0 && comments.length === 0) return null;
   const held = heldOn !== undefined && heldOn === missingKeyOf(cards);
   const write = (next: ReadonlyArray<MacroCard>) =>
     setCards({ inboxId, number, cards: next });
+  const stops = stackStops(cards, comments);
+  // The next card down takes the focus, else the one above, else the text.
+  const focusAfter = (at: number) => {
+    const rest = stops.filter((_, i) => i !== at);
+    const next = rest[at] ?? rest[at - 1];
+    askFocus({ key: itemKey, to: next ?? { _tag: 'Text' } });
+  };
   return (
     <div
-      className="mt-s1 flex max-h-body flex-col gap-s1 overflow-y-auto"
+      ref={fadeEdges}
+      className={`mt-s1 flex max-h-cards flex-col gap-s1 overflow-y-auto ${edgeFade}`}
       data-macro-cards
     >
+      {comments.map((c, at) => (
+        <CommentCard
+          key={`c${c.id}`}
+          itemKey={itemKey}
+          comment={c}
+          number={at + 1}
+          remove={() => {
+            removeComment({ key: itemKey, id: c.id });
+            focusAfter(at);
+          }}
+        />
+      ))}
       {cards.map((card, at) => (
         <Card
           key={card.id}
@@ -520,15 +546,8 @@ export const MacroCards = ({
           held={held}
           setArg={(name, v) => write(withArg(cards, card.id, name, v))}
           remove={() => {
-            const rest = cards.filter((c) => c.id !== card.id);
-            write(rest);
-            // The next card down takes the focus, else the one above, else
-            // the text.
-            const next = rest[at] ?? rest[at - 1];
-            askFocus({
-              key: itemKey,
-              to: next === undefined ? { _tag: 'Text' } : firstStopOf(next),
-            });
+            write(cards.filter((c) => c.id !== card.id));
+            focusAfter(comments.length + at);
           }}
         />
       ))}
@@ -536,10 +555,17 @@ export const MacroCards = ({
   );
 };
 
+/** Each card's first stop, top to bottom, as the stack draws them. */
+const stackStops = (
+  cards: ReadonlyArray<MacroCard>,
+  comments: ReadonlyArray<{ readonly id: number }>,
+): ReadonlyArray<MacroFocus> => [
+  ...comments.map((c) => commentStop(c.id)),
+  ...cards.map(firstStopOf),
+];
+
 /** Tab from the text, while there are cards, goes to the first card's first stop. */
 export const firstCardStop = (
   cards: ReadonlyArray<MacroCard>,
-): MacroFocus | undefined => {
-  const [first] = cards;
-  return first === undefined ? undefined : firstStopOf(first);
-};
+  comments: ReadonlyArray<{ readonly id: number }> = [],
+): MacroFocus | undefined => stackStops(cards, comments)[0];

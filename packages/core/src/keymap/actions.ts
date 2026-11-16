@@ -162,6 +162,12 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
       'In a macro card under the answer box: show or hide what the macro tells the agent',
   },
   {
+    id: 'comment_selection',
+    section: 'Questions',
+    description:
+      'Comment on the text selected in the question you are answering',
+  },
+  {
     id: 'copy_question',
     section: 'Questions',
     description: 'Copy the selected question',
@@ -270,6 +276,11 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   // Matched by the key's place, as every letter is, so a Mac's ⌥I, a dead key
   // that types nothing of its own, still counts.
   'alt+i=toggle_macro_info',
+  // c with nothing held, away from a field, as the floating button says; ⌘⌥M
+  // (Ctrl+Alt+M) from the answer box too, as most editors comment.
+  'c=comment_selection',
+  'super+alt+m=comment_selection',
+  'ctrl+alt+m=comment_selection',
   'prefix>y=copy_question',
   'prefix>o=open_session',
   'prefix>d=dismiss_highlight',
@@ -349,4 +360,9 @@ export const MACRO_KEYS: ReadonlyArray<{
     what: 'Shut what the macro tells the agent; again, back to the text',
   },
   { keys: '⌘⌫ / Ctrl+⌫', what: 'Remove the card' },
+  {
+    keys: '↩ · ⇧↩',
+    what: 'In a comment: back to the text · a new line',
+  },
+  { keys: 'Esc', what: 'On a comment never written: remove it' },
 ];

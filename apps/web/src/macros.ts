@@ -270,10 +270,16 @@ export const macroHeldAtom = Atom.family((_key: string) =>
 
 // --- focus, and what a card reveals -----------------------------------------------------
 
+/**
+ * A card in the stack under the answer box: a macro's by its number, a
+ * comment's as `c<n>` (`comments.ts`), so the two never meet.
+ */
+export type CardId = number | `c${number}`;
+
 /** Where the caret is asked to go: a card's field, the card itself, or the text. */
 export type MacroFocus =
-  | { readonly _tag: 'Field'; readonly card: number; readonly index: number }
-  | { readonly _tag: 'Card'; readonly card: number }
+  | { readonly _tag: 'Field'; readonly card: CardId; readonly index: number }
+  | { readonly _tag: 'Card'; readonly card: CardId }
   | { readonly _tag: 'Text' };
 
 /** Bumped with where to go; the box on screen moves the focus once drawn. */
@@ -295,7 +301,7 @@ export const askMacroFocusAtom = Atom.writable(
 );
 
 /** A card, across answers: `<answer key>#<card id>`. */
-export const cardRefOf = (key: string, id: number): string => `${key}#${id}`;
+export const cardRefOf = (key: string, id: CardId): string => `${key}#${id}`;
 
 /** The cards whose instruction shows now. */
 export const macroInfoOpenAtom = Atom.make<ReadonlyArray<string>>([]).pipe(
