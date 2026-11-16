@@ -302,6 +302,10 @@ export default defineConfig({
           });
         },
       },
+      // The libraries an HTML block's frame loads (serve's `/vendor/`). A
+      // frame's `Origin` is `null`, which serve allows on this path alone, so
+      // nothing is rewritten.
+      '/vendor': { target: SERVE_TARGET, changeOrigin: true },
     },
   },
   test: {

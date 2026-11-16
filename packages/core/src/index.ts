@@ -6,6 +6,7 @@ export * from './claude-settings';
 export * from './comments';
 export * from './config';
 export * from './drawing';
+export * from './html-block';
 export * from './ids';
 export * from './inbox';
 export * from './inbox-code';

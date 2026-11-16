@@ -43,6 +43,12 @@ catalog:
   # Excalidraw draws and edits the drawings in question bodies, in the
   # browser only, loaded by a dynamic import when a drawing is first shown.
   "@excalidraw/excalidraw": ^0.18.1
+  # The libraries an HTML block in a question body may load: serve hands out
+  # fixed builds of them under /vendor/, and a block's frame may load scripts
+  # from nowhere else. Pinned exactly, so a block written against one build
+  # keeps working; a move is a deliberate change to what blocks can use.
+  three: 0.187.0
+  d3: 7.9.2
   # Fuse.js ranks the Cmd+P question search (title over body).
   fuse.js: ^7.5.0
   # Lucide draws the queue tabs' icons. Each icon is its own export, so the

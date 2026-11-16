@@ -474,6 +474,18 @@ export const scriptOf = (q: ScriptSource): Script => {
       });
       return;
     }
+    if (part.kind === 'html-block') {
+      // An HTML block runs; nothing in it can be read out, so it is named.
+      segments.push({
+        id: `p${p}`,
+        kind: 'described',
+        part: p,
+        what: 'diagram',
+        text: `An interactive block, ${part.id}.`,
+        pauseAfter: PAUSE_APART,
+      });
+      return;
+    }
     unitsOf(parseHtml(part.html)).forEach((u, i) => {
       const text =
         u.kind === 'described' ? describe(u) : spokenOf(u.nodes).text;

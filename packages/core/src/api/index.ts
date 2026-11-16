@@ -4,6 +4,7 @@
 
 export * from '../comments';
 export * from '../drawing';
+export * from '../html-block';
 export * from '../inbox-code';
 export * from '../inbox-metadata';
 export * from '../macros';

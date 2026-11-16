@@ -472,6 +472,69 @@ describe('drawings as stored in the log', () => {
   });
 });
 
+// HTML blocks: on an ask, an edit and a move, each a document's hash and
+// size, never the document, which is a blob row. They came after the event
+// goldens above were pinned and so have their own file.
+const CHART_SHA =
+  '9f2c3b1e6a7d4c5b8e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f';
+const SCENE_SHA =
+  '0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
+
+const HTML_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Which curve?',
+    body: 'The two runs.\n\n<Html id="chart" width="wide"/>\n',
+    htmls: { chart: { sha: CHART_SHA, bytes: 4096 } },
+  },
+  {
+    _tag: 'QuestionEdited',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Which curve?',
+    body: '<Html id="chart"/>\n\n<Html id="scene" width="full"/>\n',
+    htmls: {
+      chart: { sha: CHART_SHA, bytes: 4096 },
+      scene: { sha: SCENE_SHA, bytes: 20480 },
+    },
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Which curve?',
+      body: '<Html id="chart"/>',
+      revision: rev(2),
+      metadata: {},
+      state: 'awaiting-operator',
+      withdrawn: false,
+      htmls: { chart: { sha: CHART_SHA, bytes: 4096 } },
+    },
+  },
+];
+
+describe('HTML blocks as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = HTML_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-html-events.jsonl', lines);
+    const read = golden('inbox-html-events.jsonl').split('\n').filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(HTML_EVENTS);
+  });
+
+  it('reads an ask and an edit logged before HTML blocks with none', () => {
+    for (const line of [
+      `{"_tag":"QuestionAsked","inboxId":"${INBOX_A}","number":1,"title":"T","body":"B"}`,
+      `{"_tag":"QuestionEdited","inboxId":"${INBOX_A}","number":1,"title":"T","body":"B2"}`,
+    ])
+      expect(decodeEvent(line)).not.toHaveProperty('htmls');
+  });
+});
+
 // Macros: on an answer, on a deferral with no note, and carried by a move,
 // which came after the event goldens above were pinned and so have their own
 // file.

@@ -1,5 +1,7 @@
-import { cpSync, existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'tsup';
+import { VENDOR_SOURCES } from './src/vendor-files';
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -23,6 +25,13 @@ export default defineConfig({
   // (`src/package-paths.ts`): the assets, and the web build when there is one.
   onSuccess: async () => {
     cpSync('assets', 'dist/assets', { recursive: true });
+    // The libraries an HTML block may load, served under /vendor/
+    // (`src/serve-vendor.ts`).
+    for (const [name, source] of Object.entries(VENDOR_SOURCES)) {
+      const to = path.join('dist', 'vendor', name);
+      mkdirSync(path.dirname(to), { recursive: true });
+      cpSync(path.join('node_modules', source), to);
+    }
     if (existsSync('../web/dist/index.html')) {
       cpSync('../web/dist', 'dist/web', { recursive: true });
     }

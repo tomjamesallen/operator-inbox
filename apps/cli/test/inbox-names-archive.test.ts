@@ -19,6 +19,7 @@ import {
   NAME_TAKEN_EXIT_CODE,
   printingHolder,
 } from '../src/commands/inbox';
+import { InboxBlobsInMemory } from '../src/inbox-blobs';
 import { InboxLog, InboxLogInMemory, makeInboxLog } from '../src/inbox-store';
 import { exitCodeOf } from '../src/runtime-teardown';
 
@@ -224,6 +225,7 @@ describe('inboxes named before the label tags existed', () => {
       Effect.provide(
         Layer.effect(InboxLog, makeInboxLog).pipe(
           Layer.provideMerge(DcbEventStoreInMemory),
+          Layer.provide(InboxBlobsInMemory),
         ),
       ),
     );

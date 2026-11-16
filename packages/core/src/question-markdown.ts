@@ -35,6 +35,8 @@
 // its source text, which the browser draws with Mermaid. The source never becomes HTML here.
 // An `<Excalidraw id="…"/>` line on its own is split out the same way, as the
 // id of a drawing the Question carries; the tag never becomes HTML either.
+// So is an `<Html id="…"/>` line, with an optional `width`, as the id of one
+// of the Question's HTML blocks, which the page runs in a sandboxed frame.
 
 import {
   Marked,
@@ -44,6 +46,7 @@ import {
   type TokensList,
 } from 'marked';
 import { highlightCode } from './code-highlight';
+import type { HtmlBlockWidth } from './html-block';
 import { escapeHtml } from './html-escape';
 
 const LINK_HREF = /^(https?:\/\/|mailto:)/i;
@@ -209,7 +212,15 @@ export type QuestionBodyPart =
   | { readonly kind: 'mermaid'; readonly source: string }
   // An `<Excalidraw id="…"/>` line: the Question's drawing of that id, which
   // the page draws from the scene the Question carries beside its body.
-  | { readonly kind: 'excalidraw'; readonly id: string };
+  | { readonly kind: 'excalidraw'; readonly id: string }
+  // An `<Html id="…" width="…"/>` line: the Question's HTML block of that id,
+  // which the page runs in a sandboxed frame from the document the Question
+  // names beside its body. `width` is left out for the default, `constrain`.
+  | {
+      readonly kind: 'html-block';
+      readonly id: string;
+      readonly width?: HtmlBlockWidth;
+    };
 
 // A drawing's tag: the whole of an HTML block, on a line of its own, exactly
 // `<Excalidraw id="…"/>`. Anywhere else, inline or with any other attribute,
@@ -220,6 +231,25 @@ const excalidrawId = (token: Token): string | undefined =>
   token.type === 'html' && (token as Tokens.HTML).block
     ? EXCALIDRAW_TAG.exec((token as Tokens.HTML).text.trim())?.[1]
     : undefined;
+
+// An HTML block's tag, by the same rule: the whole of an HTML block, on a line
+// of its own, exactly `<Html id="…"/>` or `<Html id="…" width="…"/>`, the
+// width one of `constrain`, `wide` and `full`. Anything else stays escaped
+// text.
+const HTML_TAG =
+  /^<Html id="([a-z0-9][a-z0-9-]{0,39})"(?:\s+width="(constrain|wide|full)")?\s*\/>$/;
+
+const htmlBlockOf = (
+  token: Token,
+):
+  | { readonly id: string; readonly width?: HtmlBlockWidth | undefined }
+  | undefined => {
+  if (token.type !== 'html' || !(token as Tokens.HTML).block) return undefined;
+  const m = HTML_TAG.exec((token as Tokens.HTML).text.trim());
+  const id = m?.[1];
+  if (id === undefined) return undefined;
+  return { id, width: m?.[2] as HtmlBlockWidth | undefined };
+};
 
 const isMermaid = (token: Token): token is Tokens.Code =>
   token.type === 'code' &&
@@ -250,12 +280,20 @@ export const renderQuestionParts = (
   };
   for (const token of tokens) {
     const drawing = excalidrawId(token);
+    const block = htmlBlockOf(token);
     if (isMermaid(token)) {
       flush();
       parts.push({ kind: 'mermaid', source: token.text });
     } else if (drawing !== undefined) {
       flush();
       parts.push({ kind: 'excalidraw', id: drawing });
+    } else if (block !== undefined) {
+      flush();
+      parts.push(
+        block.width === undefined || block.width === 'constrain'
+          ? { kind: 'html-block', id: block.id }
+          : { kind: 'html-block', id: block.id, width: block.width },
+      );
     } else run.push(token);
   }
   flush();

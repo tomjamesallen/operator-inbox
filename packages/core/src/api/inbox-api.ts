@@ -1,6 +1,7 @@
 import { Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
 import { QuestionComments } from '../comments';
+import { HTML_BLOCK_WIDTHS, HtmlBlocks } from '../html-block';
 import {
   Drawings,
   Metadata,
@@ -64,6 +65,13 @@ export const QuestionBodyPartDto = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('mermaid'), source: Schema.String }),
   // An `<Excalidraw id="…"/>` line: the Question's drawing of that id.
   Schema.Struct({ kind: Schema.Literal('excalidraw'), id: Schema.String }),
+  // An `<Html id="…"/>` line: the Question's HTML block of that id, and how
+  // wide it runs (left out: `constrain`).
+  Schema.Struct({
+    kind: Schema.Literal('html-block'),
+    id: Schema.String,
+    width: Schema.optionalKey(Schema.Literals(HTML_BLOCK_WIDTHS)),
+  }),
 ]);
 export type QuestionBodyPartDto = typeof QuestionBodyPartDto.Type;
 const bodyParts = Schema.optionalKey(Schema.Array(QuestionBodyPartDto));
@@ -76,6 +84,11 @@ const drawings = Schema.optionalKey(
 );
 // The drawings the operator changed and sent with their answer, by id.
 const sentDrawings = Schema.optionalKey(Drawings);
+// The Question's HTML blocks, by id (core's `InboxQuestion.htmls`): each its
+// document's hash and size only. The documents come from their own endpoint
+// (`htmlBlocks`), fetched for the Question the page shows, so the board never
+// carries them. An optional key, so a machine on an older build still decodes.
+const htmls = Schema.optionalKey(HtmlBlocks);
 // The macros the operator invoked with their answer, in order (core's
 // `macros.ts`). An optional key, so a machine on an older build still decodes.
 const macros = Schema.optionalKey(MacrosInvoked);
@@ -95,6 +108,7 @@ export const InboxOperatorQuestionDto = Schema.Struct({
   askedAt: at,
   highlight: Schema.optionalKey(InboxHighlightDto),
   drawings,
+  htmls,
 });
 export type InboxOperatorQuestionDto = typeof InboxOperatorQuestionDto.Type;
 
@@ -137,6 +151,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   sentDrawings,
   macros,
   comments,
+  htmls,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -166,6 +181,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   sentDrawings,
   macros,
   comments,
+  htmls,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
@@ -516,6 +532,19 @@ export const InboxBoardDto = Schema.Struct({
 });
 export type InboxBoardDto = typeof InboxBoardDto.Type;
 
+// One Question's HTML blocks' documents, by id: each its hash, which is the
+// key of its blob, and the document's text. Read for the Question the page
+// shows, never with the board. A block whose document the store does not
+// hold (a log copied without its blobs) is left out, and the page shows it
+// as missing.
+export const QuestionHtmlBlocksDto = Schema.Struct({
+  blocks: Schema.Record(
+    Schema.String,
+    Schema.Struct({ sha: Schema.String, doc: Schema.String }),
+  ),
+});
+export type QuestionHtmlBlocksDto = typeof QuestionHtmlBlocksDto.Type;
+
 export const RenamePayload = Schema.Struct({ label: Schema.String });
 export type RenamePayload = typeof RenamePayload.Type;
 
@@ -773,6 +802,18 @@ export class InboxApiGroup extends HttpApiGroup.make('inbox').add(
     success: InboxViewDto,
     error: [InboxNotFound, InboxUnavailable],
   }),
+  // A Question's HTML blocks' documents. A Question the Inbox has no such
+  // number for, or one with no blocks, has none.
+  HttpApiEndpoint.get(
+    'htmlBlocks',
+    '/inbox/:inboxId/questions/:number/html-blocks',
+    {
+      params: QuestionPath,
+      query: InboxReadQuery,
+      success: QuestionHtmlBlocksDto,
+      error: [InboxNotFound, InboxUnavailable],
+    },
+  ),
   HttpApiEndpoint.post('answer', '/inbox/:inboxId/questions/:number/answer', {
     params: QuestionPath,
     query: InboxReadQuery,

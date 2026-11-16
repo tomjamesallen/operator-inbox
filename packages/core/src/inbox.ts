@@ -7,6 +7,7 @@ import {
   QuestionComments,
 } from './comments';
 import { checkDrawings } from './drawing';
+import { checkHtmlBlocks, HtmlBlocks } from './html-block';
 import { lettersOfNamedCode, questionRef } from './inbox-code';
 import {
   emptyMetadata,
@@ -118,6 +119,10 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   // The drawings the body shows. An optional key, so every Question asked
   // before drawings existed reads as it did.
   drawings: Schema.optionalKey(Drawings),
+  // The HTML blocks the body shows, by id: each its document's hash and
+  // size, never the document, which is a row of the store's blob table
+  // (`html-block.ts`). Optional for the same reason.
+  htmls: Schema.optionalKey(HtmlBlocks),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
 
@@ -158,13 +163,15 @@ export type AnswerProcessed = typeof AnswerProcessed.Type;
 // the whole new title and body, not a patch, so the fold needs no merge.
 // `drawings`, when set, is the whole new set of drawings in the same way; left
 // out, the drawings stay as they were, as every edit logged before drawings
-// existed did.
+// existed did. `htmls`, when set, is the whole new set of HTML blocks in the
+// same way; left out, they stay as they were.
 export const QuestionEdited = Schema.TaggedStruct('QuestionEdited', {
   inboxId: InboxId,
   number: QuestionNumber,
   title: Schema.String,
   body: Schema.String,
   drawings: Schema.optionalKey(Drawings),
+  htmls: Schema.optionalKey(HtmlBlocks),
 });
 export type QuestionEdited = typeof QuestionEdited.Type;
 
@@ -336,6 +343,7 @@ export const MovedQuestion = Schema.Struct({
   sentDrawings: Schema.optionalKey(Drawings),
   macros: Schema.optionalKey(MacrosInvoked),
   comments: Schema.optionalKey(QuestionComments),
+  htmls: Schema.optionalKey(HtmlBlocks),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -547,6 +555,9 @@ export interface InboxQuestion {
   readonly drawings?: Readonly<Record<string, QuestionDrawing>>;
   // The drawings the operator changed and sent with their answer, by id.
   readonly sentDrawings?: Drawings;
+  // The agent's HTML blocks, by id: each its document's hash and size. The
+  // operator's answer never changes one.
+  readonly htmls?: HtmlBlocks;
   // The macros the operator invoked with their answer, in order.
   readonly macros?: MacrosInvoked;
   // The operator's comments on its text, sent with their answer, in body order.
@@ -622,6 +633,12 @@ const drawingsAt = (
       ];
     }),
   );
+
+// A Question with `next` as its whole set of HTML blocks: none, when empty.
+const htmlsSet = (q: InboxQuestion, next: HtmlBlocks): InboxQuestion => {
+  const { htmls: _, ...rest } = q;
+  return Object.keys(next).length === 0 ? rest : { ...rest, htmls: next };
+};
 
 const withQuestion = (
   state: InboxState,
@@ -704,6 +721,7 @@ export const evolveInbox = (
                     QuestionRevision.make(1),
                   ),
                 }),
+            ...(event.htmls === undefined ? {} : { htmls: event.htmls }),
             ...(stamp === undefined ? {} : { askedStamp: stamp }),
           },
         ],
@@ -738,9 +756,10 @@ export const evolveInbox = (
     case 'QuestionEdited':
       return withQuestion(state, event.number, (q) => {
         const revision = QuestionRevision.make(q.revision + 1);
+        const htmled = event.htmls === undefined ? q : htmlsSet(q, event.htmls);
         if (event.drawings === undefined)
-          return { ...q, title: event.title, body: event.body, revision };
-        const { drawings: _, ...rest } = q;
+          return { ...htmled, title: event.title, body: event.body, revision };
+        const { drawings: _, ...rest } = htmled;
         const drawings = drawingsAt(q.drawings, event.drawings, revision);
         return {
           ...rest,
@@ -826,6 +845,7 @@ export const evolveInbox = (
                 : { sentDrawings: q.sentDrawings }),
               ...(q.macros === undefined ? {} : { macros: q.macros }),
               ...(q.comments === undefined ? {} : { comments: q.comments }),
+              ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
             },
           ],
         };
@@ -1111,6 +1131,7 @@ export type InboxRefusalReason =
   | 'same-inbox'
   | 'code-taken'
   | 'bad-drawing'
+  | 'bad-html'
   | 'bad-macro'
   | 'bad-comment'
   | 'unknown-group';
@@ -1143,6 +1164,16 @@ const checkedDrawings = (
     : Result.mapError(
         checkDrawings(drawings),
         (message) => new InboxRefusal({ reason: 'bad-drawing', message }),
+      );
+
+const checkedHtmls = (
+  htmls: HtmlBlocks | undefined,
+): Result.Result<HtmlBlocks | undefined, InboxRefusal> =>
+  htmls === undefined
+    ? Result.succeed(undefined)
+    : Result.mapError(
+        checkHtmlBlocks(htmls),
+        (message) => new InboxRefusal({ reason: 'bad-html', message }),
       );
 
 const notFound = (inboxId: InboxId) =>
@@ -1511,6 +1542,9 @@ export const decideAsk = (
     readonly metadata?: Metadata;
     // Scenes by id, for the body's `<Excalidraw id="…"/>` lines.
     readonly drawings?: Drawings;
+    // Documents' hashes and sizes by id, for the body's `<Html id="…"/>`
+    // lines; each document already in the blob table.
+    readonly htmls?: HtmlBlocks;
   },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1518,19 +1552,24 @@ export const decideAsk = (
     return refuse('empty', 'a question needs a title');
   const highest = state.questions.reduce((n, q) => Math.max(n, q.number), 0);
   return Result.flatMap(checkedDrawings(input.drawings), (drawings) =>
-    Result.map(
-      checkedMetadata(input.metadata),
-      (metadata): QuestionAsked => ({
-        _tag: 'QuestionAsked',
-        inboxId: input.inboxId,
-        number: QuestionNumber.make(highest + 1),
-        title: input.title,
-        body: input.body,
-        ...(metadata === undefined ? {} : { metadata }),
-        ...(drawings === undefined || Object.keys(drawings).length === 0
-          ? {}
-          : { drawings }),
-      }),
+    Result.flatMap(checkedHtmls(input.htmls), (htmls) =>
+      Result.map(
+        checkedMetadata(input.metadata),
+        (metadata): QuestionAsked => ({
+          _tag: 'QuestionAsked',
+          inboxId: input.inboxId,
+          number: QuestionNumber.make(highest + 1),
+          title: input.title,
+          body: input.body,
+          ...(metadata === undefined ? {} : { metadata }),
+          ...(drawings === undefined || Object.keys(drawings).length === 0
+            ? {}
+            : { drawings }),
+          ...(htmls === undefined || Object.keys(htmls).length === 0
+            ? {}
+            : { htmls }),
+        }),
+      ),
     ),
   );
 };
@@ -1797,17 +1836,20 @@ export const decideEdit = (
     // Drawings to set, by id: each replaces the drawing of that id or adds
     // one; the Question's other drawings stay.
     readonly drawings?: Drawings;
+    // HTML blocks to set, by id, in the same way; the others stay.
+    readonly htmls?: HtmlBlocks;
   },
 ): Result.Result<QuestionEdited, InboxRefusal> =>
   Result.flatMap(changeable(state, input.inboxId, input.number), (q) => {
     if (
       input.title === undefined &&
       input.body === undefined &&
-      input.drawings === undefined
+      input.drawings === undefined &&
+      input.htmls === undefined
     )
       return refuse(
         'empty',
-        'an edit needs a new title, a new body or a drawing',
+        'an edit needs a new title, a new body, a drawing or an HTML block',
       );
     const title = input.title ?? q.title;
     const body = input.body ?? q.body;
@@ -1825,19 +1867,39 @@ export const decideEdit = (
           drawings === undefined ||
           (Object.keys(drawings).length === Object.keys(current).length &&
             Object.entries(drawings).every(([id, s]) => current[id] === s));
-        if (title === q.title && body === q.body && sameDrawings)
-          return refuse(
-            'unchanged',
-            `${questionRef(state.code, input.number)} already says that; nothing changed`,
-          );
-        return Result.succeed({
-          _tag: 'QuestionEdited' as const,
-          inboxId: input.inboxId,
-          number: input.number,
-          title,
-          body,
-          ...(drawings === undefined || sameDrawings ? {} : { drawings }),
-        });
+        const currentHtmls = q.htmls ?? {};
+        return Result.flatMap(
+          input.htmls === undefined
+            ? Result.succeed(undefined)
+            : checkedHtmls({ ...currentHtmls, ...input.htmls }),
+          (htmls) => {
+            const sameHtmls =
+              htmls === undefined ||
+              (Object.keys(htmls).length === Object.keys(currentHtmls).length &&
+                Object.entries(htmls).every(
+                  ([id, r]) => currentHtmls[id]?.sha === r.sha,
+                ));
+            if (
+              title === q.title &&
+              body === q.body &&
+              sameDrawings &&
+              sameHtmls
+            )
+              return refuse(
+                'unchanged',
+                `${questionRef(state.code, input.number)} already says that; nothing changed`,
+              );
+            return Result.succeed({
+              _tag: 'QuestionEdited' as const,
+              inboxId: input.inboxId,
+              number: input.number,
+              title,
+              body,
+              ...(drawings === undefined || sameDrawings ? {} : { drawings }),
+              ...(htmls === undefined || sameHtmls ? {} : { htmls }),
+            });
+          },
+        );
       },
     );
   });
@@ -2028,6 +2090,7 @@ const movedQuestionOf = (
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
+    ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
   };
 };
 
