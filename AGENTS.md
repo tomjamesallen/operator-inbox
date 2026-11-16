@@ -1,6 +1,6 @@
 # Operator Inbox: instructions for agents
 
-Operator Inbox is a local app. An agent session posts each question for its operator to an **Inbox**, the operator answers it in a browser, and the session picks the answer up. `GLOSSARY.md` holds the domain words; `docs/adr/` holds the decisions.
+Operator Inbox is a local app. An agent session posts each question for its operator to an **Inbox**, the operator answers it in a browser, and the session picks the answer up. `GLOSSARY.md` holds the domain words, `docs/architecture.md` how the app is built, and `docs/adr/` the decisions (kept out of the published copy).
 
 ## Layout
 
