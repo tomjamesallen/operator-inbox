@@ -103,4 +103,76 @@ describe('the stylesheet', () => {
       /\[data-question-body\] table \{[^}]*overflow-wrap: anywhere/,
     );
   });
+
+  // In the reading column a code block keeps the text's left edge and runs
+  // right only. A picture (a table, an svg diagram, a Mermaid diagram's or a
+  // drawing's figure) follows config.json's `wideBlocks`, which the reader
+  // carries as `data-wide-blocks`: under `both` it is centred on the column
+  // while there is room, and keeps a gutter clear of a sidebar pinned over the
+  // reader; under `right` it runs right only, as code does.
+  const picture = (css: string, wide: 'both' | 'right'): string | undefined =>
+    css.match(
+      new RegExp(
+        `\\[data-wide-blocks="${wide}"\\] \\[data-zen-flow\\] \\[data-question-body\\] > :is\\(\\[data-table-scroll\\], p:has\\(> img\\[src\\^="data:image\\/svg\\+xml"\\]\\)\\)(?:, [^{]*)? \\{([^}]*)\\}`,
+      ),
+    )?.[1];
+  // The stylesheet's own line breaks inside a selector or a sum come through
+  // as written.
+  const flatten = (css: string) =>
+    css.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').replace(/\s+/g, ' ');
+  const figure = (wide: 'both' | 'right', utilities: string[]) =>
+    utilities.map((u) => `in-data-zen-flow:wide-${wide}:${u}`);
+
+  it('runs code right only, and a picture both ways under wideBlocks "both"', async () => {
+    const css = flatten(
+      await build(
+        figure('both', [
+          'max-w-figure-wide',
+          '-ml-figure-wide-inset',
+          'translate-x-figure-wide-inset',
+        ]),
+      ),
+    );
+    expect(css).toMatch(
+      /\[data-zen-flow\] \[data-question-body\] > pre, \[data-wide-blocks="right"\][^{]*\{ width: max-content; max-width: var\(--container-bleed\); min-width: 100%; \}/,
+    );
+    const inset = 'max(0px, (100cqw - 100%) / 2 - var(--rail-over))';
+    const both = picture(css, 'both');
+    expect(both).toContain(`margin-left: calc(${inset} * -1)`);
+    expect(both).toContain(`--tw-translate-x: ${inset}`);
+    expect(both).toContain('max-width: calc(100cqw - var(--rail-over))');
+    expect(both).toContain('min-width: 100%');
+    const figureInset =
+      'max(0px, (var(--reader-width) - 100%) / 2 - var(--rail-over))';
+    const scoped =
+      ':where([data-wide-blocks="both"]) :is(:where([data-zen-flow])';
+    expect(css).toContain(
+      `${scoped} .in-data-zen-flow\\:wide-both\\:-ml-figure-wide-inset) { margin-left: calc(${figureInset} * -1)`,
+    );
+    expect(css).toContain(
+      `${scoped} .in-data-zen-flow\\:wide-both\\:translate-x-figure-wide-inset) { --tw-translate-x: ${figureInset}`,
+    );
+    expect(css).toContain(
+      `${scoped} .in-data-zen-flow\\:wide-both\\:max-w-figure-wide) { max-width: calc(var(--reader-width) - var(--rail-over))`,
+    );
+    expect(css).toMatch(
+      /@property --rail-over \{ syntax: "<length>"; inherits: true; initial-value: 0px;/,
+    );
+  });
+
+  it('keeps a picture to the text’s left edge under wideBlocks "right"', async () => {
+    const css = flatten(await build(figure('right', ['max-w-figure-bleed'])));
+    // The same rule as code: the column's left edge, out to the right.
+    expect(css).toMatch(
+      /\[data-zen-flow\] \[data-question-body\] > pre, \[data-wide-blocks="right"\] \[data-zen-flow\] \[data-question-body\] > :is\(\[data-table-scroll\], p:has\(> img\[src\^="data:image\/svg\+xml"\]\)\) \{ width: max-content; max-width: var\(--container-bleed\); min-width: 100%; \}/,
+    );
+    expect(picture(css, 'right')).toBe(
+      ' width: max-content; max-width: var(--container-bleed); min-width: 100%; ',
+    );
+    expect(css).toContain(
+      ':where([data-wide-blocks="right"]) :is(:where([data-zen-flow]) .in-data-zen-flow\\:wide-right\\:max-w-figure-bleed) { max-width: calc(50cqw + var(--reader-width) / 2)',
+    );
+    // Nothing moves a picture under "right".
+    expect(css).not.toMatch(/data-wide-blocks="right"[^{]*\{[^}]*translate/);
+  });
 });

@@ -27,10 +27,21 @@ export const PriorityPull = Schema.Literals(['interjection', 'boomerang']);
 export type PriorityPull = typeof PriorityPull.Type;
 export const DEFAULT_PRIORITY_PULL: PriorityPull = 'interjection';
 
+// How a table or a picture wider than the text column widens in the reading
+// column: config.json's `wideBlocks`. `both`: it is centred on the column,
+// growing both ways while there is room either side, then grows right only
+// from the left limit, so it uses the room. `right`: it keeps the text's left
+// edge and grows right only, so everything in a Question starts where its
+// text does. A code block grows right only either way: its lines are read,
+// and a line is easier to find from where the text starts.
+export const WideBlocks = Schema.Literals(['both', 'right']);
+export type WideBlocks = typeof WideBlocks.Type;
+export const DEFAULT_WIDE_BLOCKS: WideBlocks = 'both';
+
 // What serve reads from Local's config for the Inbox page: the metadata rules
 // from metadata.json as the file holds them, or the default when there is no
-// file, and config.json's `chaseAfterMinutes`, `diagramSize` and
-// `priorityPull` when they are set. Its own
+// file, and config.json's `chaseAfterMinutes`, `diagramSize`,
+// `priorityPull` and `wideBlocks` when they are set. Its own
 // endpoint, apart from the board, so the board's shape does not move.
 // BROWSER-SAFE: the web app imports it, so it uses nothing Node-only.
 export const InboxConfigDto = Schema.Struct({
@@ -44,6 +55,9 @@ export const InboxConfigDto = Schema.Struct({
   // Absent: unset, or from a serve that predates it. The page then uses
   // `DEFAULT_PRIORITY_PULL`.
   priorityPull: Schema.optionalKey(PriorityPull),
+  // Absent: unset, or from a serve that predates it. The page then uses
+  // `DEFAULT_WIDE_BLOCKS`.
+  wideBlocks: Schema.optionalKey(WideBlocks),
 });
 export type InboxConfigDto = typeof InboxConfigDto.Type;
 

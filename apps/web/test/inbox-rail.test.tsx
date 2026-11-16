@@ -24,6 +24,7 @@ import {
   type RailMeasure,
   railListOf,
   railMeasureAtom,
+  railOverOf,
   railWidthOf,
   type SideNote,
   sideNotesOf,
@@ -305,6 +306,32 @@ describe('how the sidebar opens', () => {
       expect(layer()?.getAttribute('data-rail-layer')).toBe('over'),
     );
     await railIs('docked');
+  });
+
+  it('tells the reader how far a pin over it reaches, and nothing else does', async () => {
+    const over = () =>
+      (
+        document.querySelector('[data-inbox-reader]') as HTMLElement
+      ).style.getPropertyValue('--rail-over');
+    await mount();
+    expect(over()).toBe('');
+    click('wide');
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.mouseEnter(burger());
+    await railIs('peeking');
+    expect(over()).toBe('');
+    fireEvent.click(burger());
+    await railIs('docked');
+    expect(over()).toBe('var(--spacing-rail)');
+    // In a column of its own it moves the reader, and covers none of it.
+    click('middle');
+    await waitFor(() => expect(over()).toBe(''));
+    await railIs('docked');
+    click('wide');
+    await waitFor(() => expect(over()).toBe('var(--spacing-rail)'));
+    fireEvent.click(burger());
+    await railShut();
+    expect(over()).toBe('');
   });
 
   it('opens as a drawer when it does not fit', async () => {
@@ -956,6 +983,18 @@ describe('the sums', () => {
     // Rounded up it would no longer fit, and the pin would shut mid-drag.
     expect(clampRail(900, { ...WIDE, room: 335.75 }, true)).toBe(335);
     expect(clampRail(900, MIDDLE, true)).toBe(400);
+  });
+
+  // A wide picture keeps a gutter clear of a sidebar lying over the reader,
+  // and only of one pinned there: a drawer passes, and a column moves the
+  // reader itself.
+  it('says how far a sidebar pinned over the reader reaches into it', () => {
+    expect(railOverOf('docked', false, null)).toBe('var(--spacing-rail)');
+    expect(railOverOf('docked', false, 300)).toBe('300px');
+    expect(railOverOf('docked', false, 160)).toBe('240px');
+    expect(railOverOf('docked', true, 300)).toBeUndefined();
+    for (const rail of ['shut', 'peeking', 'drawer'] as const)
+      expect(railOverOf(rail, false, 300)).toBeUndefined();
   });
 
   it('raises a width kept from the old floor', () => {

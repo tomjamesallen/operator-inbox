@@ -10,11 +10,11 @@ import { HttpApiBuilder } from 'effect/http-api';
 // every request so an edit shows on the page's next load with no restart of
 // serve: the metadata rules from `metadata.json`, as the file holds them, or
 // the default when there is no file, and config.json's `chaseAfterMinutes`,
-// `diagramSize` and `priorityPull`.
+// `diagramSize`, `priorityPull` and `wideBlocks`.
 // A metadata.json that is there and cannot be read, or whose rules are not
 // usable, is a failure carrying the sentence the CLI prints for it. A
-// config.json that does not load costs only the chase, diagram and priority
-// settings, so the page keeps their defaults: serve's start-up line already
+// config.json that does not load costs only the chase, diagram, priority and
+// wide-block settings, so the page keeps their defaults: serve's start-up line already
 // names that file's problem.
 export const readInboxConfig = Effect.fnUntraced(function* () {
   const loaded = yield* loadMetadataRules().pipe(
@@ -31,13 +31,14 @@ export const readInboxConfig = Effect.fnUntraced(function* () {
   );
   if (Result.isFailure(loaded.rules))
     return yield* new InboxConfigUnreadable({ message: loaded.rules.failure });
-  const { chaseAfterMinutes, diagramSize, priorityPull } =
+  const { chaseAfterMinutes, diagramSize, priorityPull, wideBlocks } =
     yield* loadConfig().pipe(
       Effect.map(({ config }) => config),
       Effect.orElseSucceed(() => ({
         chaseAfterMinutes: undefined,
         diagramSize: undefined,
         priorityPull: undefined,
+        wideBlocks: undefined,
       })),
     );
   return {
@@ -45,6 +46,7 @@ export const readInboxConfig = Effect.fnUntraced(function* () {
     ...(chaseAfterMinutes === undefined ? {} : { chaseAfterMinutes }),
     ...(diagramSize === undefined ? {} : { diagramSize }),
     ...(priorityPull === undefined ? {} : { priorityPull }),
+    ...(wideBlocks === undefined ? {} : { wideBlocks }),
   };
 });
 

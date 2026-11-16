@@ -63,7 +63,7 @@ A Vite single-page app in React, styled with Tailwind v4 and built on Base UI co
 
 | Where | What |
 | :-- | :-- |
-| `~/.config/operator-inbox/config.json` | this machine's settings: `databasePath`, `serve.tailnet`, `inboxMachines`, `readout.voice`, and the page's `chaseAfterMinutes`, `diagramSize` and `priorityPull` |
+| `~/.config/operator-inbox/config.json` | this machine's settings: `databasePath`, `serve.tailnet`, `inboxMachines`, `readout.voice`, and the page's `chaseAfterMinutes`, `diagramSize`, `priorityPull` and `wideBlocks` |
 | `~/.config/operator-inbox/metadata.json` | the metadata rules (optional; the built-in defaults otherwise) |
 | `~/.config/operator-inbox/keybindings` | key overrides, one binding per line (optional) |
 | `~/.config/operator-inbox/macros.json` | the macros the answer box offers (optional; none otherwise) |

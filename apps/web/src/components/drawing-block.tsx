@@ -88,11 +88,15 @@ export const DrawingBlock = ({
 // folding into a column of words; ⤢ (`open`) sits outside the wrap, pinned
 // to the right edge, so it never leaves the frame.
 //
-// In the reading column the figure is sized as a code block is (`index.css`,
-// `[data-zen-flow] [data-question-body] > pre`): the column's width at least,
-// as wide as its picture asks, and no further than the right edge of the
-// reader (`max-w-figure-bleed`: the code block's edge, written from inside
-// the column-wide `picture-room` its picture is sized in). The label row and
+// In the reading column the figure is sized and placed as a table is
+// (`index.css`, `--spacing-wide-inset`): the column's width at least, and as
+// wide as its picture asks. Under config.json's `wideBlocks: "both"`, the
+// default (`wide-both:`), it is centred on the column while there is room
+// either side, then runs right from the left limit, to the reader's right
+// edge (`max-w-figure-wide`, `figure-wide-inset`); under `"right"`
+// (`wide-right:`) it keeps the column's left edge and runs right only
+// (`max-w-figure-bleed`). Those are the table's tokens, written from inside
+// the column-wide `picture-room` its picture is sized in. The label row and
 // the notice keep out of that sum (`contain-inline-size`), so only the
 // picture widens the figure, and a long id or mark wraps or truncates in the
 // width the picture gave.
@@ -111,7 +115,7 @@ const Figure = ({
 }) => (
   <div className="picture-room">
     <figure
-      className="my-s2 border border-fg/13 in-data-zen-flow:w-max in-data-zen-flow:max-w-figure-bleed in-data-zen-flow:min-w-full"
+      className="my-s2 border border-fg/13 in-data-zen-flow:w-max in-data-zen-flow:min-w-full in-data-zen-flow:wide-both:max-w-figure-wide in-data-zen-flow:wide-both:-ml-figure-wide-inset in-data-zen-flow:wide-both:translate-x-figure-wide-inset in-data-zen-flow:wide-right:max-w-figure-bleed"
       data-drawing={id}
     >
       <div className="flex contain-inline-size items-center gap-s2 px-s2 py-0.5">

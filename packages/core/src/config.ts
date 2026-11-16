@@ -15,6 +15,7 @@ import {
   ChaseAfterMinutes,
   DiagramSize,
   PriorityPull,
+  WideBlocks,
 } from './api/inbox-config-api';
 import { SERVE_DEFAULT_PORT } from './api/serve-port';
 import {
@@ -317,6 +318,9 @@ export const AppConfig = Schema.Struct({
   // `interjection` or `boomerang` (`PriorityPull`). Unset:
   // `DEFAULT_PRIORITY_PULL`, `interjection`.
   priorityPull: Schema.optional(PriorityPull),
+  // How a table or a picture wider than the text column widens: `both` or
+  // `right` (`WideBlocks`). Unset: `DEFAULT_WIDE_BLOCKS`, `both`.
+  wideBlocks: Schema.optional(WideBlocks),
   // Listen mode, where serve reads the Questions aloud (`readout-api.ts`).
   // `voice` is the voice the audio is made in. Unset:
   // `DEFAULT_READOUT_VOICE`.

@@ -3,6 +3,7 @@ import {
   DEFAULT_DIAGRAM_SIZE,
   DEFAULT_INBOX_METADATA,
   DEFAULT_PRIORITY_PULL,
+  DEFAULT_WIDE_BLOCKS,
   DiagramSize,
   type InboxId,
   type InboxMachineKey,
@@ -11,6 +12,7 @@ import {
   type MacroInvoked,
   type PriorityPull,
   type QuestionComment,
+  WideBlocks,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
@@ -454,6 +456,35 @@ export const diagramSizeAtom = Atom.make((get): DiagramSize => {
       const size = config.diagramSize ?? DEFAULT_DIAGRAM_SIZE;
       if (size !== remembered) get.set(rememberedDiagramSizeAtom, size);
       return size;
+    },
+  });
+}).pipe(Atom.keepAlive);
+
+// How wide blocks widen, as last read, kept in this browser's localStorage as
+// the diagram size is, so a reload places each table and picture by it from
+// the first render, rather than moving them sideways when config.json is
+// read again.
+const rememberedWideBlocksAtom = Atom.kvs({
+  runtime: Atom.runtime(KeyValueStore.layerStorage(() => localStorage)),
+  key: 'operator-inbox:wide-blocks',
+  schema: WideBlocks,
+  defaultValue: (): WideBlocks => DEFAULT_WIDE_BLOCKS,
+}).pipe(Atom.keepAlive);
+
+/**
+ * How a table or a picture wider than the text column widens in the reader
+ * (`data-wide-blocks`, `index.css`): config.json's `wideBlocks`, or `both`
+ * when it is unset. Until the config is read, or when it cannot be, the one
+ * last read in this browser.
+ */
+export const wideBlocksAtom = Atom.make((get): WideBlocks => {
+  const remembered = get(rememberedWideBlocksAtom);
+  return Option.match(AsyncResult.value(get(inboxConfigAtom)), {
+    onNone: () => remembered,
+    onSome: (config) => {
+      const wide = config.wideBlocks ?? DEFAULT_WIDE_BLOCKS;
+      if (wide !== remembered) get.set(rememberedWideBlocksAtom, wide);
+      return wide;
     },
   });
 }).pipe(Atom.keepAlive);
