@@ -1104,6 +1104,105 @@ describe('the scroll', () => {
     ));
 });
 
+describe('a scrub down the minimap', () => {
+  const views = [grove({ waiting: [1, 2, 3, 4, 5].map((n) => asked(n)) })];
+  const placed: ReadonlyArray<Event> = [read(views), { type: 'ScrollTaken' }];
+  const over = (n: number): Event => ({ type: 'ScrubbedTo', key: g(n) });
+  const ended: Event = { type: 'ScrubEnded' };
+
+  it('starts on the question under the finger, the focused one too', () =>
+    scenario([...placed, over(1)], (s) => {
+      expect(s.matches({ scroll: 'scrubbing' })).toBe(true);
+      expect(s.context.focus.inbox).toBe(g(1));
+      expect(s.context.jump?.id).toBe(1);
+    }));
+
+  it('places each question it passes, with no slide', () =>
+    scenario([...placed, over(1), over(2), over(4)], (s) => {
+      expect(s.context.focus.inbox).toBe(g(4));
+      expect(s.context.jump).toEqual({ id: 3, key: g(4), smooth: false });
+      expect(s.matches({ scroll: 'scrubbing' })).toBe(true);
+    }));
+
+  it('runs back up as well as down', () =>
+    scenario([...placed, over(4), over(3), over(2)], (s) =>
+      expect(s.context.focus.inbox).toBe(g(2)),
+    ));
+
+  it('keeps the focus from the reading line while it scrubs', () =>
+    scenario([...placed, over(4), { type: 'ScrolledTo', key: g(3) }], (s) =>
+      expect(s.context.focus.inbox).toBe(g(4)),
+    ));
+
+  it('holds through a scroll taken under it, until the finger lifts', () =>
+    scenario(
+      [
+        ...placed,
+        over(4),
+        { type: 'ScrollTaken' },
+        { type: 'ScrolledTo', key: g(3) },
+      ],
+      (s) => {
+        expect(s.matches({ scroll: 'scrubbing' })).toBe(true);
+        expect(s.context.focus.inbox).toBe(g(4));
+      },
+    ));
+
+  it('leaves the reader on the last question when the finger lifts', () =>
+    scenario([...placed, over(2), over(5), ended], (s) => {
+      expect(s.context.focus.inbox).toBe(g(5));
+      expect(s.matches({ scroll: 'placing' })).toBe(true);
+    }));
+
+  it('swallows the last placement scroll, then follows the reader again', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const reader = yield* createEffectActor(readerMachine);
+        yield* drive(reader, [...placed, over(5), ended]);
+        const swallowed = yield* drive(reader, [
+          { type: 'ScrolledTo', key: g(4) },
+        ]);
+        expect(swallowed.context.focus.inbox).toBe(g(5));
+        yield* TestClock.adjust(PLACE_LOCK_MS);
+        yield* waitFor(reader, (s) => s.matches({ scroll: 'reading' }));
+        const after = yield* drive(reader, [{ type: 'ScrolledTo', key: g(4) }]);
+        expect(after.context.focus.inbox).toBe(g(4));
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+    ));
+
+  it('takes no notice of an end with no scrub', () =>
+    scenario([...placed, ended], (s) =>
+      expect(s.matches({ scroll: 'reading' })).toBe(true),
+    ));
+
+  it('ignores a question the queue on screen does not hold', () =>
+    scenario([...placed, over(2), over(9)], (s) => {
+      expect(s.context.focus.inbox).toBe(g(2));
+      expect(s.context.jump?.key).toBe(g(2));
+    }));
+
+  it('stops the composer asking, as any move does', () =>
+    scenario(
+      [...placed, { type: 'AskToggled', inboxId: GROVE }, over(3)],
+      (s) => expect(s.matches({ composer: 'asking' })).toBe(false),
+    ));
+
+  it('lets a held question go when it scrubs off it', () =>
+    scenario(
+      [
+        read(mixed),
+        { type: 'Moved', by: 1 },
+        read([grove({ waiting: [asked(1), asked(3)] })], down),
+        { type: 'ScrubbedTo', key: b(2) },
+        { type: 'ScrubbedTo', key: g(3) },
+      ],
+      (s) => {
+        expect(s.context.focus.inbox).toBe(g(3));
+        expect(s.context.held).toBeUndefined();
+      },
+    ));
+});
+
 describe('the binding', () => {
   it('runs the machine through its Atoms', async () => {
     const registry = AtomRegistry.make();

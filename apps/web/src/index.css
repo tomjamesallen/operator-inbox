@@ -136,6 +136,11 @@
   --min-height-search: min(calc(280px * var(--ui-scale)), 86dvh);
 
   --container-subtitle: 46ch;
+  /* The minimap's scrub label: a subtitle's length, or less on a phone, where
+     it must end inside the screen, to the left of the finger. The three `s5`s
+     leave room for the minimap's touch width, the gap to the finger and a
+     margin at the screen's edge. */
+  --container-scrub-label: min(46ch, calc(100vw - 3 * var(--spacing-s5)));
   /* A question's line length: its prose, title, metadata, response box and answer stop
      here, while code, tables and diagrams take the full width. `ch` is the
      element's own, so each block counts characters at its own size. */

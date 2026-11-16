@@ -351,6 +351,11 @@ const setup = setupEffect({
       MovedTo: Schema.Struct(Key),
       // The reading line reached it: the focus follows and nothing jumps.
       ScrolledTo: Schema.Struct(Key),
+      // A finger dragging down the minimap is over it: it is placed at once,
+      // with no slide, and the reading line does not take the focus back.
+      ScrubbedTo: Schema.Struct(Key),
+      // The finger lifted: the reader stays on the question it was over.
+      ScrubEnded: Nothing,
       Moved: Schema.Struct(Step),
       MovedToHighlight: Schema.Struct(Step),
       MovedToEnd: Schema.Struct({ end: Schema.Literals(['first', 'last']) }),
@@ -425,7 +430,10 @@ const scrollLocked = (snapshot: Regions): boolean => {
     readonly composer: unknown;
   };
   return (
-    scroll === 'jumping' || scroll === 'placing' || composer !== 'replying'
+    scroll === 'jumping' ||
+    scroll === 'placing' ||
+    scroll === 'scrubbing' ||
+    composer !== 'replying'
   );
 };
 
@@ -533,6 +541,23 @@ export const readerMachine = setup.createMachine({
           )
             return;
           return { context: focusedOn(context, active, event.key) };
+        },
+        // Within the queue on screen only: the minimap shows nothing else.
+        ScrubbedTo: ({ context, event, self }, enq) => {
+          enq.raise({ type: 'ReaderMoved' });
+          const active = activeQueueOf(self.getSnapshot());
+          if (
+            context.focus[active] === event.key ||
+            !readerQueuesOf(context)[active].some((i) => i.key === event.key)
+          )
+            return;
+          return {
+            context: jumpTo(
+              focusedOn(context, active, event.key),
+              event.key,
+              false,
+            ),
+          };
         },
         Moved: ({ context, event, self }, enq) =>
           stepped(
@@ -845,12 +870,16 @@ export const readerMachine = setup.createMachine({
     // follows their scroll. `jumping` is a slide to a question, whose passing questions
     // must not take the focus, or a draft typed after a minimap click lands on
     // the one before. `placing` swallows the scroll an instant placement causes.
-    // The queue region reads the lock for `ScrolledTo`.
+    // `scrubbing` is a finger on the minimap, placing each question it passes,
+    // and holds until the finger lifts: the scroll follows the finger, so the
+    // reading line must not move the focus under it. The queue region reads the
+    // lock for `ScrolledTo`.
     scroll: {
       initial: 'reading',
       on: {
         JumpStarted: { target: '.jumping', reenter: true },
         PlaceStarted: { target: '.placing', reenter: true },
+        ScrubbedTo: { target: '.scrubbing' },
       },
       states: {
         reading: {},
@@ -866,6 +895,11 @@ export const readerMachine = setup.createMachine({
         placing: {
           after: { placeLock: { target: 'reading' } },
           on: { ScrollTaken: { target: 'reading' } },
+        },
+        // The last placement's scroll may still be on its way when the finger
+        // lifts, so the end swallows it as a placement does.
+        scrubbing: {
+          on: { ScrubEnded: { target: 'placing' } },
         },
       },
     },
