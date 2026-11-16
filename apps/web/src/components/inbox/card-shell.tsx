@@ -9,13 +9,24 @@ import { focusedMacroCardAtom } from '../../macros';
 // focus and for a send held on it.
 
 /**
- * A focus move inside the stack keeps the card in sight, or, for a card taller
- * than the stack, the field itself: the stack scrolls once it is full.
+ * A focus move inside the stack, or a field growing as the operator types,
+ * keeps the whole card in sight, clear of the stack's faded edges. A card
+ * taller than the stack keeps the field's foot in sight instead, where the
+ * typing is: the stack scrolls once it is full.
  */
 const reveal = (card: HTMLElement, target: HTMLElement): void => {
   const stack = card.closest<HTMLElement>('[data-macro-cards]');
-  const fits = stack === null || card.offsetHeight <= stack.clientHeight;
-  (fits ? card : target).scrollIntoView({ block: 'nearest' });
+  if (stack === null || card.offsetHeight <= stack.clientHeight) {
+    card.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  // The card's own scroll margin is the fade's width (`scroll-my-fade`).
+  const fade =
+    Number.parseFloat(getComputedStyle(card).scrollMarginBottom) || 0;
+  const below =
+    target.getBoundingClientRect().bottom -
+    (stack.getBoundingClientRect().bottom - fade);
+  if (below > 0) stack.scrollTop += below;
 };
 
 export const CardShell = ({
@@ -59,6 +70,13 @@ export const CardShell = ({
       onFocus={(e: FocusEvent<HTMLElement>) => {
         setFocused(cardRef);
         if (e.target instanceof HTMLElement) reveal(e.currentTarget, e.target);
+      }}
+      // After the field has grown to its new line, on the next frame.
+      onInput={(e) => {
+        const card = e.currentTarget;
+        const target = e.target;
+        if (target instanceof HTMLElement)
+          requestAnimationFrame(() => reveal(card, target));
       }}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null))
