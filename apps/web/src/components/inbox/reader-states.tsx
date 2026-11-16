@@ -142,13 +142,13 @@ const EMPTY =
 const Z = 'M93 38h6l-6 7h6';
 
 // An owl asleep in the in-tray: with nothing waiting, nothing needs it awake.
-// It breathes, Zs drift off it, and now and then it stirs. With reduced motion
-// it lies still under two resting Zs.
+// It breathes, Zs drift off it, and now and then it stirs. It does so under
+// reduced motion too: its motion is slight and slow, and the operator wants it.
 const SnoozingOwl = () => {
   const stirring = useAtomValue(owlStirringAtom);
   // The lines and the beak each need these, as the beak stays out of the fade.
-  const tip = `origin-owl ${stirring ? 'animate-owl-tip motion-reduce:animate-none' : ''}`;
-  const breath = 'origin-owl animate-owl-breathe motion-reduce:animate-none';
+  const tip = `origin-owl ${stirring ? 'animate-owl-tip' : ''}`;
+  const breath = 'origin-owl animate-owl-breathe';
   return (
     <svg
       viewBox="0 15 120 88"
@@ -175,14 +175,10 @@ const SnoozingOwl = () => {
               />
               <path
                 d="M42 47Q48.5 52 55 47M65 47Q71.5 52 78 47"
-                className={
-                  stirring
-                    ? 'animate-owl-stir-lid motion-reduce:animate-none'
-                    : undefined
-                }
+                className={stirring ? 'animate-owl-stir-lid' : undefined}
               />
               <g
-                className={`origin-center fill-fg stroke-none transform-fill motion-reduce:hidden ${stirring ? 'animate-owl-stir-eye' : 'scale-y-0'}`}
+                className={`origin-center fill-fg stroke-none transform-fill ${stirring ? 'animate-owl-stir-eye' : 'scale-y-0'}`}
               >
                 <circle cx="48.5" cy="48" r="3.25" />
                 <circle cx="71.5" cy="48" r="3.25" />
@@ -200,11 +196,7 @@ const SnoozingOwl = () => {
           />
         </g>
       </g>
-      <path
-        d="M98 34h7l-7 8h7M109 19h5l-5 6h5"
-        className="hidden stroke-yellow/80 motion-reduce:inline"
-      />
-      <g className="stroke-yellow/80 motion-reduce:hidden">
+      <g className="stroke-yellow/80">
         <path
           d={Z}
           className="origin-center animate-owl-z-1 opacity-0 transform-fill"
