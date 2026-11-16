@@ -106,3 +106,40 @@ describe('after an answer', () => {
     expect(flow().scrollTop).toBe(0);
   });
 });
+
+describe('an empty queue', () => {
+  useInboxPage();
+
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
+  });
+
+  // What stands in for a question, and the box CSS centres it in.
+  const none = () => document.querySelector<HTMLElement>('[data-zen-none]');
+  const room = () => none()?.parentElement ?? null;
+
+  it('centres what stands in for a question with CSS, not the measured ends', async () => {
+    serve.board = board([
+      { ...VIEW_A, awaitingOperator: [asked(1, 'Short one', 1)] },
+    ]);
+    layOut();
+    await mounted();
+    // A question is placed by the measured lead before it.
+    await waitFor(() => expect(leadOf()).toBe(centred(SHORT)));
+    answer();
+    await waitFor(() => expect(none()).not.toBeNull());
+    // No spacer from the measured ends sits on either side of it.
+    expect(room()?.parentElement).toBe(flow());
+    expect(room()?.previousElementSibling).toBeNull();
+    expect(room()?.nextElementSibling).toBeNull();
+    // The room runs from under the header to over the foot, and it is centred
+    // there by auto margins: as tall as the flow at least, so it scrolls when
+    // what is in it is taller.
+    expect(room()?.className).toContain('min-h-full');
+    expect(room()?.className).toContain('flex-col');
+    expect(room()?.className).toContain('pt-header');
+    expect(room()?.style.paddingBottom).toBe(`${FOOT}px`);
+    expect(none()?.className).toContain('my-auto');
+    expect(none()?.style.height).toBe('');
+  });
+});

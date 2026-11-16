@@ -173,7 +173,8 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
   // how the foot gets watched at all: on the first mount its ref is not set yet.
   useLayoutEffect(() => {
     const s = scroller.current;
-    // An empty queue rests what stands in for a question, the same way.
+    // An empty queue's stand-in is centred by CSS, but the foot is watched for
+    // it here too, so it keeps clear of the foot.
     const none = s?.querySelector<HTMLElement>('[data-zen-none]') ?? undefined;
     const first = s && firstKey ? articleOf(s, firstKey) : none;
     const last = s && lastKey ? articleOf(s, lastKey) : none;
@@ -186,6 +187,7 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
       setEnds({
         lead: head + marginOf(first, height),
         trail: under + marginOf(last, height),
+        foot: under,
       });
     };
     measure();
@@ -319,34 +321,50 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
       data-zen-flow
       className={`scrollbar-none overflow-anchor-none @container relative h-full overflow-x-hidden overflow-y-auto px-s5 wrap-break-word ${asking ? 'invisible' : ''}`}
     >
-      {/* Measured, so each end of the list is its question's resting place: a
-          runtime height Tailwind cannot express. */}
-      <div
-        className={ends === undefined ? 'h-1/2' : undefined}
-        style={ends === undefined ? undefined : { height: ends.lead }}
-      />
-      <div
-        data-zen-questions
-        className={`mx-auto flex max-w-measure flex-col gap-30 ${introFade(intro)}`}
-      >
-        {items.length === 0 && (
-          <div data-zen-none>
+      {items.length === 0 ? (
+        // An empty queue's stand-in is centred by CSS in the room between the
+        // header and the foot, not by the measured ends: it moves only when that
+        // room or the stand-in itself changes size, and a stand-in taller than
+        // the room rests under the header and scrolls. The foot's height is a
+        // runtime value Tailwind cannot express.
+        <div
+          className="flex min-h-full flex-col pt-header"
+          style={{ paddingBottom: ends?.foot ?? 0 }}
+        >
+          <div
+            data-zen-none
+            className={`mx-auto my-auto w-full max-w-measure py-6 ${introFade(intro)}`}
+          >
             <NoQuestion />
           </div>
-        )}
-        {items.map((item) => (
-          <QuestionItem
-            key={item.key}
-            item={item}
-            lit={item.key === lit}
-            onPick={onPick}
+        </div>
+      ) : (
+        <>
+          {/* Measured, so each end of the list is its question's resting
+              place: a runtime height Tailwind cannot express. */}
+          <div
+            className={ends === undefined ? 'h-1/2' : undefined}
+            style={ends === undefined ? undefined : { height: ends.lead }}
           />
-        ))}
-      </div>
-      <div
-        className={ends === undefined ? 'h-full' : undefined}
-        style={ends === undefined ? undefined : { height: ends.trail }}
-      />
+          <div
+            data-zen-questions
+            className={`mx-auto flex max-w-measure flex-col gap-30 ${introFade(intro)}`}
+          >
+            {items.map((item) => (
+              <QuestionItem
+                key={item.key}
+                item={item}
+                lit={item.key === lit}
+                onPick={onPick}
+              />
+            ))}
+          </div>
+          <div
+            className={ends === undefined ? 'h-full' : undefined}
+            style={ends === undefined ? undefined : { height: ends.trail }}
+          />
+        </>
+      )}
     </div>
   );
 };
