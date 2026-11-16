@@ -24,7 +24,8 @@ import { ICON_COPY, ICON_DONE, ICON_FAILED, Icon } from './icon';
 // What stands in the question's place when there is no question: the first
 // load, a board that could not be read, an Inbox that is not on the board, and
 // an empty queue. Each says why, never "nothing waiting" when it cannot know.
-// An empty Inbox while others have something lists them instead (`Elsewhere`).
+// An empty Inbox, or group of one, while somewhere else has something lists
+// those places instead (`Elsewhere`).
 
 const namesOf = (machines: ReadonlyArray<{ readonly label: string }>) =>
   machines.map((m) => m.label).join(' and ');

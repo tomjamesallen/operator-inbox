@@ -264,6 +264,25 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
     }
   }, [jumpId, ends]);
 
+  // The queue emptied under the reader, most often by their own last answer:
+  // the stand-in takes the list's place at the top of the scroll. The scroll
+  // the list left behind is put back to the top here rather than left for the
+  // browser to clamp, since an engine that clamps only once a slide or a
+  // fling has run out draws the stand-in out of view until then. Whatever was
+  // moving the list goes with it, and a slide's lock is let go, as no
+  // `scrollend` comes for a slide cut short.
+  const empty = items.length === 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on emptying
+  useLayoutEffect(() => {
+    const s = scroller.current;
+    if (!empty || s === null) return;
+    pagingTo.current = undefined;
+    flight.current = undefined;
+    anchor.current = undefined;
+    s.scrollTop = 0;
+    if (jumpId !== undefined) send({ type: 'JumpEnded', id: jumpId });
+  }, [empty]);
+
   // A question changing size above the one being read must not push it out
   // of place: one arriving, or a picture in one drawn late. Run on a render
   // and on a resize alike, since a picture loading renders nothing here. The
