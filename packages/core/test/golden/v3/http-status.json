@@ -88,6 +88,25 @@
       }
     },
     {
+      "endpoint": "inbox.drawings",
+      "method": "GET",
+      "path": "/api/inbox/:inboxId/questions/:number/drawings",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ],
+        "404": [
+          "InboxNotFound"
+        ],
+        "503": [
+          "InboxUnavailable"
+        ]
+      }
+    },
+    {
       "endpoint": "inbox.answer",
       "method": "POST",
       "path": "/api/inbox/:inboxId/questions/:number/answer",

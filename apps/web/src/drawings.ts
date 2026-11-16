@@ -2,16 +2,22 @@ import {
   type InboxBoardDto,
   InboxId,
   InboxOperatorQuestionDto,
+  type QuestionDrawingsDto,
 } from '@operator-inbox/core/api';
 import { Effect, Option, Schema } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
+import { InboxClient } from './api';
 import { inboxBoardAtom } from './inbox';
 import { answerKey } from './inbox-queues';
 
 // Excalidraw drawings in inbox question bodies: a body line
 // `<Excalidraw id="…"/>` names one of the Question's drawings (its
-// `drawings`, each a scene as JSON text and the revision that last set it).
+// `drawingRefs`, each its scene's hash and size and the revision that last
+// set it). The board never carries a scene: the page reads the scenes of
+// the Question it shows, once per set of hashes (`drawingScenesAtom`). A
+// machine on an older build sends each scene inline instead (`drawings`),
+// and that is shown as it comes.
 //
 // Everything that imports Excalidraw is one module,
 // `components/drawing-canvas.tsx`, loaded by a dynamic import the first time
@@ -26,6 +32,88 @@ import { answerKey } from './inbox-queues';
 // draft, and they are dropped once the server takes it. A draft whose
 // drawing the agent has changed since is a conflict, which the operator
 // settles (keep theirs or mine) before anything can be sent.
+
+// --- the scenes ---------------------------------------------------------------------
+
+type Hashed = Readonly<Record<string, { readonly sha: string }>>;
+
+/** What a Question's drawings are, as far as reading their scenes needs. */
+export interface DrawingRefsOf {
+  readonly drawingRefs?: Hashed | undefined;
+  readonly sentDrawingRefs?: Hashed | undefined;
+}
+
+// Each id with its hash, in id order: a set of drawings, as a key.
+const pairsOf = (
+  refs: Hashed | undefined,
+): ReadonlyArray<readonly [string, string]> =>
+  Object.keys(refs ?? {})
+    .sort()
+    .map((id) => [id, refs?.[id]?.sha ?? ''] as const);
+
+/**
+ * What names one Question's set of scenes: its Inbox, number, and the hashes
+ * of its drawings and of those sent with its answer. An edit, or an answer,
+ * that changes one reads the set again.
+ */
+export const drawingScenesKeyOf = (
+  inboxId: InboxId,
+  number: InboxOperatorQuestionDto['number'],
+  question: DrawingRefsOf,
+): string =>
+  JSON.stringify([
+    inboxId,
+    number,
+    pairsOf(question.drawingRefs),
+    pairsOf(question.sentDrawingRefs),
+  ]);
+
+const Pairs = Schema.Array(Schema.Tuple([Schema.String, Schema.String]));
+const KeyJson = Schema.fromJsonString(
+  Schema.Tuple([InboxId, InboxOperatorQuestionDto.fields.number, Pairs, Pairs]),
+);
+const decodeKey = Schema.decodeUnknownSync(KeyJson);
+
+// The scenes read so far, by hash, for what reads a drawing without waiting
+// on it (listen mode's description, `knownDrawingScene`). A scene never
+// changes under its hash; the most recent are kept.
+const KNOWN_KEPT = 64;
+const known = new Map<string, string>();
+const remember = (dto: QuestionDrawingsDto) => {
+  for (const d of [
+    ...Object.values(dto.drawings),
+    ...Object.values(dto.sent),
+  ]) {
+    known.delete(d.sha);
+    known.set(d.sha, d.scene);
+    if (known.size > KNOWN_KEPT) {
+      const oldest = known.keys().next().value;
+      if (oldest !== undefined) known.delete(oldest);
+    }
+  }
+};
+
+/** A scene this page has already read, by its hash; undefined when it has not. */
+export const knownDrawingScene = (sha: string): string | undefined =>
+  known.get(sha);
+
+/**
+ * One Question's scenes, by id, read once per set of hashes and kept for the
+ * page's life: a scene never changes under its hash.
+ */
+export const drawingScenesAtom = Atom.family((key: string) => {
+  const [inboxId, number] = decodeKey(key);
+  return InboxClient.runtime
+    .atom(
+      InboxClient.use(
+        (client): Effect.Effect<QuestionDrawingsDto, unknown> =>
+          client.inbox
+            .drawings({ params: { inboxId, number }, query: {} })
+            .pipe(Effect.tap((dto) => Effect.sync(() => remember(dto)))),
+      ),
+    )
+    .pipe(Atom.keepAlive);
+});
 
 // --- the editor's module ------------------------------------------------------------
 
@@ -129,7 +217,9 @@ export const drawingDraftsStillWaiting = (
     const view = views.get(d.inboxId);
     if (view === undefined) return true;
     const question = view.awaitingOperator.find((q) => q.number === d.number);
-    return question?.drawings?.[d.id] !== undefined;
+    return (
+      question !== undefined && drawingRevision(question, d.id) !== undefined
+    );
   });
   return kept.length === drafts.length ? drafts : kept;
 };
@@ -184,7 +274,17 @@ export const questionDrawingDraftsAtom = Atom.family((questionKey: string) =>
   ),
 );
 
-type DrawingsOf = Pick<InboxOperatorQuestionDto, 'drawings'>;
+type DrawingsOf = Pick<InboxOperatorQuestionDto, 'drawings' | 'drawingRefs'>;
+
+/**
+ * The revision of a Question's drawing, whichever way its machine sent it;
+ * undefined when it has none of that id.
+ */
+export const drawingRevision = (
+  question: DrawingsOf,
+  id: string,
+): number | undefined =>
+  question.drawingRefs?.[id]?.revision ?? question.drawings?.[id]?.revision;
 
 /**
  * The drawings whose draft was made against an older revision than the
@@ -197,8 +297,8 @@ export const drawingConflicts = (
 ): ReadonlyArray<string> =>
   drafts
     .filter((d) => {
-      const now = question.drawings?.[d.id];
-      return now !== undefined && now.revision > d.revision;
+      const now = drawingRevision(question, d.id);
+      return now !== undefined && now > d.revision;
     })
     .map((d) => d.id);
 
@@ -211,7 +311,9 @@ export const drawingsToSend = (
   drafts: ReadonlyArray<DrawingDraft>,
   question: DrawingsOf,
 ): Readonly<Record<string, string>> | undefined => {
-  const sent = drafts.filter((d) => question.drawings?.[d.id] !== undefined);
+  const sent = drafts.filter(
+    (d) => drawingRevision(question, d.id) !== undefined,
+  );
   return sent.length === 0
     ? undefined
     : Object.fromEntries(sent.map((d) => [d.id, d.scene]));

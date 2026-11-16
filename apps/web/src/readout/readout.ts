@@ -10,6 +10,7 @@ import { Effect, Option, Schedule, Schema, Stream } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from '../api';
+import { knownDrawingScene } from '../drawings';
 import {
   activeQueueAtom,
   headOf,
@@ -73,17 +74,35 @@ export const steppedRate = (rate: Rate, by: 1 | -1): Rate | undefined =>
 const scriptsOf = new WeakMap<object, Script>();
 const scriptsByKey = new Map<string, Script>();
 
+// A Question's drawings as a script describes them: the scenes inline from
+// a machine on an older build, and those this page has read by their hash
+// (`knownDrawingScene`). Whether every drawing named by a hash was found, so
+// a script made before its scenes arrived is made again once they have.
+const scenesFor = (q: ReaderItem['question']) => {
+  const out: Record<string, { readonly scene: string }> = {
+    ...q.drawings,
+  };
+  let whole = true;
+  for (const [id, ref] of Object.entries(q.drawingRefs ?? {})) {
+    const scene = knownDrawingScene(ref.sha);
+    if (scene === undefined) whole = false;
+    else out[id] = { scene };
+  }
+  return { drawings: out, whole };
+};
+
 export const scriptFor = (item: ReaderItem): Script => {
   const q = item.question;
   const known = scriptsOf.get(q);
   if (known !== undefined) return known;
+  const scenes = scenesFor(q);
   const script = scriptOf({
     title: headOf(item).title,
     bodyHtml: q.bodyHtml,
     bodyParts: q.bodyParts,
-    drawings: q.drawings,
+    drawings: scenes.drawings,
   });
-  scriptsOf.set(q, script);
+  if (scenes.whole) scriptsOf.set(q, script);
   scriptsByKey.set(script.key, script);
   // Kept to the Questions seen lately.
   if (scriptsByKey.size > 64) {

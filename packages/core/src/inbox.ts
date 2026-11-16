@@ -6,7 +6,13 @@ import {
   type QuestionComment,
   QuestionComments,
 } from './comments';
-import { checkDrawings } from './drawing';
+import {
+  checkDrawings,
+  DRAWINGS_MAX,
+  type DrawingRef,
+  DrawingRefs,
+  drawingRefProblem,
+} from './drawing';
 import { checkHtmlBlocks, HtmlBlocks } from './html-block';
 import { lettersOfNamedCode, questionRef } from './inbox-code';
 import {
@@ -70,18 +76,61 @@ export const applyMetadata = (
 // body line `<Excalidraw id="…"/>` shows (`drawing.ts` holds the forms, the
 // checks and the limits). Text, not a decoded value: a scene has nulls and
 // arrays of arrays, and nothing here looks inside it.
+//
+// An event names a scene by its blob (`DrawingRef`, under the `drawingRefs`
+// keys). Events logged before scenes moved to the blob table carry each
+// scene's text under the `drawings` keys instead; they are read as they are,
+// never rewritten, so both shapes stand side by side in a log, and the fold
+// holds each drawing in whichever it came in (`StoredDrawing`).
 export const Drawings = Schema.Record(Schema.String, Schema.String);
 export type Drawings = typeof Drawings.Type;
 
-// A drawing as the fold holds it: its scene, and the revision of the Question
-// that last set or changed it. The page keeps an edit with the revision it
-// was made against, so it can tell the operator the agent has since changed
-// that drawing, and only that one.
+/** A drawing as the log holds it: its scene's text, as an older event carries it, or its blob's ref. */
+export type StoredDrawing = string | DrawingRef;
+
+/** Whether a stored drawing is a blob's ref rather than a scene's text. */
+export const isDrawingRef = (d: StoredDrawing): d is DrawingRef =>
+  typeof d !== 'string';
+
+const sameStoredDrawing = (a: StoredDrawing, b: StoredDrawing): boolean =>
+  typeof a === 'string' || typeof b === 'string' ? a === b : a.sha === b.sha;
+
+// A drawing as a move carried it before scenes moved to the blob table: its
+// scene, and the revision of the Question that last set or changed it.
 export const QuestionDrawing = Schema.Struct({
   scene: Schema.String,
   revision: Schema.Int.check(Schema.isGreaterThan(0)),
 });
 export type QuestionDrawing = typeof QuestionDrawing.Type;
+
+// The same, as a move carries it now: its scene's blob, and the revision.
+export const QuestionDrawingRef = Schema.Struct({
+  sha: Schema.String,
+  bytes: Schema.Int,
+  revision: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type QuestionDrawingRef = typeof QuestionDrawingRef.Type;
+
+// A drawing as the fold holds it: the drawing as its event named it, and the
+// revision of the Question that last set or changed it. The page keeps an
+// edit with the revision it was made against, so it can tell the operator the
+// agent has since changed that drawing, and only that one.
+export interface FoldedDrawing {
+  readonly stored: StoredDrawing;
+  readonly revision: number;
+}
+
+/**
+ * A drawing as a decision takes it: its scene's text, as `checkScene` keeps
+ * it, and the ref of the blob the caller has already written that text to.
+ * The decision checks the scene as it always has, and the event carries the
+ * ref alone.
+ */
+export interface DrawingInput {
+  readonly scene: string;
+  readonly ref: DrawingRef;
+}
+export type DrawingInputs = Readonly<Record<string, DrawingInput>>;
 
 // --- events ---------------------------------------------------------------------
 
@@ -116,9 +165,13 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   metadata: Schema.optionalKey(Metadata),
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
-  // The drawings the body shows. An optional key, so every Question asked
-  // before drawings existed reads as it did.
+  // The drawings the body shows, each its scene's text: how a Question
+  // asked before scenes moved to the blob table carries them. An optional
+  // key, so every Question asked before drawings existed reads as it did.
   drawings: Schema.optionalKey(Drawings),
+  // The drawings the body shows, each its scene's blob (`drawing.ts`): how a
+  // Question carries them now. Optional for the same reason.
+  drawingRefs: Schema.optionalKey(DrawingRefs),
   // The HTML blocks the body shows, by id: each its document's hash and
   // size, never the document, which is a row of the store's blob table
   // (`html-block.ts`). Optional for the same reason.
@@ -134,7 +187,9 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // so the operator finds it among the rest. Optional for the same reason.
 // `drawings` holds only the drawings the operator changed, each the whole
 // edited scene; a drawing left alone is not sent. Optional for the same
-// reason.
+// reason. `drawingRefs` holds the same, each the edited scene's blob: how an
+// answer carries them now, as `drawings` did before scenes moved to the
+// blob table.
 // `macros` holds the macros the operator invoked, in the order they stacked
 // them, each with its instruction copied in (`macros.ts`). With macros,
 // `response` may be ''. Optional for the same reason.
@@ -148,6 +203,7 @@ export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   deferred: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
   drawings: Schema.optionalKey(Drawings),
+  drawingRefs: Schema.optionalKey(DrawingRefs),
   macros: Schema.optionalKey(MacrosInvoked),
   comments: Schema.optionalKey(QuestionComments),
 });
@@ -165,12 +221,17 @@ export type AnswerProcessed = typeof AnswerProcessed.Type;
 // out, the drawings stay as they were, as every edit logged before drawings
 // existed did. `htmls`, when set, is the whole new set of HTML blocks in the
 // same way; left out, they stay as they were.
+// `drawingRefs`, how an edit carries drawings now, is not the whole set: it
+// holds only the drawings the edit set, each its scene's blob, and every
+// other drawing stays as it was, in whichever shape it was logged. An edit
+// never removes a drawing, so nothing is lost by that.
 export const QuestionEdited = Schema.TaggedStruct('QuestionEdited', {
   inboxId: InboxId,
   number: QuestionNumber,
   title: Schema.String,
   body: Schema.String,
   drawings: Schema.optionalKey(Drawings),
+  drawingRefs: Schema.optionalKey(DrawingRefs),
   htmls: Schema.optionalKey(HtmlBlocks),
 });
 export type QuestionEdited = typeof QuestionEdited.Type;
@@ -339,11 +400,18 @@ export const MovedQuestion = Schema.Struct({
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
   deferred: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
+  // The drawings logged with their scene's text, and the operator's sent
+  // ones the same; then those logged as blobs (`drawingRefs`,
+  // `sentDrawingRefs`). A drawing is in one or the other, never both.
   drawings: Schema.optionalKey(Schema.Record(Schema.String, QuestionDrawing)),
   sentDrawings: Schema.optionalKey(Drawings),
   macros: Schema.optionalKey(MacrosInvoked),
   comments: Schema.optionalKey(QuestionComments),
   htmls: Schema.optionalKey(HtmlBlocks),
+  drawingRefs: Schema.optionalKey(
+    Schema.Record(Schema.String, QuestionDrawingRef),
+  ),
+  sentDrawingRefs: Schema.optionalKey(DrawingRefs),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -552,9 +620,9 @@ export interface InboxQuestion {
   // (`highlightReply` on their answer or their question).
   readonly highlightReply?: true;
   // The agent's drawings, by id, each with the revision that last set it.
-  readonly drawings?: Readonly<Record<string, QuestionDrawing>>;
+  readonly drawings?: Readonly<Record<string, FoldedDrawing>>;
   // The drawings the operator changed and sent with their answer, by id.
-  readonly sentDrawings?: Drawings;
+  readonly sentDrawings?: Readonly<Record<string, StoredDrawing>>;
   // The agent's HTML blocks, by id: each its document's hash and size. The
   // operator's answer never changes one.
   readonly htmls?: HtmlBlocks;
@@ -620,19 +688,66 @@ export const emptyInboxState: InboxState = {
 // whose scene is unchanged keeps the revision it had, a new or changed one
 // takes `revision`, and one left out of `next` is gone.
 const drawingsAt = (
-  current: Readonly<Record<string, QuestionDrawing>> | undefined,
-  next: Drawings,
+  current: Readonly<Record<string, FoldedDrawing>> | undefined,
+  next: Readonly<Record<string, StoredDrawing>>,
   revision: QuestionRevision,
-): Readonly<Record<string, QuestionDrawing>> =>
+): Readonly<Record<string, FoldedDrawing>> =>
   Object.fromEntries(
-    Object.entries(next).map(([id, scene]) => {
+    Object.entries(next).map(([id, stored]) => {
       const was = current?.[id];
       return [
         id,
-        was !== undefined && was.scene === scene ? was : { scene, revision },
+        was !== undefined && sameStoredDrawing(was.stored, stored)
+          ? was
+          : { stored, revision },
       ];
     }),
   );
+
+// An answer's drawings as the fold holds them, the key left out for none.
+const sentDrawingsOf = (
+  event: QuestionAnswered,
+): Pick<InboxQuestion, 'sentDrawings'> => {
+  const sent = storedDrawingsOf(event);
+  return sent === undefined ? {} : { sentDrawings: sent };
+};
+
+// One event's drawings in both its shapes, as one set: undefined when it
+// carries neither key. An event the app writes carries only `drawingRefs`.
+const storedDrawingsOf = (event: {
+  readonly drawings?: Drawings;
+  readonly drawingRefs?: DrawingRefs;
+}): Readonly<Record<string, StoredDrawing>> | undefined =>
+  event.drawings === undefined && event.drawingRefs === undefined
+    ? undefined
+    : { ...event.drawings, ...event.drawingRefs };
+
+// A moved Question's drawings as the fold holds them, from both the shapes a
+// move may carry them in.
+const movedInDrawings = (
+  q: MovedQuestion,
+): Pick<InboxQuestion, 'drawings' | 'sentDrawings'> => {
+  const drawings: Record<string, FoldedDrawing> = {};
+  for (const [id, d] of Object.entries(q.drawings ?? {}))
+    drawings[id] = { stored: d.scene, revision: d.revision };
+  for (const [id, d] of Object.entries(q.drawingRefs ?? {}))
+    drawings[id] = {
+      stored: { sha: d.sha, bytes: d.bytes },
+      revision: d.revision,
+    };
+  const sent = storedDrawingsOf({
+    ...(q.sentDrawings === undefined ? {} : { drawings: q.sentDrawings }),
+    ...(q.sentDrawingRefs === undefined
+      ? {}
+      : { drawingRefs: q.sentDrawingRefs }),
+  });
+  return {
+    ...(q.drawings === undefined && q.drawingRefs === undefined
+      ? {}
+      : { drawings }),
+    ...(sent === undefined ? {} : { sentDrawings: sent }),
+  };
+};
 
 // A Question with `next` as its whole set of HTML blocks: none, when empty.
 const htmlsSet = (q: InboxQuestion, next: HtmlBlocks): InboxQuestion => {
@@ -675,7 +790,7 @@ export const evolveInbox = (
       return { ...state, archived: true };
     case 'InboxUnarchived':
       return { ...state, archived: false };
-    case 'QuestionAsked':
+    case 'QuestionAsked': {
       if (event.operatorQuestion === true)
         return {
           ...state,
@@ -700,6 +815,7 @@ export const evolveInbox = (
             },
           ],
         };
+      const asked = storedDrawingsOf(event);
       return {
         ...state,
         questions: [
@@ -712,12 +828,12 @@ export const evolveInbox = (
             metadata: event.metadata ?? emptyMetadata,
             state: 'awaiting-operator',
             withdrawn: false,
-            ...(event.drawings === undefined
+            ...(asked === undefined
               ? {}
               : {
                   drawings: drawingsAt(
                     undefined,
-                    event.drawings,
+                    asked,
                     QuestionRevision.make(1),
                   ),
                 }),
@@ -726,6 +842,7 @@ export const evolveInbox = (
           },
         ],
       };
+    }
     case 'QuestionAnswered':
       return withQuestion(state, event.number, (q) => ({
         ...q,
@@ -735,9 +852,7 @@ export const evolveInbox = (
         ...(event.highlightReply === undefined
           ? {}
           : { highlightReply: event.highlightReply }),
-        ...(event.drawings === undefined
-          ? {}
-          : { sentDrawings: event.drawings }),
+        ...sentDrawingsOf(event),
         ...(event.macros === undefined ? {} : { macros: event.macros }),
         ...(event.comments === undefined ? {} : { comments: event.comments }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
@@ -757,10 +872,20 @@ export const evolveInbox = (
       return withQuestion(state, event.number, (q) => {
         const revision = QuestionRevision.make(q.revision + 1);
         const htmled = event.htmls === undefined ? q : htmlsSet(q, event.htmls);
-        if (event.drawings === undefined)
+        if (event.drawings === undefined && event.drawingRefs === undefined)
           return { ...htmled, title: event.title, body: event.body, revision };
         const { drawings: _, ...rest } = htmled;
-        const drawings = drawingsAt(q.drawings, event.drawings, revision);
+        // `drawings` is the whole new set; `drawingRefs` sets only its own.
+        const whole: Readonly<Record<string, StoredDrawing>> =
+          event.drawings ??
+          Object.fromEntries(
+            Object.entries(q.drawings ?? {}).map(([id, d]) => [id, d.stored]),
+          );
+        const drawings = drawingsAt(
+          q.drawings,
+          { ...whole, ...event.drawingRefs },
+          revision,
+        );
         return {
           ...rest,
           title: event.title,
@@ -839,10 +964,7 @@ export const evolveInbox = (
               ...(q.highlightReply === undefined
                 ? {}
                 : { highlightReply: q.highlightReply }),
-              ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
-              ...(q.sentDrawings === undefined
-                ? {}
-                : { sentDrawings: q.sentDrawings }),
+              ...movedInDrawings(q),
               ...(q.macros === undefined ? {} : { macros: q.macros }),
               ...(q.comments === undefined ? {} : { comments: q.comments }),
               ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
@@ -1156,15 +1278,45 @@ const nameTaken = (label: string, holder: InboxId) =>
     }),
   );
 
+// Each drawing's scene checked as it always was (`checkDrawings`), and its
+// blob's ref checked against the scene as kept: the set as kept, ids in
+// order, or the first reason it cannot be.
 const checkedDrawings = (
-  drawings: Drawings | undefined,
-): Result.Result<Drawings | undefined, InboxRefusal> =>
-  drawings === undefined
-    ? Result.succeed(undefined)
-    : Result.mapError(
-        checkDrawings(drawings),
-        (message) => new InboxRefusal({ reason: 'bad-drawing', message }),
-      );
+  drawings: DrawingInputs | undefined,
+): Result.Result<DrawingInputs | undefined, InboxRefusal> => {
+  if (drawings === undefined) return Result.succeed(undefined);
+  const scenes = Object.fromEntries(
+    Object.entries(drawings).map(([id, d]) => [id, d.scene]),
+  );
+  return Result.flatMap(
+    Result.mapError(
+      checkDrawings(scenes),
+      (message) => new InboxRefusal({ reason: 'bad-drawing', message }),
+    ),
+    (kept) => {
+      const out: Record<string, DrawingInput> = {};
+      for (const [id, scene] of Object.entries(kept)) {
+        const ref = drawings[id]?.ref ?? { sha: '', bytes: 0 };
+        const problem = drawingRefProblem(id, scene, ref);
+        if (problem !== undefined) return refuse('bad-drawing', problem);
+        out[id] = { scene, ref: { sha: ref.sha, bytes: ref.bytes } };
+      }
+      return Result.succeed(out);
+    },
+  );
+};
+
+// The refs an event carries for a set of drawings: none, when it is empty.
+const drawingRefsOf = (
+  drawings: DrawingInputs | undefined,
+): { readonly drawingRefs?: DrawingRefs } =>
+  drawings === undefined || Object.keys(drawings).length === 0
+    ? {}
+    : {
+        drawingRefs: Object.fromEntries(
+          Object.entries(drawings).map(([id, d]) => [id, d.ref]),
+        ),
+      };
 
 const checkedHtmls = (
   htmls: HtmlBlocks | undefined,
@@ -1540,8 +1692,9 @@ export const decideAsk = (
     readonly title: string;
     readonly body: string;
     readonly metadata?: Metadata;
-    // Scenes by id, for the body's `<Excalidraw id="…"/>` lines.
-    readonly drawings?: Drawings;
+    // Scenes by id, for the body's `<Excalidraw id="…"/>` lines, each with
+    // its blob, already in the blob table.
+    readonly drawings?: DrawingInputs;
     // Documents' hashes and sizes by id, for the body's `<Html id="…"/>`
     // lines; each document already in the blob table.
     readonly htmls?: HtmlBlocks;
@@ -1562,9 +1715,7 @@ export const decideAsk = (
           title: input.title,
           body: input.body,
           ...(metadata === undefined ? {} : { metadata }),
-          ...(drawings === undefined || Object.keys(drawings).length === 0
-            ? {}
-            : { drawings }),
+          ...drawingRefsOf(drawings),
           ...(htmls === undefined || Object.keys(htmls).length === 0
             ? {}
             : { htmls }),
@@ -1693,8 +1844,9 @@ export const decideAnswer = (
     readonly deferred?: true;
     // The operator asks the agent to highlight the Question it asks in reply.
     readonly highlightReply?: true;
-    // The drawings the operator changed, by id: each the whole edited scene.
-    readonly drawings?: Drawings;
+    // The drawings the operator changed, by id: each the whole edited scene,
+    // with its blob, already in the blob table.
+    readonly drawings?: DrawingInputs;
     // The macros the operator invoked, in order. With one, the response may
     // be empty: a macro is a complete answer on its own.
     readonly macros?: ReadonlyArray<MacroInvoked>;
@@ -1768,9 +1920,7 @@ export const decideAnswer = (
     ...(input.highlightReply === undefined
       ? {}
       : { highlightReply: input.highlightReply }),
-    ...(drawings === undefined || Object.keys(drawings).length === 0
-      ? {}
-      : { drawings }),
+    ...drawingRefsOf(drawings),
     ...(isNonEmptyMacros(macros) ? { macros } : {}),
     ...(isNonEmptyComments(comments) ? { comments } : {}),
   }));
@@ -1834,8 +1984,9 @@ export const decideEdit = (
     readonly title?: string;
     readonly body?: string;
     // Drawings to set, by id: each replaces the drawing of that id or adds
-    // one; the Question's other drawings stay.
-    readonly drawings?: Drawings;
+    // one; the Question's other drawings stay. Each with its blob, already
+    // in the blob table.
+    readonly drawings?: DrawingInputs;
     // HTML blocks to set, by id, in the same way; the others stay.
     readonly htmls?: HtmlBlocks;
   },
@@ -1855,53 +2006,57 @@ export const decideEdit = (
     const body = input.body ?? q.body;
     if (title.trim().length === 0)
       return refuse('empty', 'a question needs a title');
-    const current: Record<string, string> = Object.fromEntries(
-      Object.entries(q.drawings ?? {}).map(([id, d]) => [id, d.scene]),
-    );
-    return Result.flatMap(
-      input.drawings === undefined
-        ? Result.succeed(undefined)
-        : checkedDrawings({ ...current, ...input.drawings }),
-      (drawings) => {
-        const sameDrawings =
-          drawings === undefined ||
-          (Object.keys(drawings).length === Object.keys(current).length &&
-            Object.entries(drawings).every(([id, s]) => current[id] === s));
-        const currentHtmls = q.htmls ?? {};
-        return Result.flatMap(
-          input.htmls === undefined
-            ? Result.succeed(undefined)
-            : checkedHtmls({ ...currentHtmls, ...input.htmls }),
-          (htmls) => {
-            const sameHtmls =
-              htmls === undefined ||
-              (Object.keys(htmls).length === Object.keys(currentHtmls).length &&
-                Object.entries(htmls).every(
-                  ([id, r]) => currentHtmls[id]?.sha === r.sha,
-                ));
-            if (
-              title === q.title &&
-              body === q.body &&
-              sameDrawings &&
-              sameHtmls
-            )
-              return refuse(
-                'unchanged',
-                `${questionRef(state.code, input.number)} already says that; nothing changed`,
-              );
-            return Result.succeed({
-              _tag: 'QuestionEdited' as const,
-              inboxId: input.inboxId,
-              number: input.number,
-              title,
-              body,
-              ...(drawings === undefined || sameDrawings ? {} : { drawings }),
-              ...(htmls === undefined || sameHtmls ? {} : { htmls }),
-            });
-          },
-        );
-      },
-    );
+    const current = q.drawings ?? {};
+    const count = Object.keys({ ...current, ...input.drawings }).length;
+    if (count > DRAWINGS_MAX)
+      return refuse(
+        'bad-drawing',
+        `a question may carry at most ${DRAWINGS_MAX} drawings; this one would have ${count}`,
+      );
+    return Result.flatMap(checkedDrawings(input.drawings), (given) => {
+      // Only the drawings that differ from what the Question has: one
+      // logged as text is the same when its text is, one logged as a blob
+      // when its hash is.
+      const changed: Record<string, DrawingInput> = {};
+      for (const [id, d] of Object.entries(given ?? {})) {
+        const was = current[id]?.stored;
+        const same =
+          was !== undefined &&
+          (isDrawingRef(was) ? was.sha === d.ref.sha : was === d.scene);
+        if (!same) changed[id] = d;
+      }
+      const drawings = given === undefined ? undefined : changed;
+      const sameDrawings =
+        drawings === undefined || Object.keys(drawings).length === 0;
+      const currentHtmls = q.htmls ?? {};
+      return Result.flatMap(
+        input.htmls === undefined
+          ? Result.succeed(undefined)
+          : checkedHtmls({ ...currentHtmls, ...input.htmls }),
+        (htmls) => {
+          const sameHtmls =
+            htmls === undefined ||
+            (Object.keys(htmls).length === Object.keys(currentHtmls).length &&
+              Object.entries(htmls).every(
+                ([id, r]) => currentHtmls[id]?.sha === r.sha,
+              ));
+          if (title === q.title && body === q.body && sameDrawings && sameHtmls)
+            return refuse(
+              'unchanged',
+              `${questionRef(state.code, input.number)} already says that; nothing changed`,
+            );
+          return Result.succeed({
+            _tag: 'QuestionEdited' as const,
+            inboxId: input.inboxId,
+            number: input.number,
+            title,
+            body,
+            ...(sameDrawings ? {} : drawingRefsOf(drawings)),
+            ...(htmls === undefined || sameHtmls ? {} : { htmls }),
+          });
+        },
+      );
+    });
   });
 
 /**
@@ -2086,11 +2241,43 @@ const movedQuestionOf = (
     ...(q.highlightReply === undefined
       ? {}
       : { highlightReply: q.highlightReply }),
-    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
-    ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+    ...movedOutDrawings(q),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+  };
+};
+
+// A Question's drawings as a move carries them: each in the shape it was
+// logged in, so a scene logged as text moves as text and one logged as a
+// blob moves as its ref, and nothing is rewritten.
+const movedOutDrawings = (
+  q: InboxQuestion,
+): Pick<
+  MovedQuestion,
+  'drawings' | 'sentDrawings' | 'drawingRefs' | 'sentDrawingRefs'
+> => {
+  const texts: Record<string, QuestionDrawing> = {};
+  const refs: Record<string, QuestionDrawingRef> = {};
+  for (const [id, d] of Object.entries(q.drawings ?? {}))
+    if (isDrawingRef(d.stored))
+      refs[id] = {
+        sha: d.stored.sha,
+        bytes: d.stored.bytes,
+        revision: d.revision,
+      };
+    else texts[id] = { scene: d.stored, revision: d.revision };
+  const sentTexts: Record<string, string> = {};
+  const sentRefs: Record<string, DrawingRef> = {};
+  for (const [id, d] of Object.entries(q.sentDrawings ?? {}))
+    if (isDrawingRef(d)) sentRefs[id] = { sha: d.sha, bytes: d.bytes };
+    else sentTexts[id] = d;
+  const some = (r: object) => Object.keys(r).length > 0;
+  return {
+    ...(some(texts) ? { drawings: texts } : {}),
+    ...(some(sentTexts) ? { sentDrawings: sentTexts } : {}),
+    ...(some(refs) ? { drawingRefs: refs } : {}),
+    ...(some(sentRefs) ? { sentDrawingRefs: sentRefs } : {}),
   };
 };
 

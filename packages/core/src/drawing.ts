@@ -1,4 +1,4 @@
-import { Result } from 'effect';
+import { Result, Schema } from 'effect';
 
 // Drawings in a Question: Excalidraw scenes the agent puts beside a body,
 // which names each with an `<Excalidraw id="…"/>` line of its own. A scene is
@@ -19,6 +19,13 @@ import { Result } from 'effect';
 // (`summariseScene`), one line per element, about a twentieth of the scene's
 // size.
 //
+// A scene is kept as a row of the store's content-addressed blob table,
+// keyed by the SHA-256 of its text, as an HTML block's document is
+// (`html-block.ts`), and an event carries only that hash and the byte count
+// (`DrawingRef`), so a fold, the board and every list never carry a scene.
+// The page fetches the scenes of the Question it shows. Events logged before
+// that carry each scene's text itself, and are read as they are.
+//
 // BROWSER-SAFE and pure: `effect` only, no clock, no platform.
 
 /** A drawing's id: the `id` of its tag in the body. */
@@ -29,6 +36,43 @@ export const DRAWING_MAX_BYTES = 200 * 1024;
 
 /** The most drawings one Question may carry. */
 export const DRAWINGS_MAX = 8;
+
+// A drawing as an event carries it: the hash of its scene's text, which is
+// the key of its blob, and its size. Plain fields, so a log never fails to
+// decode on a check made later; the decision checks them.
+export const DrawingRef = Schema.Struct({
+  sha: Schema.String,
+  bytes: Schema.Int,
+});
+export type DrawingRef = typeof DrawingRef.Type;
+
+/** Drawings by id, each its scene's blob. */
+export const DrawingRefs = Schema.Record(Schema.String, DrawingRef);
+export type DrawingRefs = typeof DrawingRefs.Type;
+
+/** The blob table's `kind` for a drawing's scene. */
+export const DRAWING_BLOB_KIND = 'drawing';
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * Why a blob's ref cannot be the one of a scene kept as `kept`
+ * (`checkScene`'s text), or undefined when it can be: its hash a SHA-256 in
+ * hex, and its size the scene's own. Whether the hash is the scene's is the
+ * store's to know, as the bytes are hashed there.
+ */
+export const drawingRefProblem = (
+  id: string,
+  kept: string,
+  ref: DrawingRef,
+): string | undefined => {
+  if (!SHA256_HEX.test(ref.sha))
+    return `drawing "${id}" names no scene: its hash is not a SHA-256`;
+  const bytes = utf8Bytes(kept);
+  return ref.bytes === bytes
+    ? undefined
+    : `drawing "${id}" names a scene of ${ref.bytes} bytes, but its scene is ${bytes}`;
+};
 
 // --- what an element looks like, as far as this module reads it -------------------
 

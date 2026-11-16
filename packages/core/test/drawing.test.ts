@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from '@effect/vitest';
 import { Result } from 'effect';
 import {
@@ -374,23 +375,56 @@ describe('summariseScene', () => {
 });
 
 describe('drawings on the log', () => {
+  // A scene as a decision takes it: its text and its blob's ref.
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+  const refOf = (text: string) => ({
+    sha: sha(text),
+    bytes: new TextEncoder().encode(text).length,
+  });
+  const inputs = (scenes: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(scenes).map(([id, text]) => [
+        id,
+        { scene: text, ref: refOf(text) },
+      ]),
+    );
   const asked = (drawings?: Record<string, string>) =>
     ok(
       decideAsk(inboxState([opened]), {
         inboxId: A,
         title: 'Layout?',
         body: '<Excalidraw id="layout"/>',
-        ...(drawings === undefined ? {} : { drawings }),
+        ...(drawings === undefined ? {} : { drawings: inputs(drawings) }),
       }),
     );
+  // A Question asked before scenes moved to the blob table: its scenes on
+  // the event itself.
+  const askedInline = (drawings: Record<string, string>): InboxEvent => ({
+    _tag: 'QuestionAsked',
+    inboxId: A,
+    number: n(1),
+    title: 'Layout?',
+    body: '<Excalidraw id="layout"/>',
+    drawings,
+  });
 
-  it('an ask carries its drawings, checked, and the fold holds them at revision 1', () => {
+  it('an ask carries a ref per drawing, never the scene, and the fold holds it at revision 1', () => {
     const e = asked({ layout: BOX });
-    expect(e.drawings).toStrictEqual({ layout: BOX });
+    expect(e.drawingRefs).toStrictEqual({ layout: refOf(BOX) });
+    expect(e).not.toHaveProperty('drawings');
     const q = inboxState([opened, e]).questions[0];
-    expect(q?.drawings).toStrictEqual({ layout: { scene: BOX, revision: 1 } });
-    expect(asked()).not.toHaveProperty('drawings');
-    expect(asked({})).not.toHaveProperty('drawings');
+    expect(q?.drawings).toStrictEqual({
+      layout: { stored: refOf(BOX), revision: 1 },
+    });
+    expect(asked()).not.toHaveProperty('drawingRefs');
+    expect(asked({})).not.toHaveProperty('drawingRefs');
+  });
+
+  it('an older ask with its scenes inline folds as it always did', () => {
+    const q = inboxState([opened, askedInline({ layout: BOX })]).questions[0];
+    expect(q?.drawings).toStrictEqual({
+      layout: { stored: BOX, revision: 1 },
+    });
   });
 
   it('an ask with a bad drawing is refused', () => {
@@ -398,12 +432,28 @@ describe('drawings on the log', () => {
       inboxId: A,
       title: 'T',
       body: '',
-      drawings: { layout: 'nope' },
+      drawings: { layout: { scene: 'nope', ref: refOf('nope') } },
     });
     expect(refusal(r).reason).toBe('bad-drawing');
   });
 
-  it('an edit sets drawings over the others, and only a changed one moves revision', () => {
+  it("an ask whose ref is not a SHA-256, or not the scene's size, is refused", () => {
+    const ask = (ref: { sha: string; bytes: number }) =>
+      decideAsk(inboxState([opened]), {
+        inboxId: A,
+        title: 'T',
+        body: '',
+        drawings: { layout: { scene: BOX, ref } },
+      });
+    expect(refusal(ask({ sha: 'abc', bytes: refOf(BOX).bytes })).message).toBe(
+      'drawing "layout" names no scene: its hash is not a SHA-256',
+    );
+    expect(refusal(ask({ sha: sha(BOX), bytes: 3 })).reason).toBe(
+      'bad-drawing',
+    );
+  });
+
+  it('an edit sets only the changed drawings, and only a changed one moves revision', () => {
     const events: Array<InboxEvent> = [
       opened,
       asked({ layout: BOX, flow: OTHER }),
@@ -412,15 +462,16 @@ describe('drawings on the log', () => {
       decideEdit(inboxState(events), {
         inboxId: A,
         number: n(1),
-        drawings: { layout: MOVED },
+        drawings: inputs({ layout: MOVED, flow: OTHER }),
       }),
     );
-    expect(edited.drawings).toStrictEqual({ flow: OTHER, layout: MOVED });
+    expect(edited.drawingRefs).toStrictEqual({ layout: refOf(MOVED) });
+    expect(edited).not.toHaveProperty('drawings');
     const q = inboxState([...events, edited]).questions[0];
     expect(q?.revision).toBe(2);
     expect(q?.drawings).toStrictEqual({
-      flow: { scene: OTHER, revision: 1 },
-      layout: { scene: MOVED, revision: 2 },
+      flow: { stored: refOf(OTHER), revision: 1 },
+      layout: { stored: refOf(MOVED), revision: 2 },
     });
     // An edit of the title alone keeps every drawing where it was.
     const titled = ok(
@@ -430,20 +481,54 @@ describe('drawings on the log', () => {
         title: 'New',
       }),
     );
-    expect(titled).not.toHaveProperty('drawings');
+    expect(titled).not.toHaveProperty('drawingRefs');
     expect(
       inboxState([...events, edited, titled]).questions[0]?.drawings,
     ).toStrictEqual(q?.drawings);
   });
 
-  it('an edit that changes nothing, drawings included, is refused', () => {
-    const events: Array<InboxEvent> = [opened, asked({ layout: BOX })];
-    const r = decideEdit(inboxState(events), {
+  it('an edit over an older inline drawing leaves the others inline, at their revision', () => {
+    const events: Array<InboxEvent> = [
+      opened,
+      askedInline({ layout: BOX, flow: OTHER }),
+    ];
+    const edited = ok(
+      decideEdit(inboxState(events), {
+        inboxId: A,
+        number: n(1),
+        // The same text as the inline `flow`: no change.
+        drawings: inputs({ layout: MOVED, flow: OTHER }),
+      }),
+    );
+    expect(edited.drawingRefs).toStrictEqual({ layout: refOf(MOVED) });
+    const q = inboxState([...events, edited]).questions[0];
+    expect(q?.drawings).toStrictEqual({
+      flow: { stored: OTHER, revision: 1 },
+      layout: { stored: refOf(MOVED), revision: 2 },
+    });
+    // And an older edit, whose `drawings` is the whole set, still folds so.
+    const olderEdit: InboxEvent = {
+      _tag: 'QuestionEdited',
       inboxId: A,
       number: n(1),
-      drawings: { layout: BOX },
-    });
-    expect(refusal(r).reason).toBe('unchanged');
+      title: 'Layout?',
+      body: '',
+      drawings: { layout: OTHER },
+    };
+    expect(
+      inboxState([...events, olderEdit]).questions[0]?.drawings,
+    ).toStrictEqual({ layout: { stored: OTHER, revision: 2 } });
+  });
+
+  it('an edit that changes nothing, drawings included, is refused', () => {
+    for (const ask of [asked({ layout: BOX }), askedInline({ layout: BOX })]) {
+      const r = decideEdit(inboxState([opened, ask]), {
+        inboxId: A,
+        number: n(1),
+        drawings: inputs({ layout: BOX }),
+      });
+      expect(refusal(r).reason).toBe('unchanged');
+    }
   });
 
   it('an edit that takes the set past the limit is refused', () => {
@@ -454,12 +539,15 @@ describe('drawings on the log', () => {
     const r = decideEdit(inboxState(events), {
       inboxId: A,
       number: n(1),
-      drawings: { extra: BOX },
+      drawings: inputs({ extra: BOX }),
     });
     expect(refusal(r).reason).toBe('bad-drawing');
+    expect(refusal(r).message).toBe(
+      `a question may carry at most ${DRAWINGS_MAX} drawings; this one would have ${DRAWINGS_MAX + 1}`,
+    );
   });
 
-  it('an answer carries the changed drawings, and refuses an id the Question lacks', () => {
+  it('an answer carries a ref per changed drawing, and refuses an id the Question lacks', () => {
     const state = inboxState([opened, asked({ layout: BOX })]);
     const answered = ok(
       decideAnswer(state, {
@@ -467,21 +555,37 @@ describe('drawings on the log', () => {
         number: n(1),
         response: 'Moved',
         seenRevision: QuestionRevision.make(1),
-        drawings: { layout: MOVED },
+        drawings: inputs({ layout: MOVED }),
       }),
     );
-    expect(answered.drawings).toStrictEqual({ layout: MOVED });
+    expect(answered.drawingRefs).toStrictEqual({ layout: refOf(MOVED) });
+    expect(answered).not.toHaveProperty('drawings');
     const q = inboxState([opened, asked({ layout: BOX }), answered])
       .questions[0];
-    expect(q?.sentDrawings).toStrictEqual({ layout: MOVED });
-    expect(q?.drawings?.layout?.scene).toBe(BOX);
+    expect(q?.sentDrawings).toStrictEqual({ layout: refOf(MOVED) });
+    expect(q?.drawings?.layout?.stored).toStrictEqual(refOf(BOX));
     const r = decideAnswer(state, {
       inboxId: A,
       number: n(1),
       response: 'x',
-      drawings: { other: MOVED },
+      drawings: inputs({ other: MOVED }),
     });
     expect(refusal(r).message).toContain('no drawing named "other"');
+  });
+
+  it('an answer to an older inline drawing may send it as a blob', () => {
+    const events: Array<InboxEvent> = [opened, askedInline({ layout: BOX })];
+    const answered = ok(
+      decideAnswer(inboxState(events), {
+        inboxId: A,
+        number: n(1),
+        response: 'Moved',
+        drawings: inputs({ layout: MOVED }),
+      }),
+    );
+    const q = inboxState([...events, answered]).questions[0];
+    expect(q?.drawings?.layout?.stored).toBe(BOX);
+    expect(q?.sentDrawings).toStrictEqual({ layout: refOf(MOVED) });
   });
 
   it('a deferral carries drawings too', () => {
@@ -492,24 +596,65 @@ describe('drawings on the log', () => {
         number: n(1),
         response: '',
         deferred: true,
-        drawings: { layout: MOVED },
+        drawings: inputs({ layout: MOVED }),
       }),
     );
     expect(deferred).toMatchObject({
       deferred: true,
-      drawings: { layout: MOVED },
+      drawingRefs: { layout: refOf(MOVED) },
     });
   });
 
+  const openedB: InboxEvent = {
+    _tag: 'InboxOpened',
+    inboxId: B,
+    label: 'two',
+  };
+
   it('a move carries the drawings and the sent ones whole', () => {
-    const openedB: InboxEvent = {
-      _tag: 'InboxOpened',
-      inboxId: B,
-      label: 'two',
-    };
     const events: Array<InboxEvent> = [
       opened,
       asked({ layout: BOX }),
+      {
+        _tag: 'QuestionAnswered',
+        inboxId: A,
+        number: n(1),
+        response: 'Moved',
+        drawingRefs: { layout: refOf(MOVED) },
+      },
+    ];
+    const moved = ok(
+      decideMove(inboxState(events), inboxState([openedB]), {
+        inboxId: A,
+        numbers: [n(1)],
+        toInboxId: B,
+      }),
+    );
+    expect(
+      moved[0]?._tag === 'QuestionMoved' && moved[0].question,
+    ).toMatchObject({
+      drawingRefs: { layout: { ...refOf(BOX), revision: 1 } },
+      sentDrawingRefs: { layout: refOf(MOVED) },
+    });
+    const there = inboxState([openedB, ...moved]).questions[0];
+    expect(there?.drawings).toStrictEqual({
+      layout: { stored: refOf(BOX), revision: 1 },
+    });
+    expect(there?.sentDrawings).toStrictEqual({ layout: refOf(MOVED) });
+  });
+
+  it('a move carries an older inline drawing inline, beside a blob one', () => {
+    const events: Array<InboxEvent> = [
+      opened,
+      askedInline({ layout: BOX }),
+      {
+        _tag: 'QuestionEdited',
+        inboxId: A,
+        number: n(1),
+        title: 'Layout?',
+        body: '',
+        drawingRefs: { flow: refOf(OTHER) },
+      },
       {
         _tag: 'QuestionAnswered',
         inboxId: A,
@@ -525,9 +670,20 @@ describe('drawings on the log', () => {
         toInboxId: B,
       }),
     );
+    const question =
+      moved[0]?._tag === 'QuestionMoved' ? moved[0].question : undefined;
+    expect(question?.drawings).toStrictEqual({
+      layout: { scene: BOX, revision: 1 },
+    });
+    expect(question?.drawingRefs).toStrictEqual({
+      flow: { ...refOf(OTHER), revision: 2 },
+    });
+    expect(question?.sentDrawings).toStrictEqual({ layout: MOVED });
+    expect(question).not.toHaveProperty('sentDrawingRefs');
     const there = inboxState([openedB, ...moved]).questions[0];
     expect(there?.drawings).toStrictEqual({
-      layout: { scene: BOX, revision: 1 },
+      layout: { stored: BOX, revision: 1 },
+      flow: { stored: refOf(OTHER), revision: 2 },
     });
     expect(there?.sentDrawings).toStrictEqual({ layout: MOVED });
   });

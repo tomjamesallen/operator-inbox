@@ -9,11 +9,14 @@ import { Cause } from 'effect';
 import { AsyncResult } from 'effect/reactivity';
 import type { ReactNode } from 'react';
 import {
+  type DrawingRefsOf,
   drawingCanvasAtom,
   drawingDraftAtom,
   drawingKey,
   drawingOpenAtom,
   drawingPictureAtom,
+  drawingScenesAtom,
+  drawingScenesKeyOf,
 } from '../drawings';
 import { PictureFrame } from './picture-frame';
 import { focusRing, headerButton, label } from './styles';
@@ -29,11 +32,24 @@ import { focusRing, headerButton, label } from './styles';
 // (`drawings.ts`), marked as going with the answer, with REVERT beside it. An
 // answered question shows what went with the answer, or the agent's drawing,
 // read-only.
+//
+// The board names each drawing by its scene's hash; the scenes of the
+// Question shown are read once (`drawingScenesAtom`), and the drawing waits
+// on them. A machine on an older build sends the scenes inline, and those
+// are drawn as they come.
 
 /** One of a Question's drawings: its scene, and the revision that last set it. */
-type QuestionDrawing = NonNullable<
-  InboxOperatorQuestionDto['drawings']
->[string];
+interface QuestionDrawing {
+  readonly scene: string;
+  readonly revision: number;
+}
+
+/** A Question's drawings, in either shape its machine sends them. */
+export interface QuestionDrawings extends DrawingRefsOf {
+  readonly drawingRefs?: InboxOperatorQuestionDto['drawingRefs'] | undefined;
+  readonly drawings?: Readonly<Record<string, QuestionDrawing>> | undefined;
+  readonly sentDrawings?: Readonly<Record<string, string>> | undefined;
+}
 
 /** The question a drawing belongs to, as far as the drawing needs it. */
 export interface DrawingHost {
@@ -47,6 +63,78 @@ export interface DrawingHost {
 }
 
 export const DrawingBlock = ({
+  id,
+  host,
+  question,
+}: {
+  readonly id: string;
+  readonly host: DrawingHost | undefined;
+  readonly question: QuestionDrawings;
+}) => {
+  const ref = question.drawingRefs?.[id];
+  const sentRef = question.sentDrawingRefs?.[id];
+  // Inline, from a machine on an older build, or none of that id at all.
+  if (ref === undefined && sentRef === undefined)
+    return (
+      <ResolvedDrawing
+        id={id}
+        host={host}
+        drawing={question.drawings?.[id]}
+        sent={question.sentDrawings?.[id]}
+      />
+    );
+  if (host === undefined)
+    return (
+      <p className="my-s2 text-12 text-fg/45" data-drawing={id}>
+        A drawing, “{id}”, shows only in the Question’s own view.
+      </p>
+    );
+  return <FetchedDrawing id={id} host={host} question={question} />;
+};
+
+// A drawing named by its hash, once its Question's scenes have been read.
+const FetchedDrawing = ({
+  id,
+  host,
+  question,
+}: {
+  readonly id: string;
+  readonly host: DrawingHost;
+  readonly question: QuestionDrawings;
+}) => {
+  const scenes = useAtomValue(
+    drawingScenesAtom(drawingScenesKeyOf(host.inboxId, host.number, question)),
+  );
+  if (AsyncResult.isFailure(scenes))
+    return (
+      <p className="my-s2 text-12 text-red" role="alert">
+        Could not read the drawing “{id}”:{' '}
+        {String(Cause.squash(scenes.cause) ?? 'unknown')}
+      </p>
+    );
+  if (!AsyncResult.isSuccess(scenes))
+    return (
+      <div className="my-s2 border border-fg/13 p-s2" data-drawing={id}>
+        <Waiting text="Loading…" />
+      </div>
+    );
+  const ref = question.drawingRefs?.[id];
+  const scene = scenes.value.drawings[id]?.scene;
+  return (
+    <ResolvedDrawing
+      id={id}
+      host={host}
+      drawing={
+        ref === undefined || scene === undefined
+          ? undefined
+          : { scene, revision: ref.revision }
+      }
+      sent={scenes.value.sent[id]?.scene}
+    />
+  );
+};
+
+const ResolvedDrawing = ({
   id,
   host,
   drawing,
