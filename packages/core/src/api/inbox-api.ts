@@ -1,11 +1,13 @@
 import { Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api';
 import { QuestionComments } from '../comments';
+import { DrawingRefs } from '../drawing';
 import { HTML_BLOCK_WIDTHS, HtmlBlocks } from '../html-block';
 import {
   Drawings,
   Metadata,
   QuestionDrawing,
+  QuestionDrawingRef,
   QuestionNumber,
   QuestionRevision,
 } from '../inbox';
@@ -76,13 +78,23 @@ export const QuestionBodyPartDto = Schema.Union([
 export type QuestionBodyPartDto = typeof QuestionBodyPartDto.Type;
 const bodyParts = Schema.optionalKey(Schema.Array(QuestionBodyPartDto));
 
-// The Question's drawings, by id (core's `InboxQuestion.drawings`): each scene
-// as JSON text and the revision that last set it. Optional keys, so a machine
-// on an older build, which never sends them, still decodes.
+// The Question's drawings, by id (core's `InboxQuestion.drawings`): each its
+// scene's hash and size, and the revision that last set it. The scenes come
+// from their own endpoint (`drawings`), fetched for the Question the page
+// shows, so the board never carries them. Optional keys, so a machine on an
+// older build, which never sends them, still decodes.
+const drawingRefs = Schema.optionalKey(
+  Schema.Record(Schema.String, QuestionDrawingRef),
+);
+// The drawings the operator changed and sent with their answer, by id, the
+// same way.
+const sentDrawingRefs = Schema.optionalKey(DrawingRefs);
+// The same drawings with each scene's text, as a machine on an older build
+// sends them; a machine on this build never does. Kept, so such a machine's
+// Questions still decode and show their drawings.
 const drawings = Schema.optionalKey(
   Schema.Record(Schema.String, QuestionDrawing),
 );
-// The drawings the operator changed and sent with their answer, by id.
 const sentDrawings = Schema.optionalKey(Drawings);
 // The Question's HTML blocks, by id (core's `InboxQuestion.htmls`): each its
 // document's hash and size only. The documents come from their own endpoint
@@ -108,6 +120,7 @@ export const InboxOperatorQuestionDto = Schema.Struct({
   askedAt: at,
   highlight: Schema.optionalKey(InboxHighlightDto),
   drawings,
+  drawingRefs,
   htmls,
 });
 export type InboxOperatorQuestionDto = typeof InboxOperatorQuestionDto.Type;
@@ -149,6 +162,8 @@ export const InboxAgentQuestionDto = Schema.Struct({
   deferred,
   drawings,
   sentDrawings,
+  drawingRefs,
+  sentDrawingRefs,
   macros,
   comments,
   htmls,
@@ -179,6 +194,8 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   deferred,
   drawings,
   sentDrawings,
+  drawingRefs,
+  sentDrawingRefs,
   macros,
   comments,
   htmls,
@@ -545,6 +562,23 @@ export const QuestionHtmlBlocksDto = Schema.Struct({
 });
 export type QuestionHtmlBlocksDto = typeof QuestionHtmlBlocksDto.Type;
 
+// One Question's drawings' scenes, by id: each its hash, which is the key of
+// its blob, and the scene's text; the agent's under `drawings`, the ones the
+// operator sent with their answer under `sent`. Read for the Question the
+// page shows, never with the board. A drawing logged before scenes moved to
+// the blob table is read from its event, its hash made from its text. One
+// whose scene the store does not hold (a log copied without its blobs) is
+// left out, and the page shows it as missing.
+const DrawingScene = Schema.Struct({
+  sha: Schema.String,
+  scene: Schema.String,
+});
+export const QuestionDrawingsDto = Schema.Struct({
+  drawings: Schema.Record(Schema.String, DrawingScene),
+  sent: Schema.Record(Schema.String, DrawingScene),
+});
+export type QuestionDrawingsDto = typeof QuestionDrawingsDto.Type;
+
 export const RenamePayload = Schema.Struct({ label: Schema.String });
 export type RenamePayload = typeof RenamePayload.Type;
 
@@ -811,6 +845,18 @@ export class InboxApiGroup extends HttpApiGroup.make('inbox').add(
       params: QuestionPath,
       query: InboxReadQuery,
       success: QuestionHtmlBlocksDto,
+      error: [InboxNotFound, InboxUnavailable],
+    },
+  ),
+  // A Question's drawings' scenes. A Question the Inbox has no such number
+  // for, or one with no drawings, has none.
+  HttpApiEndpoint.get(
+    'drawings',
+    '/inbox/:inboxId/questions/:number/drawings',
+    {
+      params: QuestionPath,
+      query: InboxReadQuery,
+      success: QuestionDrawingsDto,
       error: [InboxNotFound, InboxUnavailable],
     },
   ),

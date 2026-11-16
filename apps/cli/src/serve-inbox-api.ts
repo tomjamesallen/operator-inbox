@@ -2,6 +2,7 @@ import {
   askEvents,
   awaitingAgent,
   awaitingOperator,
+  type DrawingRefs,
   type Drawings,
   decideAnswer,
   decideArchive,
@@ -21,6 +22,7 @@ import {
   type InboxMachineEntry,
   type InboxMachineKey,
   type InboxMachinePort,
+  type InboxQuestion,
   type InboxRefusal,
   type InboxState,
   inboxState,
@@ -41,6 +43,7 @@ import {
   ownersOfClaims,
   planInboxOwnerLookup,
   type QuestionComments,
+  type QuestionDrawingRef,
   type QuestionNumber,
   type QuestionRevision,
   recentlyProcessed,
@@ -67,12 +70,19 @@ import {
   type OperatorInboxApi,
   PinRefused,
   PriorityRefused,
+  type QuestionDrawingsDto,
   type QuestionHtmlBlocksDto,
   RenameRefused,
 } from '@operator-inbox/core/api';
 import { Effect, Predicate, Result, SubscriptionRef } from 'effect';
 import { HttpApiBuilder } from 'effect/http-api';
 import type { InputError } from './errors';
+import {
+  checkedScenes,
+  drawingRefOf,
+  keepScenes,
+  questionScenes,
+} from './inbox-drawings';
 import {
   type ForwardedCall,
   type InboxRefusal as ForwardedRefusal,
@@ -164,7 +174,7 @@ export const toInboxView = (
             seq: q.highlight.stamp?.seq ?? 0,
           },
         }),
-    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+    ...drawingRefsDto(q),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
   })),
   // Oldest answered first: the order the agent will probably process them in.
@@ -189,8 +199,8 @@ export const toInboxView = (
         ? {}
         : { operatorQuestion: q.operatorQuestion }),
       ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
-      ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
-      ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+      ...drawingRefsDto(q),
+      ...sentDrawingRefsDto(q),
       ...(q.macros === undefined ? {} : { macros: q.macros }),
       ...(q.comments === undefined ? {} : { comments: q.comments }),
       ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
@@ -216,13 +226,45 @@ export const toInboxView = (
       ? {}
       : { operatorQuestion: q.operatorQuestion }),
     ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
-    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
-    ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+    ...drawingRefsDto(q),
+    ...sentDrawingRefsDto(q),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
   })),
 });
+
+// A Question's drawings as the board carries them: each its scene's hash and
+// size, and its revision; never the scene, whichever shape it was logged in
+// (`drawingRefOf`). The page reads the scenes of the Question it shows
+// (`questionDrawings`).
+const drawingRefsDto = (
+  q: InboxQuestion,
+): { readonly drawingRefs?: Record<string, QuestionDrawingRef> } =>
+  q.drawings === undefined
+    ? {}
+    : {
+        drawingRefs: Object.fromEntries(
+          Object.entries(q.drawings).map(([id, d]) => [
+            id,
+            { ...drawingRefOf(d.stored), revision: d.revision },
+          ]),
+        ),
+      };
+
+const sentDrawingRefsDto = (
+  q: InboxQuestion,
+): { readonly sentDrawingRefs?: DrawingRefs } =>
+  q.sentDrawings === undefined
+    ? {}
+    : {
+        sentDrawingRefs: Object.fromEntries(
+          Object.entries(q.sentDrawings).map(([id, d]) => [
+            id,
+            drawingRefOf(d),
+          ]),
+        ),
+      };
 
 const readView = Effect.fnUntraced(function* (inboxId: InboxId) {
   const log = yield* InboxLog;
@@ -267,7 +309,32 @@ export const questionHtmlBlocks = Effect.fnUntraced(function* (
   return dto;
 });
 
-// The same read for the page, which goes to the machine that owns the Inbox
+// GET /api/inbox/:inboxId/questions/:number/drawings: the scenes of one
+// Question's drawings, the agent's and those the operator sent with their
+// answer, read from the blob table by the hashes its events carry, or from
+// the events themselves for drawings logged before scenes moved to the blob
+// table. Only this reads them: the board and every list carry the hashes
+// alone. A Question with no such number, or no drawings, has none; a scene
+// the table does not hold is left out, and the page shows that drawing as
+// missing.
+export const questionDrawings = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  number: QuestionNumber,
+) {
+  const log = yield* InboxLog;
+  const { events } = yield* unavailable(log.read(inboxId));
+  const state = inboxState(events);
+  if (!state.opened) return yield* notFound(inboxId);
+  const q = state.questions.find((x) => x.number === number);
+  const scenes =
+    q === undefined
+      ? { drawings: {}, sent: {} }
+      : yield* unavailable(questionScenes(q));
+  const dto: QuestionDrawingsDto = scenes;
+  return dto;
+});
+
+// The same reads for the page, which go to the machine that owns the Inbox
 // when Local's log does not have it. The owner is the machine the latest
 // board or index read recorded as claiming the Inbox (`ownersOfClaims`):
 // the page reads the board before it shows a Question, so its owner is
@@ -278,8 +345,31 @@ const routedHtmlBlocks = (
   number: QuestionNumber,
   query: InboxReadQuery,
 ) =>
+  routedQuestionRead(
+    inboxId,
+    query,
+    questionHtmlBlocks(inboxId, number),
+    (api) => api.inbox.htmlBlocks({ params: { inboxId, number }, query: {} }),
+  );
+
+const routedDrawings = (
+  inboxId: InboxId,
+  number: QuestionNumber,
+  query: InboxReadQuery,
+) =>
+  routedQuestionRead(inboxId, query, questionDrawings(inboxId, number), (api) =>
+    api.inbox.drawings({ params: { inboxId, number }, query: {} }),
+  );
+
+const routedQuestionRead = <A, R>(
+  inboxId: InboxId,
+  query: InboxReadQuery,
+  local: Effect.Effect<A, InboxNotFound | InboxUnavailable, R>,
+  forward: Parameters<
+    typeof forwardInboxRead<A, InboxNotFound | InboxUnavailable>
+  >[1],
+) =>
   Effect.gen(function* () {
-    const local = questionHtmlBlocks(inboxId, number);
     if (query.local === 'true') return yield* local;
     const served = yield* ServedInboxMachines;
     const { entries } = yield* served.machines;
@@ -303,15 +393,7 @@ const routedHtmlBlocks = (
             if (owner === undefined) return yield* Effect.fail(lacked);
             if (Result.isFailure(owner.resolved))
               return yield* Effect.fail(neverCalled(inboxId, [owner]));
-            return yield* forwardInboxRead(
-              owner,
-              (api) =>
-                api.inbox.htmlBlocks({
-                  params: { inboxId, number },
-                  query: {},
-                }),
-              served.callOptions,
-            );
+            return yield* forwardInboxRead(owner, forward, served.callOptions);
           }),
       ),
     );
@@ -348,6 +430,18 @@ export const answerQuestion = Effect.fnUntraced(function* (
   macros?: MacrosInvoked,
   comments?: QuestionComments,
 ) {
+  // Each edited scene checked as the decision checks it, then kept in the
+  // blob table BEFORE the answer is decided and appended, so the event names
+  // only scenes the store holds; a refused scene is never written.
+  const checked = drawings === undefined ? undefined : checkedScenes(drawings);
+  if (checked !== undefined && Result.isFailure(checked))
+    return yield* Effect.fail(
+      new AnswerRefused({ message: checked.failure.message }),
+    );
+  const kept =
+    checked === undefined
+      ? undefined
+      : yield* unavailable(keepScenes(checked.success));
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
       decideAnswer(state, {
@@ -357,7 +451,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
         seenRevision,
         ...(deferred === undefined ? {} : { deferred }),
         ...(highlightReply === undefined ? {} : { highlightReply }),
-        ...(drawings === undefined ? {} : { drawings }),
+        ...(kept === undefined ? {} : { drawings: kept }),
         ...(macros === undefined ? {} : { macros }),
         ...(comments === undefined ? {} : { comments }),
       }),
@@ -1033,7 +1127,7 @@ export const priorityInbox = Effect.fnUntraced(function* (
 // (`routeByOwner`).
 type OwnedEndpoint = Exclude<
   keyof MachineApi['inbox'],
-  'index' | 'board' | 'openSession' | 'htmlBlocks'
+  'index' | 'board' | 'openSession' | 'htmlBlocks' | 'drawings'
 >;
 const OWNED_KIND: Record<OwnedEndpoint, MachineCallKind> = {
   view: 'read',
@@ -1105,6 +1199,9 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
       .handle('board', ({ query }) => inboxBoard(query))
       .handle('htmlBlocks', ({ params, query }) =>
         routedHtmlBlocks(params.inboxId, params.number, query),
+      )
+      .handle('drawings', ({ params, query }) =>
+        routedDrawings(params.inboxId, params.number, query),
       )
       .handle(
         'view',

@@ -38,6 +38,10 @@ import {
 // reserved from the scene before Excalidraw loads; the full-screen editor;
 // the operator's edits as drafts in localStorage, sent with the answer; the
 // conflict when the agent changes a drawing the operator has edited.
+//
+// Most boards here carry each scene inline, as a machine on an older build
+// sends it; `drawings named by their hash` below has the board this build
+// sends, which names each scene by its hash, the scenes read per Question.
 
 // Excalidraw stands in. Its module waits on `gate` the first time it is
 // loaded, and each export on `hold`. A scene's picture names the ids of the
@@ -137,6 +141,40 @@ const HELD =
   'reserves its frame at the scene’s own shape before Excalidraw has loaded';
 beforeEach((ctx) => {
   if (ctx.task.name !== HELD) excal.open();
+});
+
+const sha = (c: string) => c.repeat(64);
+const reads = { paths: [] as Array<string> };
+const scenes = {
+  drawings: {} as Record<string, { sha: string; scene: string }>,
+  sent: {} as Record<string, { sha: string; scene: string }>,
+};
+
+// What the scenes endpoint answers (`drawings named by their hash`), and the
+// paths it was asked for. Stubbed for every test, as the page's client is
+// made once for the file.
+beforeEach(() => {
+  reads.paths = [];
+  scenes.drawings = {
+    layout: { sha: sha('a'), scene: LAYOUT },
+    flow: { sha: sha('b'), scene: FLOW },
+  };
+  scenes.sent = {};
+  const served = globalThis.fetch;
+  vi.stubGlobal(
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(
+        input instanceof Request ? input.url : String(input),
+        'http://x',
+      );
+      if (url.pathname.endsWith('/drawings')) {
+        reads.paths.push(url.pathname);
+        return json(scenes);
+      }
+      return served(input, init);
+    },
+  );
 });
 
 const DRAFTS_KEY = 'operator-inbox:drawing-drafts';
@@ -641,5 +679,117 @@ describe('the drafts, pure', () => {
     expect(drawingDraftsStillWaiting(all, { views: [view] } as never)).toBe(
       all,
     );
+  });
+});
+
+describe('drawings named by their hash', () => {
+  const byHash = (revision = 1) =>
+    board([
+      {
+        ...VIEW_A,
+        awaitingOperator: [
+          {
+            ...asked(1, 'First', 2, revision),
+            bodyParts: parts('layout', 'flow'),
+            drawingRefs: {
+              layout: { sha: sha('a'), bytes: LAYOUT.length, revision },
+              flow: { sha: sha('b'), bytes: FLOW.length, revision: 1 },
+            },
+          },
+          asked(3, 'Third', 9),
+        ],
+      },
+      VIEW_B,
+    ]);
+
+  it('reads the scenes for the question once, and draws them', async () => {
+    serve.board = byHash();
+    await mounted();
+    await waitFor(() => expect(shownIds('layout')).toBe('box'));
+    await waitFor(() => expect(shownIds('flow')).toBe('left,right'));
+    expect(reads.paths).toEqual([`/api/inbox/${A}/questions/1/drawings`]);
+    expect(shapeOf('layout')).toBe(String(324 / 124));
+  });
+
+  it('says so when the store does not hold a scene the board names', async () => {
+    scenes.drawings = { flow: { sha: sha('b'), scene: FLOW } };
+    serve.board = byHash();
+    await mounted();
+    const missing = await waitFor(() => {
+      const el = lit().querySelector('[data-drawing-missing="layout"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(missing.textContent).toContain('“layout”');
+  });
+
+  it('sends the operator’s edit as its scene, as before', async () => {
+    seed(draft());
+    serve.board = byHash();
+    await mounted();
+    await waitFor(() => expect(shownIds('layout')).toBe('moved'));
+    type('Like this.');
+    send();
+    await waitFor(() => expect(serve.posts).toHaveLength(1));
+    expect(serve.posts[0]?.body).toEqual({
+      response: 'Like this.',
+      seenRevision: 1,
+      drawings: { layout: scene('moved') },
+    });
+  });
+
+  it('holds Send when the agent changed a drawing the operator edited', async () => {
+    seed(draft({ revision: 1 }));
+    serve.board = byHash(2);
+    await mounted();
+    await waitFor(() =>
+      expect(
+        figure('layout')?.querySelector('[data-drawing-conflict]'),
+      ).not.toBeNull(),
+    );
+  });
+
+  it('shows what the operator sent, read with the question’s scenes', async () => {
+    scenes.sent = { layout: { sha: sha('c'), scene: scene('mine') } };
+    serve.board = board([
+      {
+        ...VIEW_A,
+        awaitingAgent: [
+          {
+            ...answered(2, 'Second', 12, 'Like this.'),
+            bodyParts: parts('layout', 'flow'),
+            drawingRefs: {
+              layout: { sha: sha('a'), bytes: LAYOUT.length, revision: 1 },
+              flow: { sha: sha('b'), bytes: FLOW.length, revision: 1 },
+            },
+            sentDrawingRefs: {
+              layout: { sha: sha('c'), bytes: 10 },
+            },
+          },
+        ],
+      },
+    ]);
+    await mounted();
+    await onQueue(/With the agent/);
+    await waitFor(() => expect(shownIds('layout')).toBe('mine'));
+    await waitFor(() => expect(shownIds('flow')).toBe('left,right'));
+    expect(
+      figure('layout')?.querySelector('[data-drawing-sent]')?.textContent,
+    ).toBe('Sent with your answer');
+    expect(reads.paths).toEqual([`/api/inbox/${A}/questions/2/drawings`]);
+  });
+
+  it('counts a drawing named by its hash as one the question carries', () => {
+    const question = {
+      drawingRefs: {
+        layout: { sha: sha('a'), bytes: 1, revision: 3 },
+      },
+    };
+    expect(drawingConflicts([draft({ revision: 1 })], question)).toEqual([
+      'layout',
+    ]);
+    expect(drawingsToSend([draft()], question)).toEqual({
+      layout: scene('moved'),
+    });
   });
 });

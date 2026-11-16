@@ -29,6 +29,7 @@ import {
   type InboxCode,
   type InboxEvent,
   InboxId,
+  type InboxQuestion,
   InboxRefusal,
   type InboxState,
   inboxState,
@@ -84,6 +85,12 @@ import { Argument, Command, Flag } from 'effect/cli';
 import { InputError } from '../errors';
 import { readHome } from '../home-dir';
 import { sha256Hex } from '../inbox-blobs';
+import {
+  checkedScenes,
+  keepScenes,
+  type QuestionScenes,
+  questionScenes,
+} from '../inbox-drawings';
 import {
   dispatchMode,
   dispatchPreToolHook,
@@ -740,6 +747,22 @@ const keepHtmlBlocks = Effect.fnUntraced(function* (
   return kept;
 });
 
+/**
+ * Check each drawing's scene as the decision would, then keep it in the blob
+ * table and give back the scenes with their refs, as the decision takes
+ * them. The check comes first, so a scene the inbox refuses is never
+ * written; the blobs go before anything is decided or appended, as an HTML
+ * block's do.
+ */
+const keepDrawings = Effect.fnUntraced(function* (
+  drawings: Drawings | undefined,
+) {
+  if (drawings === undefined) return undefined;
+  const checked = checkedScenes(drawings);
+  if (Result.isFailure(checked)) return yield* refused(checked.failure);
+  return yield* keepScenes(checked.success);
+});
+
 // --- ask ---------------------------------------------------------------------------
 
 export const dispatchAsk = Effect.fnUntraced(function* (opts: {
@@ -759,6 +782,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
 }) {
   const given = opts.metadata ?? emptyMetadata;
   const htmls = yield* keepHtmlBlocks(opts.htmls);
+  const drawings = yield* keepDrawings(opts.drawings);
   const asked = yield* decideOrFail(opts.inboxId, (state) => {
     // A key already on the Inbox counts as present: the question inherits it.
     const refusal =
@@ -775,7 +799,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
         title: opts.title,
         body: opts.body,
         ...(opts.metadata === undefined ? {} : { metadata: opts.metadata }),
-        ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
+        ...(drawings === undefined ? {} : { drawings }),
         ...(htmls === undefined ? {} : { htmls }),
       }),
       (event) => {
@@ -855,35 +879,51 @@ const parsedScene = (text: string): unknown => {
 const sentScene = (own: string | undefined, sent: string): string =>
   own === undefined ? sent : keepIdsThroughDuplicates(own, sent);
 
-const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
-  awaitingAgent(state).map((q) => ({
-    number: q.number,
-    ...(state.code === undefined
-      ? {}
-      : { code: questionCode(state.code, q.number) }),
-    title: q.title,
-    response: q.response ?? '',
-    metadata: q.metadata,
-    ...(q.operatorQuestion === undefined
-      ? {}
-      : { operatorQuestion: q.operatorQuestion }),
-    ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
-    ...(q.highlightReply === undefined
-      ? {}
-      : { highlightReply: q.highlightReply }),
-    ...(q.sentDrawings === undefined
-      ? {}
-      : {
-          drawings: Object.fromEntries(
-            Object.entries(q.sentDrawings).map(([id, scene]) => [
-              id,
-              parsedScene(sentScene(q.drawings?.[id]?.scene, scene)),
-            ]),
-          ),
-        }),
-    ...(q.macros === undefined ? {} : { macros: q.macros }),
-    ...(q.comments === undefined ? {} : { comments: q.comments }),
-  }));
+// Every answer awaiting the agent, each drawing the operator sent read from
+// the blob table, or from its event when it was logged as text.
+const answersOf = Effect.fnUntraced(function* (state: InboxState) {
+  const answers: Array<AnswerLine> = [];
+  for (const q of awaitingAgent(state)) {
+    const scenes =
+      q.sentDrawings === undefined ? undefined : yield* questionScenes(q);
+    answers.push(answerLineOf(state, q, scenes));
+  }
+  const lines: ReadonlyArray<AnswerLine> = answers;
+  return lines;
+});
+
+const answerLineOf = (
+  state: InboxState,
+  q: InboxQuestion,
+  scenes: QuestionScenes | undefined,
+): AnswerLine => ({
+  number: q.number,
+  ...(state.code === undefined
+    ? {}
+    : { code: questionCode(state.code, q.number) }),
+  title: q.title,
+  response: q.response ?? '',
+  metadata: q.metadata,
+  ...(q.operatorQuestion === undefined
+    ? {}
+    : { operatorQuestion: q.operatorQuestion }),
+  ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+  ...(q.highlightReply === undefined
+    ? {}
+    : { highlightReply: q.highlightReply }),
+  ...(scenes === undefined
+    ? {}
+    : {
+        drawings: Object.fromEntries(
+          Object.entries(scenes.sent).map(([id, sent]) => [
+            id,
+            parsedScene(sentScene(scenes.drawings[id]?.scene, sent.scene)),
+          ]),
+        ),
+      }),
+  ...(q.macros === undefined ? {} : { macros: q.macros }),
+  ...(q.comments === undefined ? {} : { comments: q.comments }),
+});
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
 export const renderMetadata = (metadata: Metadata): ReadonlyArray<string> =>
@@ -984,7 +1024,7 @@ export const dispatchAnswers = Effect.fnUntraced(function* (opts: {
   readonly json: boolean;
 }) {
   const state = yield* readState(opts.inboxId);
-  return renderAnswers(answersOf(state), opts.json);
+  return renderAnswers(yield* answersOf(state), opts.json);
 });
 
 export const WAIT_POLL = Duration.seconds(5);
@@ -1013,7 +1053,7 @@ export const dispatchWait = Effect.fnUntraced(function* (opts: {
   const deadline =
     (yield* Clock.currentTimeMillis) + opts.timeoutMinutes * 60_000;
   for (;;) {
-    const answers = answersOf(yield* readState(opts.inboxId));
+    const answers = yield* answersOf(yield* readState(opts.inboxId));
     if (answers.length > 0) return renderAnswers(answers, opts.json);
     const now = yield* Clock.currentTimeMillis;
     if (now >= deadline) return opts.json ? '[]' : 'no answers yet';
@@ -1086,12 +1126,13 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
     });
   const number = QuestionNumber.make(opts.number);
   const htmls = yield* keepHtmlBlocks(opts.htmls);
+  const drawings = yield* keepDrawings(opts.drawings);
   const input: Parameters<typeof decideEdit>[1] = {
     inboxId: opts.inboxId,
     number,
     ...(opts.title === undefined ? {} : { title: opts.title }),
     ...(opts.body === undefined ? {} : { body: opts.body }),
-    ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
+    ...(drawings === undefined ? {} : { drawings }),
     ...(htmls === undefined ? {} : { htmls }),
   };
   const edited = yield* decideOrFail(opts.inboxId, (state) =>
@@ -1127,8 +1168,9 @@ export const dispatchDrawing = Effect.fnUntraced(function* (opts: {
     return yield* new InputError({
       message: `inbox drawing: there is no question ${ref}`,
     });
-  const own = q.drawings?.[opts.id]?.scene;
-  const stored = q.sentDrawings?.[opts.id];
+  const scenes = yield* questionScenes(q);
+  const own = scenes.drawings[opts.id]?.scene;
+  const stored = scenes.sent[opts.id]?.scene;
   const sent = stored === undefined ? undefined : sentScene(own, stored);
   const scene = sent ?? own;
   if (scene === undefined) {
@@ -1412,8 +1454,9 @@ const drawingOpt = Flag.KeyValuePair('drawing').pipe(
 );
 
 // Each `--drawing` file read and, in the compact form, converted to a scene.
-// Undefined when none was given. Whether a scene may be kept is the
-// decision's to say (`checkDrawings`).
+// Undefined when none was given. Whether a scene may be kept is checked as
+// the decision checks it (`checkDrawings`), before it is written to the
+// blob table (`keepDrawings`).
 export const drawingsOf = Effect.fnUntraced(function* (
   verb: string,
   given: Option.Option<Record<string, string>>,

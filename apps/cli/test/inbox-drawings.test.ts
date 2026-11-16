@@ -19,6 +19,7 @@ import {
   dispatchOpen,
   drawingsOf,
 } from '../src/commands/inbox';
+import { checkedScenes, keepScenes } from '../src/inbox-drawings';
 import {
   decideAndAppend,
   type InboxLog,
@@ -95,18 +96,28 @@ const EDITED = sceneOf([
   },
 ]);
 
+// An answer as the server takes it: each scene checked and kept in the blob
+// table first (`answerQuestion`), then decided.
 const answer = (drawings: Record<string, string> | undefined) =>
-  decideAndAppend(ID, (state) =>
-    Result.map(
-      decideAnswer(state, {
-        inboxId: ID,
-        number: QuestionNumber.make(1),
-        response: 'Taller header, no cards.',
-        ...(drawings === undefined ? {} : { drawings }),
-      }),
-      (event) => ({ events: [event], result: undefined }),
-    ),
-  );
+  Effect.gen(function* () {
+    const checked =
+      drawings === undefined ? undefined : checkedScenes(drawings);
+    if (checked !== undefined && Result.isFailure(checked))
+      return yield* Effect.die(checked.failure);
+    const kept =
+      checked === undefined ? undefined : yield* keepScenes(checked.success);
+    return yield* decideAndAppend(ID, (state) =>
+      Result.map(
+        decideAnswer(state, {
+          inboxId: ID,
+          number: QuestionNumber.make(1),
+          response: 'Taller header, no cards.',
+          ...(kept === undefined ? {} : { drawings: kept }),
+        }),
+        (event) => ({ events: [event], result: undefined }),
+      ),
+    );
+  });
 
 describe('reading --drawing files', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'oi-drawings-'));

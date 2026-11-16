@@ -35,6 +35,11 @@ import {
 import {
   InboxEvent,
   type InboxEventTag,
+  MovedQuestion,
+  QuestionAnswered,
+  QuestionAsked,
+  QuestionEdited,
+  QuestionMoved,
   QuestionNumber,
   QuestionRevision,
 } from '../src/inbox';
@@ -532,6 +537,150 @@ describe('HTML blocks as stored in the log', () => {
       `{"_tag":"QuestionEdited","inboxId":"${INBOX_A}","number":1,"title":"T","body":"B2"}`,
     ])
       expect(decodeEvent(line)).not.toHaveProperty('htmls');
+  });
+});
+
+// Drawings as blobs: on an ask, an edit (only the drawing it set) and an
+// answer, each a scene's hash and size under `drawingRefs`, never the scene,
+// which is a blob row; and a move carrying a drawing logged as text beside
+// one logged as a blob. They came after the drawing golden above was pinned,
+// which still reads as it did, and so have their own file.
+const LAYOUT_SHA =
+  '4e1d7c0b9a8f6e5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c';
+const EDITED_SHA =
+  'c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4';
+const FLOW_SHA =
+  '17283940a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2';
+
+const DRAWING_REF_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Is this the layout?',
+    body: 'The boxes.\n\n<Excalidraw id="layout"/>\n',
+    drawingRefs: { layout: { sha: LAYOUT_SHA, bytes: 812 } },
+  },
+  {
+    _tag: 'QuestionEdited',
+    inboxId: INBOX_A,
+    number: q(1),
+    title: 'Is this the layout?',
+    body: '<Excalidraw id="layout"/>\n\n<Excalidraw id="flow"/>\n',
+    drawingRefs: { flow: { sha: FLOW_SHA, bytes: 1024 } },
+  },
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(1),
+    response: 'Moved it.',
+    drawingRefs: { layout: { sha: EDITED_SHA, bytes: 830 } },
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Is this the layout?',
+      body: '<Excalidraw id="layout"/>\n\n<Excalidraw id="flow"/>',
+      revision: rev(2),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: 'Moved it.',
+      withdrawn: false,
+      drawings: { layout: { scene: SCENE, revision: 1 } },
+      drawingRefs: { flow: { sha: FLOW_SHA, bytes: 1024, revision: 2 } },
+      sentDrawingRefs: { layout: { sha: EDITED_SHA, bytes: 830 } },
+    },
+  },
+];
+
+describe('drawings as blobs in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = DRAWING_REF_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-drawing-ref-events.jsonl', lines);
+    const read = golden('inbox-drawing-ref-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(DRAWING_REF_EVENTS);
+  });
+
+  it('carries no scene text on an event', () => {
+    for (const line of golden('inbox-drawing-ref-events.jsonl')
+      .split('\n')
+      .filter((l) => l.length > 0 && !l.includes('QuestionMoved')))
+      expect(line).not.toContain('"elements"');
+  });
+
+  // The schemas of a build from before `drawingRefs`: these events with
+  // that key, and a moved Question's two, taken out, and nothing else
+  // changed, as Effect Schema reads a struct by default (an unknown key is
+  // dropped, never refused).
+  const without = <F extends Record<string, unknown>, K extends string>(
+    fields: F,
+    ...keys: ReadonlyArray<K>
+  ): Omit<F, K> =>
+    Object.fromEntries(
+      Object.entries(fields).filter(([k]) => !keys.includes(k as K)),
+    ) as Omit<F, K>;
+  const { _tag: _a, ...askedFields } = QuestionAsked.fields;
+  const { _tag: _e, ...editedFields } = QuestionEdited.fields;
+  const { _tag: _n, ...answeredFields } = QuestionAnswered.fields;
+  const { _tag: _m, ...movedFields } = QuestionMoved.fields;
+  const OlderEvent = Schema.fromJsonString(
+    Schema.Union([
+      Schema.TaggedStruct('QuestionAsked', without(askedFields, 'drawingRefs')),
+      Schema.TaggedStruct(
+        'QuestionEdited',
+        without(editedFields, 'drawingRefs'),
+      ),
+      Schema.TaggedStruct(
+        'QuestionAnswered',
+        without(answeredFields, 'drawingRefs'),
+      ),
+      Schema.TaggedStruct('QuestionMoved', {
+        ...movedFields,
+        question: Schema.Struct(
+          without(MovedQuestion.fields, 'drawingRefs', 'sentDrawingRefs'),
+        ),
+      }),
+    ]),
+  );
+
+  it('an older build reads every new line, dropping the refs, never failing', () => {
+    const lines = golden('inbox-drawing-ref-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    for (const line of lines) {
+      const read = Schema.decodeUnknownSync(OlderEvent)(line);
+      expect(read).not.toHaveProperty('drawingRefs');
+      if (read._tag === 'QuestionMoved') {
+        expect(read.question).not.toHaveProperty('drawingRefs');
+        expect(read.question).not.toHaveProperty('sentDrawingRefs');
+        // The drawing logged as text still moves with it.
+        expect(read.question.drawings).toStrictEqual({
+          layout: { scene: SCENE, revision: 1 },
+        });
+      }
+    }
+    // The probe can fail: refs under the old `drawings` key would break
+    // such a build's read of the whole log.
+    const first = lines[0] ?? '';
+    expect(() =>
+      Schema.decodeUnknownSync(OlderEvent)(
+        first.replace('"drawingRefs"', '"drawings"'),
+      ),
+    ).toThrow();
+  });
+
+  it('reads the older inline drawings as they were logged', () => {
+    const read = golden('inbox-drawing-events.jsonl')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => decodeEvent(l));
+    for (const e of read) expect(e).not.toHaveProperty('drawingRefs');
   });
 });
 

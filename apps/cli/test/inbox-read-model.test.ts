@@ -418,6 +418,8 @@ describe('the fold version moves with the fold', () => {
   // pin the new hash with it.
   const PINNED: Readonly<Record<number, string>> = {
     1: '40d2d5c792a48ecd1672fb28de5e52b9c6bb15a8cac2c2bb00b0bb3d71a2bf63',
+    // Drawings held as `{ stored, revision }`, a scene's text or its blob's ref.
+    2: 'b22234eaf8d64f12239e5ce74142ac136f71248cde4d0a2d87cc7a51f47fb411',
   };
 
   it('core fold section is the one this version was pinned with', () => {

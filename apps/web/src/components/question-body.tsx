@@ -59,18 +59,7 @@ const BodyPart = ({
     case 'mermaid':
       return <MermaidDiagram source={part.source} />;
     case 'excalidraw':
-      return (
-        <DrawingBlock
-          id={part.id}
-          host={host}
-          drawing={question.drawings?.[part.id]}
-          sent={
-            'sentDrawings' in question
-              ? question.sentDrawings?.[part.id]
-              : undefined
-          }
-        />
-      );
+      return <DrawingBlock id={part.id} host={host} question={question} />;
     case 'html-block':
       return (
         <HtmlBlock
