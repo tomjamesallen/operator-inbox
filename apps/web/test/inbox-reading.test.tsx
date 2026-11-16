@@ -185,6 +185,9 @@ describe('question codes', () => {
     });
     expect(code.textContent).toBe('ex-abc#5');
     expect(code.hasAttribute('data-copy')).toBe(true);
+    // The mark's slot is there before the click, so the click shifts nothing.
+    const slot = () => code.querySelector('[data-copy-mark]');
+    expect(slot()?.classList.contains('invisible')).toBe(true);
     const writeText = stubClipboard();
     fireEvent.click(code);
     await waitFor(() =>
@@ -194,6 +197,7 @@ describe('question codes', () => {
     );
     await waitFor(() => expect(code.getAttribute('data-mark')).toBe('ok'));
     expect(code.textContent).toBe('ex-abc#5');
+    expect(slot()?.classList.contains('invisible')).toBe(false);
   });
 
   it('shows #n for an Inbox with no code yet', async () => {

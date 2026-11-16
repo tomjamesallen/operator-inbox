@@ -40,7 +40,8 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
 
 // A question's code, `ab-xyz#12` (`#12` while its Inbox has none), and the
 // control that copies its text for discussing it with the agent's session:
-// the code underlined, and ✓ or ✗ beside it for a moment once clicked.
+// the code underlined, and ✓ or ✗ beside it for a moment once clicked, in a
+// slot kept empty until then, so the click shifts nothing.
 //
 // It sits at the end of the eyebrow. With the sidebar shut and room in the
 // reader's column (`@code-gutter:`, a container query on the flow), it moves
@@ -67,9 +68,14 @@ const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
           onClick={() => copy(questionClipText(item.inboxId, item.question))}
           className={`inline-flex cursor-pointer items-center gap-1 font-zen text-11 whitespace-nowrap tabular-nums underline decoration-current/40 underline-offset-2 focus-visible:decoration-current ${mark === 'ok' ? 'text-green' : mark === 'bad' ? 'text-red' : 'text-fg/40 hover:text-fg focus-visible:text-fg'}`}
         >
-          {mark !== 'idle' && (
-            <Icon d={mark === 'ok' ? ICON_DONE : ICON_FAILED} />
-          )}
+          {/* The mark's slot is always there, hidden while idle, so a click
+              moves nothing: the icon is taller than the code's line. */}
+          <span
+            data-copy-mark
+            className={`inline-flex ${mark === 'idle' ? 'invisible' : ''}`}
+          >
+            <Icon d={mark === 'bad' ? ICON_FAILED : ICON_DONE} />
+          </span>
           {code}
         </button>
       </Tip>
