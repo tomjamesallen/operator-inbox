@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   type Attachment,
   type Attachments,
@@ -87,6 +88,12 @@ import {
 import { Argument, Command, Flag } from 'effect/cli';
 import { InputError } from '../errors';
 import { readHome } from '../home-dir';
+import {
+  type AttachmentFile,
+  keepAttachments,
+  mediaTypeOf,
+  plannedFiles,
+} from '../inbox-attachments';
 import { sha256Hex } from '../inbox-blobs';
 import {
   checkedScenes,
@@ -766,6 +773,37 @@ const keepDrawings = Effect.fnUntraced(function* (
   return yield* keepScenes(checked.success);
 });
 
+// --- attached files ----------------------------------------------------------------
+
+/**
+ * Keep the agent's files on disk and give back what the event carries: none
+ * for none. Where each goes is known from its bytes, so the decision is run
+ * on that plan first (`decide`), and a question the inbox refuses writes no
+ * file. Each is then written whole, BEFORE the event naming it is appended;
+ * an append that still fails leaves a file no event names, which costs only
+ * its bytes.
+ */
+export const keepAgentFiles = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  files: ReadonlyArray<AttachmentFile> | undefined,
+  decide: (
+    state: InboxState,
+    planned: ReadonlyArray<Attachment>,
+  ) => Result.Result<unknown, InboxRefusal>,
+) {
+  if (files === undefined || files.length === 0) return undefined;
+  const planned = yield* plannedFiles(inboxId, files);
+  if (Result.isFailure(planned))
+    return yield* new InputError({ message: `inbox: ${planned.failure}` });
+  const state = yield* readState(inboxId);
+  const first = decide(
+    state,
+    planned.success.map((p) => p.attachment),
+  );
+  if (Result.isFailure(first)) return yield* refused(first.failure);
+  return yield* keepAttachments(planned.success);
+});
+
 // --- ask ---------------------------------------------------------------------------
 
 export const dispatchAsk = Effect.fnUntraced(function* (opts: {
@@ -782,6 +820,9 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
   readonly drawings?: Drawings;
   // Documents by id, for the body's `<Html id="…"/>` lines.
   readonly htmls?: HtmlBlockInputs;
+  // Files to attach, already kept on disk (`keepAgentFiles`), shown under
+  // the body.
+  readonly attachments?: ReadonlyArray<Attachment>;
 }) {
   const given = opts.metadata ?? emptyMetadata;
   const htmls = yield* keepHtmlBlocks(opts.htmls);
@@ -804,6 +845,9 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
         ...(opts.metadata === undefined ? {} : { metadata: opts.metadata }),
         ...(drawings === undefined ? {} : { drawings }),
         ...(htmls === undefined ? {} : { htmls }),
+        ...(opts.attachments === undefined
+          ? {}
+          : { attachments: opts.attachments }),
       }),
       (event) => {
         const asked: ReadonlyArray<InboxEvent> = askEvents(state, event);
@@ -1144,6 +1188,9 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
   readonly drawings?: Drawings;
   // HTML blocks to set, by id; the Question's others stay.
   readonly htmls?: HtmlBlockInputs;
+  // Files to add, already kept on disk (`keepAgentFiles`); the Question's
+  // others stay.
+  readonly attachments?: ReadonlyArray<Attachment>;
 }) {
   if (!Number.isInteger(opts.number) || opts.number < 1)
     return yield* new InputError({
@@ -1159,6 +1206,9 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
     ...(opts.body === undefined ? {} : { body: opts.body }),
     ...(drawings === undefined ? {} : { drawings }),
     ...(htmls === undefined ? {} : { htmls }),
+    ...(opts.attachments === undefined
+      ? {}
+      : { attachments: opts.attachments }),
   };
   const edited = yield* decideOrFail(opts.inboxId, (state) =>
     Result.map(decideEdit(state, input), (e) => ({
@@ -1517,6 +1567,40 @@ const htmlOpt = Flag.KeyValuePair('html').pipe(
   Flag.optional,
 );
 
+// `--attach file`, repeatable: a file shown under the body, an image as a
+// thumbnail the operator can open, anything else as its name.
+const attachOpt = Flag.String('attach').pipe(
+  Flag.withDescription(
+    'A file to attach, shown under the body: an image as a thumbnail, anything else as its name; repeat it for more than one (at most 10, 20 MiB each, 40 MiB together). A body line ![alt](attachment:<name>) shows an attached image in place',
+  ),
+  Flag.atLeast(0),
+);
+
+// Each `--attach` file read, named by its base name, typed by its extension.
+// Undefined when none was given. The caps and the name are checked as the
+// decision checks them, before anything is written (`keepAgentFiles`).
+export const attachedFilesOf = Effect.fnUntraced(function* (
+  verb: string,
+  given: ReadonlyArray<string>,
+) {
+  if (given.length === 0) return undefined;
+  const fs = yield* FileSystem.FileSystem;
+  const out: Array<AttachmentFile> = [];
+  for (const file of given) {
+    const data = yield* fs.readFile(file).pipe(
+      Effect.mapError(
+        () =>
+          new InputError({
+            message: `inbox ${verb}: cannot read the file to attach at ${file}`,
+          }),
+      ),
+    );
+    const name = path.basename(file);
+    out.push({ name, type: mediaTypeOf(name), data });
+  }
+  return out;
+});
+
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true });
 
 // Each `--html` file read and checked: UTF-8, within the size cap, and its
@@ -1753,8 +1837,19 @@ const askCommand = Command.make(
     ),
     drawing: drawingOpt,
     html: htmlOpt,
+    attach: attachOpt,
   },
-  ({ title, bodyFile, inbox, meta, metaJson, highlight, drawing, html }) =>
+  ({
+    title,
+    bodyFile,
+    inbox,
+    meta,
+    metaJson,
+    highlight,
+    drawing,
+    html,
+    attach,
+  }) =>
     print(
       Effect.gen(function* () {
         const inboxId = yield* resolved(inbox);
@@ -1762,14 +1857,27 @@ const askCommand = Command.make(
         yield* refuseInvalidMermaid('ask', body);
         const drawings = yield* drawingsOf('ask', drawing);
         const htmls = yield* htmlBlocksOf('ask', html);
+        const files = yield* attachedFilesOf('ask', attach);
         const rules = yield* readMetadataRules;
         const metadata = yield* metadataOf(meta, metaJson, rules);
+        const attachments = yield* keepAgentFiles(
+          inboxId,
+          files,
+          (state, planned) =>
+            decideAsk(state, {
+              inboxId,
+              title,
+              body,
+              attachments: planned,
+            }),
+        );
         const asked = yield* dispatchAsk({
           inboxId,
           title,
           body,
           ...(drawings === undefined ? {} : { drawings }),
           ...(htmls === undefined ? {} : { htmls }),
+          ...(attachments === undefined ? {} : { attachments }),
           ...(metadata === undefined ? {} : { metadata }),
           ...(rules === undefined ? {} : { rules }),
           ...(highlight ? { highlight: true } : {}),
@@ -1989,8 +2097,9 @@ const editCommand = Command.make(
     inbox: inboxOpt,
     drawing: drawingOpt,
     html: htmlOpt,
+    attach: attachOpt,
   },
-  ({ number, title, bodyFile, inbox, drawing, html }) =>
+  ({ number, title, bodyFile, inbox, drawing, html, attach }) =>
     print(
       Effect.gen(function* () {
         const {
@@ -2004,6 +2113,17 @@ const editCommand = Command.make(
         if (body !== undefined) yield* refuseInvalidMermaid('edit', body);
         const drawings = yield* drawingsOf('edit', drawing);
         const htmls = yield* htmlBlocksOf('edit', html);
+        const files = yield* attachedFilesOf('edit', attach);
+        const attachments = yield* keepAgentFiles(
+          inboxId,
+          files,
+          (state, planned) =>
+            decideEdit(state, {
+              inboxId,
+              number: QuestionNumber.make(Math.max(1, Math.trunc(n))),
+              attachments: planned,
+            }),
+        );
         return yield* dispatchEdit({
           inboxId,
           number: n,
@@ -2011,12 +2131,13 @@ const editCommand = Command.make(
           ...(body === undefined ? {} : { body }),
           ...(drawings === undefined ? {} : { drawings }),
           ...(htmls === undefined ? {} : { htmls }),
+          ...(attachments === undefined ? {} : { attachments }),
         });
       }),
     ),
 ).pipe(
   Command.withDescription(
-    'Rewrite a question the operator has not answered yet (title, body, drawings, HTML blocks)',
+    'Rewrite a question the operator has not answered yet (title, body, drawings, HTML blocks, files)',
   ),
 );
 

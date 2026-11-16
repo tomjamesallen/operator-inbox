@@ -787,6 +787,107 @@ describe('attachments in the log', () => {
   });
 });
 
+// The agent's own files: on its `QuestionAsked`, on a `QuestionEdited` (the
+// whole new set), and carried by a move as `askedAttachments`. They came
+// after `inbox-attachment-events.jsonl` was pinned, and so have their own
+// file.
+const AGENT_ATTACHMENT_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(3),
+    title: 'Does this look right?',
+    body: '![the page](attachment:screenshot.png)',
+    attachments: [SHOT],
+  },
+  {
+    _tag: 'QuestionEdited',
+    inboxId: INBOX_A,
+    number: q(3),
+    title: 'Does this look right?',
+    body: '![the page](attachment:screenshot.png)',
+    attachments: [SHOT, LOG],
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(3),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Does this look right?',
+      body: '![the page](attachment:screenshot.png)',
+      revision: rev(2),
+      metadata: {},
+      state: 'awaiting-operator',
+      withdrawn: false,
+      askedAttachments: [SHOT, LOG],
+    },
+  },
+];
+
+describe("the agent's files in the log", () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = AGENT_ATTACHMENT_EVENTS.map(
+      (e) => `${encodeEvent(e)}\n`,
+    ).join('');
+    expectGolden('inbox-agent-attachment-events.jsonl', lines);
+    const read = golden('inbox-agent-attachment-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(
+      AGENT_ATTACHMENT_EVENTS,
+    );
+  });
+
+  it('reads every edit and move logged before them with none', () => {
+    for (const name of [
+      'inbox-events.jsonl',
+      'inbox-attachment-events.jsonl',
+      'inbox-html-events.jsonl',
+    ])
+      for (const line of golden(name).split('\n').filter(Boolean)) {
+        const read = decodeEvent(line);
+        if (read._tag === 'QuestionEdited')
+          expect(read).not.toHaveProperty('attachments');
+        if (read._tag === 'QuestionMoved')
+          expect(read.question).not.toHaveProperty('askedAttachments');
+      }
+  });
+
+  // The schemas of a build from before them: these events with the keys
+  // taken out, as Effect Schema reads a struct by default.
+  const { _tag: _a, attachments: _aa, ...askedFields } = QuestionAsked.fields;
+  const { _tag: _e, attachments: _ea, ...editedFields } = QuestionEdited.fields;
+  const { _tag: _m, ...movedFields } = QuestionMoved.fields;
+  const {
+    attachments: _ma,
+    askedAttachments: _mb,
+    ...movedQuestionFields
+  } = MovedQuestion.fields;
+  const OlderEvent = Schema.fromJsonString(
+    Schema.Union([
+      Schema.TaggedStruct('QuestionAsked', askedFields),
+      Schema.TaggedStruct('QuestionEdited', editedFields),
+      Schema.TaggedStruct('QuestionMoved', {
+        ...movedFields,
+        question: Schema.Struct(movedQuestionFields),
+      }),
+    ]),
+  );
+
+  it('an older build reads every new line, dropping the files, never failing', () => {
+    for (const line of golden('inbox-agent-attachment-events.jsonl')
+      .split('\n')
+      .filter(Boolean)) {
+      const read = Schema.decodeUnknownSync(OlderEvent)(line);
+      expect(read).not.toHaveProperty('attachments');
+      if (read._tag === 'QuestionMoved')
+        expect(read.question).not.toHaveProperty('askedAttachments');
+    }
+  });
+});
+
 // Macros: on an answer, on a deferral with no note, and carried by a move,
 // which came after the event goldens above were pinned and so have their own
 // file.

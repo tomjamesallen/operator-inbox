@@ -422,6 +422,8 @@ describe('the fold version moves with the fold', () => {
     2: 'b22234eaf8d64f12239e5ce74142ac136f71248cde4d0a2d87cc7a51f47fb411',
     // A Question holds the files the operator attached (`attachments`).
     3: '3ccd0976c8c48a566854e340a73481c6b2118dc93908289d1cbe4b63cc05ca83',
+    // A Question holds the agent's own files apart (`askedAttachments`).
+    4: '9eb2e6bd5200b8926b0728737454f467ce1787b029a0c6003f737555036d1ea1',
   };
 
   it('core fold section is the one this version was pinned with', () => {

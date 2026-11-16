@@ -76,7 +76,7 @@ export const checkAttachments = (
 ): Result.Result<ReadonlyArray<Attachment>, string> => {
   if (attachments.length > MAX_ATTACHMENTS)
     return Result.fail(
-      `an answer carries at most ${MAX_ATTACHMENTS} files, not ${attachments.length}`,
+      `at most ${MAX_ATTACHMENTS} files may be attached, not ${attachments.length}`,
     );
   let total = 0;
   for (const a of attachments) {

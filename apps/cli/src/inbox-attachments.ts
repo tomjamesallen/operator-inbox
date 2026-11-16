@@ -62,12 +62,9 @@ export const planAttachments = (
 ): Result.Result<ReadonlyArray<PlannedAttachment>, string> => {
   if (uploads.length > MAX_ATTACHMENTS)
     return Result.fail(
-      `an answer carries at most ${MAX_ATTACHMENTS} files, not ${uploads.length}`,
+      `at most ${MAX_ATTACHMENTS} files may be attached, not ${uploads.length}`,
     );
-  if (!SAFE_SEGMENT.test(inboxId))
-    return Result.fail(`inbox ${inboxId} cannot keep files`);
-  const planned: Array<PlannedAttachment> = [];
-  let total = 0;
+  const files: Array<AttachmentFile> = [];
   for (const upload of uploads) {
     const name = safeAttachmentName(upload.name);
     if (upload.data.length % 4 !== 0 || !BASE64.test(upload.data))
@@ -75,10 +72,45 @@ export const planAttachments = (
     // Checked on the encoded length first, so an oversized file is refused
     // before it is decoded.
     if ((upload.data.length / 4) * 3 > MAX_ATTACHMENT_BYTES + 2)
-      return Result.fail(
-        `the file ${name} is too large; a file may be at most ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB`,
-      );
-    const data = new Uint8Array(Buffer.from(upload.data, 'base64'));
+      return Result.fail(tooLarge(name));
+    files.push({
+      name: upload.name,
+      type: upload.type,
+      data: new Uint8Array(Buffer.from(upload.data, 'base64')),
+    });
+  }
+  return planFiles(root, inboxId, files);
+};
+
+/** A file to keep, its bytes in hand: an agent's `--attach` file, read. */
+export interface AttachmentFile {
+  readonly name: string;
+  readonly type: string;
+  readonly data: Uint8Array;
+}
+
+const tooLarge = (name: string) =>
+  `the file ${name} is too large; a file may be at most ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB`;
+
+/** The same plan, for files whose bytes are already in hand. */
+export const planFiles = (
+  root: string,
+  inboxId: InboxId,
+  files: ReadonlyArray<AttachmentFile>,
+): Result.Result<ReadonlyArray<PlannedAttachment>, string> => {
+  if (files.length > MAX_ATTACHMENTS)
+    return Result.fail(
+      `at most ${MAX_ATTACHMENTS} files may be attached, not ${files.length}`,
+    );
+  if (!SAFE_SEGMENT.test(inboxId))
+    return Result.fail(`inbox ${inboxId} cannot keep files`);
+  const planned: Array<PlannedAttachment> = [];
+  let total = 0;
+  for (const file of files) {
+    const name = safeAttachmentName(file.name);
+    const data = file.data;
+    if (data.byteLength > MAX_ATTACHMENT_BYTES)
+      return Result.fail(tooLarge(name));
     total += data.byteLength;
     if (total > MAX_ATTACHMENTS_TOTAL_BYTES)
       return Result.fail(
@@ -89,7 +121,7 @@ export const planAttachments = (
       attachment: {
         path: path.join(folder, name),
         name,
-        type: upload.type.trim().toLowerCase().slice(0, MAX_TYPE_LENGTH),
+        type: file.type.trim().toLowerCase().slice(0, MAX_TYPE_LENGTH),
         bytes: data.byteLength,
       },
       data,
@@ -113,6 +145,41 @@ export const plannedUploads = Effect.fnUntraced(function* (
   const { root } = yield* AttachmentsRoot;
   return planAttachments(yield* root, inboxId, uploads);
 });
+
+/** The plan for an agent's files under this machine's root. */
+export const plannedFiles = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  files: ReadonlyArray<AttachmentFile>,
+) {
+  if (files.length === 0) return Result.succeed([]);
+  const { root } = yield* AttachmentsRoot;
+  return planFiles(yield* root, inboxId, files);
+});
+
+// The media type of an agent's file, from its extension: the images the page
+// shows, and the common text and document types. Anything else has none,
+// which the page shows as a file to download.
+const MEDIA_TYPES: Readonly<Record<string, string>> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  log: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+  json: 'application/json',
+  html: 'text/html',
+  zip: 'application/zip',
+};
+
+/** A file's media type by its extension, '' when it is not one known here. */
+export const mediaTypeOf = (name: string): string =>
+  MEDIA_TYPES[path.extname(name).slice(1).toLowerCase()] ?? '';
 
 /**
  * Write each planned file: whole, under a temporary name in its own folder,

@@ -15,7 +15,10 @@
 // - a link is an anchor only for an http(s) or mailto target, and opens in a
 //   new tab with no referrer; any other target renders as its text;
 // - an image is an `<img>` only for an http(s) source, lazy, with its alt
-//   text; any other source renders as the alt text;
+//   text; any other source renders as the alt text. The one exception is an
+//   `attachment:<name>` source, a file the Question carries: it is an `<img>`
+//   only when the caller resolves the name to a URL (`AttachmentImages`),
+//   which the caller builds, never the body; otherwise it is the alt text;
 // - a task-list checkbox is disabled;
 // - a ```svg fence whose body is an SVG document renders as a diagram, as an
 //   `<img>` with a base64 `data:` URL. An SVG loaded as an image runs no script
@@ -51,6 +54,40 @@ import { escapeHtml } from './html-escape';
 
 const LINK_HREF = /^(https?:\/\/|mailto:)/i;
 const IMAGE_SRC = /^https?:\/\//i;
+const ATTACHMENT_SRC = /^attachment:/i;
+
+/**
+ * Where an `attachment:<name>` image in a body is read from: the URL of the
+ * file of that name the Question carries, or undefined when it carries none
+ * that can be shown here.
+ */
+export type AttachmentImages = (name: string) => string | undefined;
+
+// The resolver for the render under way. Rendering is synchronous, so it is
+// set for one call and cleared after it (`withAttachmentImages`); marked's
+// renderer is built once and has no per-call options.
+let attachmentImages: AttachmentImages | undefined;
+
+const withAttachmentImages = <A>(
+  images: AttachmentImages | undefined,
+  render: () => A,
+): A => {
+  attachmentImages = images;
+  try {
+    return render();
+  } finally {
+    attachmentImages = undefined;
+  }
+};
+
+const attachmentName = (href: string): string => {
+  const raw = href.replace(ATTACHMENT_SRC, '');
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+};
 
 // An svg fence is drawn only when its body is an SVG document (an optional
 // `<?xml …?>` prolog, then `<svg`), and only up to this size; past it, or
@@ -169,8 +206,13 @@ const marked: Marked = new Marked({
       return `<a href="${escapeHtml(href)}"${t} rel="noreferrer" target="_blank">${text}</a>`;
     },
     image({ href, title, text }: Tokens.Image) {
-      if (!IMAGE_SRC.test(href)) return escapeHtml(text);
       const t = title ? ` title="${escapeHtml(title)}"` : '';
+      if (ATTACHMENT_SRC.test(href)) {
+        const src = attachmentImages?.(attachmentName(href));
+        if (src === undefined) return escapeHtml(text);
+        return `<img src="${escapeHtml(src)}" alt="${escapeHtml(text)}"${t} loading="lazy" data-attachment-image>`;
+      }
+      if (!IMAGE_SRC.test(href)) return escapeHtml(text);
       return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${t} loading="lazy">`;
     },
     table(token: Tokens.Table) {
@@ -200,11 +242,15 @@ const marked: Marked = new Marked({
 });
 
 /** Render an inbox question's markdown body to safe HTML. */
-export const renderQuestionMarkdown = (markdown: string): string => {
-  const tokens = marked.lexer(markdown);
-  pairSmallTags(tokens);
-  return marked.parser(tokens);
-};
+export const renderQuestionMarkdown = (
+  markdown: string,
+  images?: AttachmentImages,
+): string =>
+  withAttachmentImages(images, () => {
+    const tokens = marked.lexer(markdown);
+    pairSmallTags(tokens);
+    return marked.parser(tokens);
+  });
 
 /** One part of a question's body: rendered markdown, or a Mermaid diagram. */
 export type QuestionBodyPart =
@@ -263,7 +309,11 @@ const isMermaid = (token: Token): token is Tokens.Code =>
  */
 export const renderQuestionParts = (
   markdown: string,
-): ReadonlyArray<QuestionBodyPart> => {
+  images?: AttachmentImages,
+): ReadonlyArray<QuestionBodyPart> =>
+  withAttachmentImages(images, () => questionParts(markdown));
+
+const questionParts = (markdown: string): ReadonlyArray<QuestionBodyPart> => {
   const tokens = marked.lexer(markdown);
   const parts: Array<QuestionBodyPart> = [];
   let run: Array<Token> = [];
@@ -304,16 +354,19 @@ export const renderQuestionParts = (
  * A question's body as the page gets it: the raw markdown, and both renderings
  * of it by this machine's own escaping renderers. Local's serve renders its
  * own questions with this, and every question a machine sends again with it,
- * so the page only ever shows HTML Local wrote.
+ * so the page only ever shows HTML Local wrote. `images` resolves the body's
+ * `attachment:<name>` images; left out, each renders as its alt text, as it
+ * does for a Question another machine holds, whose files are not here.
  */
 export const renderedQuestionBody = (
   body: string,
+  images?: AttachmentImages,
 ): {
   readonly body: string;
   readonly bodyHtml: string;
   readonly bodyParts: ReadonlyArray<QuestionBodyPart>;
 } => ({
   body,
-  bodyHtml: renderQuestionMarkdown(body),
-  bodyParts: renderQuestionParts(body),
+  bodyHtml: renderQuestionMarkdown(body, images),
+  bodyParts: renderQuestionParts(body, images),
 });

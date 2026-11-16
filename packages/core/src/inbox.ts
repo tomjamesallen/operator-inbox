@@ -177,8 +177,11 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   // size, never the document, which is a row of the store's blob table
   // (`html-block.ts`). Optional for the same reason.
   htmls: Schema.optionalKey(HtmlBlocks),
-  // On an operator's question only: the files they attached, each where it
-  // is kept on disk (`attachment.ts`). Optional for the same reason.
+  // The files attached to the question, each where it is kept on disk
+  // (`attachment.ts`): on an operator's question, theirs; on an agent's, the
+  // agent's (`ask --attach`), which the fold holds apart from the files an
+  // answer carries (`InboxQuestion.askedAttachments`). Optional for the same
+  // reason.
   attachments: Schema.optionalKey(Attachments),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
@@ -233,6 +236,9 @@ export type AnswerProcessed = typeof AnswerProcessed.Type;
 // holds only the drawings the edit set, each its scene's blob, and every
 // other drawing stays as it was, in whichever shape it was logged. An edit
 // never removes a drawing, so nothing is lost by that.
+// `attachments`, when set, is the whole new set of the agent's files, as
+// `drawings` was; left out, they stay as they were. An optional key, so every
+// edit logged before it reads as it did.
 export const QuestionEdited = Schema.TaggedStruct('QuestionEdited', {
   inboxId: InboxId,
   number: QuestionNumber,
@@ -241,6 +247,7 @@ export const QuestionEdited = Schema.TaggedStruct('QuestionEdited', {
   drawings: Schema.optionalKey(Drawings),
   drawingRefs: Schema.optionalKey(DrawingRefs),
   htmls: Schema.optionalKey(HtmlBlocks),
+  attachments: Schema.optionalKey(Attachments),
 });
 export type QuestionEdited = typeof QuestionEdited.Type;
 
@@ -423,6 +430,8 @@ export const MovedQuestion = Schema.Struct({
   // The operator's files. They stay where they were kept: a move carries
   // their paths, never the files.
   attachments: Schema.optionalKey(Attachments),
+  // The agent's own files, attached to the question, in the same way.
+  askedAttachments: Schema.optionalKey(Attachments),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -643,6 +652,9 @@ export interface InboxQuestion {
   readonly comments?: QuestionComments;
   // The files the operator attached to their answer, or to their question.
   readonly attachments?: Attachments;
+  // The files the agent attached to its question (`ask --attach`, `edit
+  // --attach`), shown under its body.
+  readonly askedAttachments?: Attachments;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -854,6 +866,9 @@ export const evolveInbox = (
                   ),
                 }),
             ...(event.htmls === undefined ? {} : { htmls: event.htmls }),
+            ...(event.attachments === undefined
+              ? {}
+              : { askedAttachments: event.attachments }),
             ...(stamp === undefined ? {} : { askedStamp: stamp }),
           },
         ],
@@ -890,7 +905,12 @@ export const evolveInbox = (
     case 'QuestionEdited':
       return withQuestion(state, event.number, (q) => {
         const revision = QuestionRevision.make(q.revision + 1);
-        const htmled = event.htmls === undefined ? q : htmlsSet(q, event.htmls);
+        const filed =
+          event.attachments === undefined
+            ? q
+            : { ...q, askedAttachments: event.attachments };
+        const htmled =
+          event.htmls === undefined ? filed : htmlsSet(filed, event.htmls);
         if (event.drawings === undefined && event.drawingRefs === undefined)
           return { ...htmled, title: event.title, body: event.body, revision };
         const { drawings: _, ...rest } = htmled;
@@ -990,6 +1010,9 @@ export const evolveInbox = (
               ...(q.attachments === undefined
                 ? {}
                 : { attachments: q.attachments }),
+              ...(q.askedAttachments === undefined
+                ? {}
+                : { askedAttachments: q.askedAttachments }),
             },
           ],
         };
@@ -1721,11 +1744,16 @@ export const decideAsk = (
     // Documents' hashes and sizes by id, for the body's `<Html id="…"/>`
     // lines; each document already in the blob table.
     readonly htmls?: HtmlBlocks;
+    // The files the agent attached, already kept on disk.
+    readonly attachments?: ReadonlyArray<Attachment>;
   },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
   if (input.title.trim().length === 0)
     return refuse('empty', 'a question needs a title');
+  const attached = checkAttachments(input.attachments ?? []);
+  if (Result.isFailure(attached))
+    return refuse('bad-attachment', attached.failure);
   const highest = state.questions.reduce((n, q) => Math.max(n, q.number), 0);
   return Result.flatMap(checkedDrawings(input.drawings), (drawings) =>
     Result.flatMap(checkedHtmls(input.htmls), (htmls) =>
@@ -1742,6 +1770,7 @@ export const decideAsk = (
           ...(htmls === undefined || Object.keys(htmls).length === 0
             ? {}
             : { htmls }),
+          ...attachmentsOf(attached.success),
         }),
       ),
     ),
@@ -2033,6 +2062,9 @@ export const decideEdit = (
     readonly drawings?: DrawingInputs;
     // HTML blocks to set, by id, in the same way; the others stay.
     readonly htmls?: HtmlBlocks;
+    // Files to add, already kept on disk: each joins the Question's files
+    // unless one at its path is there already. An edit never removes one.
+    readonly attachments?: ReadonlyArray<Attachment>;
   },
 ): Result.Result<QuestionEdited, InboxRefusal> =>
   Result.flatMap(changeable(state, input.inboxId, input.number), (q) => {
@@ -2040,16 +2072,26 @@ export const decideEdit = (
       input.title === undefined &&
       input.body === undefined &&
       input.drawings === undefined &&
-      input.htmls === undefined
+      input.htmls === undefined &&
+      input.attachments === undefined
     )
       return refuse(
         'empty',
-        'an edit needs a new title, a new body, a drawing or an HTML block',
+        'an edit needs a new title, a new body, a drawing, an HTML block or a file',
       );
     const title = input.title ?? q.title;
     const body = input.body ?? q.body;
     if (title.trim().length === 0)
       return refuse('empty', 'a question needs a title');
+    const currentFiles = q.askedAttachments ?? [];
+    const addedFiles = (input.attachments ?? []).filter(
+      (a, i, all) =>
+        !currentFiles.some((c) => c.path === a.path) &&
+        all.findIndex((b) => b.path === a.path) === i,
+    );
+    const files = checkAttachments([...currentFiles, ...addedFiles]);
+    if (Result.isFailure(files)) return refuse('bad-attachment', files.failure);
+    const sameFiles = addedFiles.length === 0;
     const current = q.drawings ?? {};
     const count = Object.keys({ ...current, ...input.drawings }).length;
     if (count > DRAWINGS_MAX)
@@ -2084,7 +2126,13 @@ export const decideEdit = (
               Object.entries(htmls).every(
                 ([id, r]) => currentHtmls[id]?.sha === r.sha,
               ));
-          if (title === q.title && body === q.body && sameDrawings && sameHtmls)
+          if (
+            title === q.title &&
+            body === q.body &&
+            sameDrawings &&
+            sameHtmls &&
+            sameFiles
+          )
             return refuse(
               'unchanged',
               `${questionRef(state.code, input.number)} already says that; nothing changed`,
@@ -2097,6 +2145,7 @@ export const decideEdit = (
             body,
             ...(sameDrawings ? {} : drawingRefsOf(drawings)),
             ...(htmls === undefined || sameHtmls ? {} : { htmls }),
+            ...(sameFiles ? {} : { attachments: [...files.success] }),
           });
         },
       );
@@ -2290,6 +2339,9 @@ const movedQuestionOf = (
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
     ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
+    ...(q.askedAttachments === undefined
+      ? {}
+      : { askedAttachments: q.askedAttachments }),
   };
 };
 

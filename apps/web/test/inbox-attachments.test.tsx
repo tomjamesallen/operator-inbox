@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   A,
   answered,
+  asked,
   B,
   board,
   box,
@@ -185,6 +186,8 @@ describe('an answered card with files', () => {
     expect(img.getAttribute('src')).toBe(
       `/api/attachments/${A}/0123456789abcdef/shot.png`,
     );
+    // The thumbnail opens the image over the page, never in place of it.
+    expect(img.closest('a')).toBeNull();
     const other = screen.getByText('build log.txt').closest('a');
     expect(other?.getAttribute('href')).toBe(
       `/api/attachments/${A}/fedcba9876543210/build%20log.txt`,
@@ -192,5 +195,133 @@ describe('an answered card with files', () => {
     expect(other?.getAttribute('title')).toBe(
       `${root}/fedcba9876543210/build log.txt`,
     );
+  });
+});
+
+describe('an attached image in its lightbox', () => {
+  const SHOT = {
+    path: `/state/operator-inbox/attachments/${A}/0123456789abcdef/shot.png`,
+    name: 'shot.png',
+    type: 'image/png',
+    bytes: 2048,
+  };
+  const URL_OF_SHOT = `/api/attachments/${A}/0123456789abcdef/shot.png`;
+  const lightbox = () => document.querySelector('[data-zen-lightbox]');
+
+  const showing = async () => {
+    serve.board = board([
+      {
+        ...VIEW_A,
+        awaitingAgent: [
+          { ...answered(2, 'Second', 12, 'See'), attachments: [SHOT] },
+        ],
+      },
+      VIEW_B,
+    ]);
+    await mounted(`/inbox/${A}`);
+    await onQueue(/With the agent/);
+    return screen.findByRole('button', { name: 'Show shot.png' });
+  };
+
+  it('opens over the page from the thumbnail, and Escape closes it, the URL unchanged', async () => {
+    const thumbnail = await showing();
+    const before = location.href;
+    fireEvent.click(thumbnail);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('shot.png');
+    expect(lightbox()?.querySelector('img')?.getAttribute('src')).toBe(
+      URL_OF_SHOT,
+    );
+    const original = screen.getByRole('link', { name: 'Open original' });
+    expect(original.getAttribute('href')).toBe(URL_OF_SHOT);
+    expect(original.getAttribute('target')).toBe('_blank');
+    expect(location.href).toBe(before);
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(location.href).toBe(before);
+  });
+
+  it('closes from its CLOSE button, and from a click beside the image', async () => {
+    fireEvent.click(await showing());
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'CLOSE' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Show shot.png' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Close shot.png' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('an agent’s question with its own files', () => {
+  const root = `/state/operator-inbox/attachments/${A}`;
+  const SHOT = {
+    path: `${root}/0123456789abcdef/shot.png`,
+    name: 'shot.png',
+    type: 'image/png',
+    bytes: 2048,
+  };
+  const LOG = {
+    path: `${root}/fedcba9876543210/run.log`,
+    name: 'run.log',
+    type: 'text/plain',
+    bytes: 16,
+  };
+  const URL_OF_SHOT = `/api/attachments/${A}/0123456789abcdef/shot.png`;
+  // The body as serve renders it, its `attachment:shot.png` image resolved.
+  const inline = `<p>Look:</p>\n<p><img src="${URL_OF_SHOT}" alt="the page" loading="lazy" data-attachment-image></p>\n`;
+
+  const showing = async () => {
+    serve.board = board([
+      {
+        ...VIEW_A,
+        awaitingOperator: [
+          {
+            ...asked(1, 'Does it look right?', 2),
+            body: 'Look:\n\n![the page](attachment:shot.png)',
+            bodyHtml: inline,
+            bodyParts: [{ kind: 'html', html: inline }],
+            askedAttachments: [SHOT, LOG],
+          },
+        ],
+      },
+      VIEW_B,
+    ]);
+    await mounted(`/inbox/${A}`);
+  };
+
+  it('shows them under the body: an image as a thumbnail that opens in the lightbox, a file by name', async () => {
+    await showing();
+    const thumbnail = await screen.findByRole('button', {
+      name: 'Show shot.png',
+    });
+    const list = thumbnail.closest('[data-zen-attachments]');
+    const body = document.querySelector('[data-readout-body]');
+    if (list === null || body === null) throw new Error('no list or body');
+    // The list comes after the body.
+    expect(
+      body.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const other = screen.getByText('run.log').closest('a');
+    expect(other?.getAttribute('href')).toBe(
+      `/api/attachments/${A}/fedcba9876543210/run.log`,
+    );
+    const before = location.href;
+    fireEvent.click(thumbnail);
+    await screen.findByRole('dialog');
+    expect(
+      document
+        .querySelector('[data-zen-lightbox]')
+        ?.querySelector('img')
+        ?.getAttribute('src'),
+    ).toBe(URL_OF_SHOT);
+    expect(location.href).toBe(before);
+  });
+
+  it('shows an image the body names in place', async () => {
+    await showing();
+    const img = await screen.findByRole('img', { name: 'the page' });
+    expect(img.getAttribute('src')).toBe(URL_OF_SHOT);
+    expect(img.closest('[data-readout-body]')).not.toBeNull();
   });
 });

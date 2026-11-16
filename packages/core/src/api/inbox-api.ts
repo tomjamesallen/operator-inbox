@@ -112,6 +112,10 @@ const comments = Schema.optionalKey(QuestionComments);
 // where it is kept on the machine that holds the Inbox (core's
 // `attachment.ts`). An optional key, for the same older machines.
 const attachments = Schema.optionalKey(Attachments);
+// The files the agent attached to its question (core's
+// `InboxQuestion.askedAttachments`), shown under its body, kept apart from
+// the operator's. An optional key, for the same older machines.
+const askedAttachments = Schema.optionalKey(Attachments);
 
 export const InboxOperatorQuestionDto = Schema.Struct({
   number: QuestionNumber,
@@ -127,6 +131,7 @@ export const InboxOperatorQuestionDto = Schema.Struct({
   drawings,
   drawingRefs,
   htmls,
+  askedAttachments,
 });
 export type InboxOperatorQuestionDto = typeof InboxOperatorQuestionDto.Type;
 
@@ -173,6 +178,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   comments,
   htmls,
   attachments,
+  askedAttachments,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -206,6 +212,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   comments,
   htmls,
   attachments,
+  askedAttachments,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
