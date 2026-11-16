@@ -62,6 +62,7 @@ import {
   useMacroMenu,
 } from './macro-cards';
 import { InboxMenuButton } from './row-menu';
+import { UndoNotice } from './undo-notice';
 
 // The box at the foot. It belongs to the lit question, and the machine says how
 // (`composerOf`): an answer, a follow-up, a question for the agent, or nothing
@@ -655,8 +656,9 @@ export const Composer = () => {
       <div className="bg-bg px-s5 pt-s2 pb-s4">
         <div
           data-zen-answer
-          className={`mx-auto max-w-measure ${introFade(intro)}`}
+          className={`relative mx-auto max-w-measure ${introFade(intro)}`}
         >
+          <UndoNotice />
           <FootNote composer={composer} />
           {!asking && <TitleLine />}
           <BoxFor key={boxKeyOf(composer)} composer={composer} />

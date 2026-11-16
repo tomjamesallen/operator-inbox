@@ -164,6 +164,12 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
       'In a macro card under the answer box: show or hide what the macro tells the agent',
   },
   {
+    id: 'undo_card_removal',
+    section: 'Questions',
+    description:
+      'Bring back the comment or macro card last removed from the answer, while nothing has been typed since; otherwise the field’s own undo',
+  },
+  {
     id: 'comment_selection',
     section: 'Questions',
     description:
@@ -328,6 +334,10 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   // Matched by the key's place, as every letter is, so a Mac's ⌥I, a dead key
   // that types nothing of its own, still counts.
   'alt+i=toggle_macro_info',
+  // The platform's undo chord: it brings a removed card back only while that
+  // removal is the last change to the answer, and is the field's own otherwise.
+  'super+z=undo_card_removal',
+  'ctrl+z=undo_card_removal',
   // c with nothing held, away from a field, as the floating button says; ⌘⌥M
   // (Ctrl+Alt+M) from the answer box too, as most editors comment.
   'c=comment_selection',
