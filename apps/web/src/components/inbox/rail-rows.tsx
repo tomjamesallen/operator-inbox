@@ -47,6 +47,7 @@ import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { InboxKeyBadge } from '../keymap-help';
 import { freshMark, HIGHLIGHT, MarkStack } from './marks';
+import { PriorityFlag } from './priority';
 import { ArchivedGroupsFold } from './rail-folds';
 import {
   GroupArchiveItem,
@@ -152,6 +153,8 @@ interface RowProps {
   readonly menu?: ReactNode;
   // In place of the link, while the row is being renamed.
   readonly editing?: ReactNode;
+  // The priority Inbox's flag, after the pin.
+  readonly flag?: ReactNode;
   // What the keymap and the tests find the link by.
   readonly hooks?: Readonly<Record<`data-${string}`, string | undefined>>;
   readonly onClick: (e: MouseEvent<HTMLAnchorElement>) => void;
@@ -174,6 +177,7 @@ export const RailRow = ({
   pin,
   menu,
   editing,
+  flag,
   hooks,
   onClick,
 }: RowProps) => {
@@ -209,6 +213,7 @@ export const RailRow = ({
         ) : (
           <UnpinButton {...pin} />
         ))}
+      {flag}
       <span
         className={`w-4 shrink-0 text-right text-11 tabular-nums ${nested ? 'text-fg/25' : 'text-fg/50'}`}
       >
@@ -562,6 +567,7 @@ export const InboxRows = ({
         badge={<InboxKeyBadge inboxId={inboxId} />}
         pinned={row.pinned}
         pin={{ inboxId, name: label }}
+        flag={<PriorityFlag inboxId={inboxId} />}
         menu={
           <InboxMenuItems
             inboxId={inboxId}

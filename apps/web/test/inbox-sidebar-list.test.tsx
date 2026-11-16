@@ -1482,11 +1482,12 @@ describe('the menu over the box', () => {
     const lines = within(menu)
       .getAllByRole('menuitem')
       .map((i) => i.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-    const words = ['Metadata', 'Rename', 'Pin', 'Archive', 'Mute'];
+    const words = ['Metadata', 'Rename', 'Pin', 'Mark', 'Archive', 'Mute'];
     expect(lines.map((l) => words.find((w) => l.startsWith(w)))).toEqual([
       'Metadata',
       'Rename',
       'Pin',
+      'Mark',
       'Archive',
       'Mute',
     ]);

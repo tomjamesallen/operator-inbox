@@ -17,10 +17,20 @@ export const DiagramSize = Schema.Literals(['box', 'area']);
 export type DiagramSize = typeof DiagramSize.Type;
 export const DEFAULT_DIAGRAM_SIZE: DiagramSize = 'box';
 
+// How the page pulls the operator back to the priority Inbox once they answer
+// a Question in another Inbox while it has Questions waiting: config.json's
+// `priorityPull`. `interjection`: the next thing in the reader is a card
+// saying how many wait there, to go there or carry on, shown again after
+// every answer while anything waits. `boomerang`: the reader goes straight
+// there, and back to where the operator was once nothing waits there.
+export const PriorityPull = Schema.Literals(['interjection', 'boomerang']);
+export type PriorityPull = typeof PriorityPull.Type;
+export const DEFAULT_PRIORITY_PULL: PriorityPull = 'interjection';
+
 // What serve reads from Local's config for the Inbox page: the metadata rules
 // from metadata.json as the file holds them, or the default when there is no
-// file, and config.json's `chaseAfterMinutes` and `diagramSize` when they
-// are set. Its own
+// file, and config.json's `chaseAfterMinutes`, `diagramSize` and
+// `priorityPull` when they are set. Its own
 // endpoint, apart from the board, so the board's shape does not move.
 // BROWSER-SAFE: the web app imports it, so it uses nothing Node-only.
 export const InboxConfigDto = Schema.Struct({
@@ -31,6 +41,9 @@ export const InboxConfigDto = Schema.Struct({
   // Absent: unset, or from a serve that predates it. The page then uses
   // `DEFAULT_DIAGRAM_SIZE`.
   diagramSize: Schema.optionalKey(DiagramSize),
+  // Absent: unset, or from a serve that predates it. The page then uses
+  // `DEFAULT_PRIORITY_PULL`.
+  priorityPull: Schema.optionalKey(PriorityPull),
 });
 export type InboxConfigDto = typeof InboxConfigDto.Type;
 

@@ -25,6 +25,7 @@ import {
   MuteRefused,
   OperatorInboxApi,
   PinRefused,
+  PriorityRefused,
   RenameRefused,
 } from '@operator-inbox/core/api';
 import {
@@ -112,6 +113,7 @@ const InboxRefusals = Schema.Union([
   PinRefused,
   ArchiveRefused,
   MuteRefused,
+  PriorityRefused,
   InboxUnavailable,
 ]).pipe(Schema.toTaggedUnion('_tag'));
 export type InboxRefusal = typeof InboxRefusals.Type;

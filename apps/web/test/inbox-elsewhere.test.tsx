@@ -50,6 +50,7 @@ const row = (over: Partial<ElsewhereRow>): ElsewhereRow => ({
   lastAt: 0,
   target: undefined,
   session: undefined,
+  priority: false,
   ...over,
 });
 

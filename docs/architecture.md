@@ -29,9 +29,9 @@ A pnpm and Turborepo monorepo:
 
 ## The event log
 
-State is event-sourced. Every change is an event appended to one log, a kairos-es store on one SQLite file (by default `~/.local/state/operator-inbox/inbox.sqlite`, tables prefixed `operator_inbox`). Its events include `InboxOpened`, `QuestionAsked`, `QuestionAnswered`, `AnswerProcessed`, `QuestionWithdrawn`, `QuestionEdited`, `QuestionMoved`, `QuestionHighlighted`, `InboxRenamed`, `InboxArchived`, `GroupArchived`, `InboxMuted`, `InboxPinned`, `InboxModeOn` and `InboxModeOff`, each a tagged schema in `packages/core/src/inbox.ts`.
+State is event-sourced. Every change is an event appended to one log, a kairos-es store on one SQLite file (by default `~/.local/state/operator-inbox/inbox.sqlite`, tables prefixed `operator_inbox`). Its events include `InboxOpened`, `QuestionAsked`, `QuestionAnswered`, `AnswerProcessed`, `QuestionWithdrawn`, `QuestionEdited`, `QuestionMoved`, `QuestionHighlighted`, `InboxRenamed`, `InboxArchived`, `GroupArchived`, `InboxMuted`, `InboxPinned`, `InboxPriorityMarked`, `InboxPriorityCleared`, `InboxModeOn` and `InboxModeOff`, each a tagged schema in `packages/core/src/inbox.ts`.
 
-A command is a decision over the events it reads. Core's `decide…` functions take an Inbox's folded state and a request, and return either the events to append or a refusal (`InboxRefusal`) naming why. The store (`apps/cli/src/inbox-store.ts`) reads the events a decision needs, by tag, and appends its result on the condition that nothing it read has changed since. On a conflict it reads again and decides again. So the consistency boundary is what each decision reads, not a fixed aggregate: opening an Inbox under a name reads the name as well as the Inbox, so two sessions cannot take the same name.
+A command is a decision over the events it reads. Core's `decide…` functions take an Inbox's folded state and a request, and return either the events to append or a refusal (`InboxRefusal`) naming why. The store (`apps/cli/src/inbox-store.ts`) reads the events a decision needs, by tag, and appends its result on the condition that nothing it read has changed since. On a conflict it reads again and decides again. So the consistency boundary is what each decision reads, not a fixed aggregate: opening an Inbox under a name reads the name as well as the Inbox, so two sessions cannot take the same name; marking the priority Inbox reads the log's one priority tag as well as the Inbox, and replaces the old mark in the same append, so the log never holds two (ADR-0006).
 
 Views are folds. The read model the page and `operator-inbox list` show is folded from the log on demand. The encoded form of every event is pinned by golden files (`packages/core/test/golden/`, `apps/cli/test/golden/`), so a change to an event's shape fails a test before it can strand a log already on disk.
 
@@ -63,7 +63,7 @@ A Vite single-page app in React, styled with Tailwind v4 and built on Base UI co
 
 | Where | What |
 | :-- | :-- |
-| `~/.config/operator-inbox/config.json` | this machine's settings: `databasePath`, `serve.tailnet`, `inboxMachines`, `readout.voice` |
+| `~/.config/operator-inbox/config.json` | this machine's settings: `databasePath`, `serve.tailnet`, `inboxMachines`, `readout.voice`, and the page's `chaseAfterMinutes`, `diagramSize` and `priorityPull` |
 | `~/.config/operator-inbox/metadata.json` | the metadata rules (optional; the built-in defaults otherwise) |
 | `~/.config/operator-inbox/keybindings` | key overrides, one binding per line (optional) |
 | `~/.config/operator-inbox/macros.json` | the macros the answer box offers (optional; none otherwise) |

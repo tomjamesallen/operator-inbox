@@ -24,9 +24,9 @@ export { InboxId, InboxMachineKey };
 
 // The inbox group of the local app's contract: two reads,
 // the index of every Inbox and the operator's view of one, and the server's
-// six writes: answering a question, dismissing a highlight, pinning,
-// archiving, muting and renaming an Inbox, and opening a session link on this
-// machine. BROWSER-SAFE, like the rest of this subpath (see `api.ts`): it
+// writes: answering a question, dismissing a highlight, pinning, archiving,
+// muting, marking as the priority Inbox and renaming an Inbox, and opening a
+// session link on this machine. BROWSER-SAFE, like the rest of this subpath (see `api.ts`): it
 // imports only `effect` (its `effect/http-api` modules among them) and core's
 // pure modules.
 
@@ -254,6 +254,11 @@ export const InboxSummaryDto = Schema.Struct({
   pinned: Schema.Boolean,
   // The operator muted it (see `InboxViewDto`). Absent reads as not muted.
   muted: Schema.optionalKey(Schema.Boolean),
+  // The operator marked it as the priority Inbox (core's
+  // `InboxPriorityMarked`): one at most in its machine's log. Absent reads as
+  // not, and serve leaves it out unless it is, so a machine's serve that
+  // predates the mark still decodes.
+  priority: Schema.optionalKey(Schema.Literal(true)),
   awaitingOperator: Schema.Int,
   awaitingAgent: Schema.Int,
   processed: Schema.Int,
@@ -563,6 +568,11 @@ export type GroupArchivePayload = typeof GroupArchivePayload.Type;
 export const MutePayload = Schema.Struct({ muted: Schema.Boolean });
 export type MutePayload = typeof MutePayload.Type;
 
+// Mark the Inbox as the priority Inbox (`priority: true`), clearing the mark
+// on whichever Inbox of its log held it, or clear its own mark (`false`).
+export const PriorityPayload = Schema.Struct({ priority: Schema.Boolean });
+export type PriorityPayload = typeof PriorityPayload.Type;
+
 // The errors are `Schema.Error` with `_tag` declared last, so the body keeps
 // its wire order, `message` first: see the note on wire errors in `api.ts`.
 
@@ -660,6 +670,19 @@ export class MuteRefused extends Schema.Error<MuteRefused>('MuteRefused')(
     message: Schema.String,
     machine: refusedOn,
     _tag: Schema.tag('MuteRefused'),
+  },
+  { httpApiStatus: 409 },
+) {}
+
+// The priority mark was refused: the Inbox is already the priority Inbox, or
+// already not.
+export class PriorityRefused extends Schema.Error<PriorityRefused>(
+  'PriorityRefused',
+)(
+  {
+    message: Schema.String,
+    machine: refusedOn,
+    _tag: Schema.tag('PriorityRefused'),
   },
   { httpApiStatus: 409 },
 ) {}
@@ -801,6 +824,13 @@ export class InboxApiGroup extends HttpApiGroup.make('inbox').add(
     payload: MutePayload,
     success: InboxViewDto,
     error: [InboxNotFound, MuteRefused, InboxUnavailable],
+  }),
+  HttpApiEndpoint.post('priority', '/inbox/:inboxId/priority', {
+    params: InboxPath,
+    query: InboxReadQuery,
+    payload: PriorityPayload,
+    success: InboxViewDto,
+    error: [InboxNotFound, PriorityRefused, InboxUnavailable],
   }),
   HttpApiEndpoint.post('rename', '/inbox/:inboxId/rename', {
     params: InboxPath,

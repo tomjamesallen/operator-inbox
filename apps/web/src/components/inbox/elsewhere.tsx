@@ -13,6 +13,7 @@ import {
   stepElsewhereAtom,
 } from '../../inbox-elsewhere';
 import { freshMark, MarkStack } from './marks';
+import { PriorityFlag } from './priority';
 
 // The empty state while other Inboxes have something: the owl, awake, sat on a
 // box listing them. Which Inboxes, in what order, and what a line does are
@@ -115,7 +116,10 @@ const InboxLine = ({
       className={`${LINE} text-fg/70 hover:text-fg group-focus/list:data-lit:text-fg`}
     >
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{row.label}</span>
+        <span className="flex min-w-0 items-center gap-s1">
+          <span className="truncate">{row.label}</span>
+          {row.priority && <PriorityFlag inboxId={row.inboxId} />}
+        </span>
         {row.session !== undefined && (
           <span className="truncate text-10 text-fg/40" data-elsewhere-session>
             {row.session}

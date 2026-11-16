@@ -134,11 +134,12 @@ describe('on the page', () => {
     serve.board = board([linkedA, VIEW_B]);
     mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:25')]]);
     await waitFor(() => expect(chaseButton()).not.toBeNull());
-    // In the reader's foot, beside or above the answer box.
+    // In the reader's foot, beside or above the answer box, in its stack of
+    // alerts.
     expect(
-      chaseButton()?.parentElement?.contains(
-        document.querySelector('[data-zen-answer]'),
-      ),
+      chaseButton()
+        ?.closest('[data-foot-alerts]')
+        ?.parentElement?.contains(document.querySelector('[data-zen-answer]')),
     ).toBe(true);
     expect(
       chaseButton()?.querySelector('[data-chase-count]')?.textContent,

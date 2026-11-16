@@ -1,5 +1,6 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
 import { TriangleAlert } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
   drawnBoardAtom,
   inDesktopWindow,
@@ -74,6 +75,22 @@ export const ChaseLink = ({
 
 // --- the button ------------------------------------------------------------------
 
+/**
+ * The foot's alerts, stacked: the priority Inbox's count over the chase
+ * button, each there only while it has something to say. Placed as the answer
+ * box allows: in the bottom right corner while the column has room beside the
+ * centred box (`@chase-beside:`, a container query on the foot), above the
+ * foot's right edge otherwise.
+ */
+export const FootAlerts = ({ children }: { readonly children: ReactNode }) => (
+  <div
+    data-foot-alerts
+    className="pointer-events-none absolute right-s5 bottom-full z-20 flex flex-col items-center gap-s2 *:pointer-events-auto @chase-beside:right-s4 @chase-beside:bottom-s4"
+  >
+    {children}
+  </div>
+);
+
 const chasingLabel = (n: number) =>
   `${n} ${n === 1 ? 'Inbox' : 'Inboxes'} probably ${n === 1 ? 'needs' : 'need'} chasing`;
 
@@ -82,9 +99,8 @@ const chasingLabel = (n: number) =>
  * there only while some Inbox has a question stale with the agent, with the
  * count of those Inboxes. It never folds away while there is something to
  * chase. A click opens the inbox picker, which lists those Inboxes first, and
- * a second shuts it. Placed as the answer box allows: in the bottom right
- * corner while the column has room beside the centred box (`@chase-beside:`,
- * a container query on the foot), above the foot's right edge otherwise.
+ * a second shuts it. It sits in the foot's stack of alerts (`FootAlerts`),
+ * under the priority Inbox's count when that is there too.
  */
 export const ChaseButton = () => {
   const chases = useAtomValue(chasesAtom);
@@ -101,7 +117,7 @@ export const ChaseButton = () => {
       aria-expanded={open}
       data-chase-button
       onClick={() => setOpen(!open)}
-      className="absolute right-s5 bottom-full z-20 flex size-6 cursor-pointer items-center justify-center rounded-full border border-orange/40 bg-rail text-orange shadow-sm transition-colors hover:bg-orange/10 motion-reduce:transition-none @chase-beside:right-s4 @chase-beside:bottom-s4"
+      className="relative flex size-6 cursor-pointer items-center justify-center rounded-full border border-orange/40 bg-rail text-orange shadow-sm transition-colors hover:bg-orange/10 motion-reduce:transition-none"
     >
       <TriangleAlert aria-hidden className="size-3.5" />
       <span

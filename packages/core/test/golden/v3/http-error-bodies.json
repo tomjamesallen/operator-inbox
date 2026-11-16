@@ -32,6 +32,10 @@
     "message": "The Inbox is already muted.",
     "_tag": "MuteRefused"
   },
+  "PriorityRefused": {
+    "message": "The Inbox is already the priority inbox.",
+    "_tag": "PriorityRefused"
+  },
   "OpenSessionRefused": {
     "message": "the Claude app did not take the link",
     "_tag": "OpenSessionRefused"

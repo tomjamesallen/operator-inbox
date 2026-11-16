@@ -14,6 +14,7 @@ import { keyHintAtom } from '../../keymap';
 import { LitMetaItem, MetaItem } from './colophon';
 import { Icon } from './icon';
 import { OpenSessionItem } from './open-session';
+import { PriorityItem } from './priority';
 
 // What acts on an Inbox, and on one of its groups: a sidebar row's menu, opened
 // by a right-click or a long press on the row, and on a touch screen the
@@ -123,6 +124,7 @@ export const InboxMenuItems = ({
         <span className="text-fg/30">{renameKeys.first}</span>
       </Menu.Item>
       <PinItem inboxId={inboxId} pinned={pinned} name={label} />
+      <PriorityItem inboxId={inboxId} className={MENU_ITEM} />
       <Menu.Item
         className={MENU_ITEM}
         disabled={result.waiting}
