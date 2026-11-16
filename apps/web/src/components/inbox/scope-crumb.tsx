@@ -17,6 +17,7 @@ import {
 import type { QueueName } from '../../inbox-queues';
 import { activeQueueAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
+import { KeyBadge, OVER_ICON } from '../keymap-help';
 import { focusRing } from '../styles';
 import { Tip } from './icon';
 
@@ -136,9 +137,10 @@ const QUEUE_ICONS: Readonly<
 /**
  * A breadcrumb row, with the current queue's icon hanging in the margin to
  * its left, right-aligned with the Question's hanging code: a click goes
- * back to All, as the `all_inboxes` key does. It has no background of its
- * own: the header's glass grows down to hold it while it sticks
- * (`HeaderGlass`).
+ * back to All, as the `all_inboxes` key does, and that key is badged over
+ * the icon while the prefix waits, as on the sidebar's All row. It has no
+ * background of its own: the header's glass grows down to hold it while it
+ * sticks (`HeaderGlass`).
  */
 export const CrumbRow = ({
   className,
@@ -170,9 +172,10 @@ export const CrumbRow = ({
               e.stopPropagation();
               select({ inboxId: undefined, groups: [] });
             }}
-            className={`-m-3 flex cursor-pointer items-center p-3 text-fg/40 hover:text-fg ${focusRing}`}
+            className={`relative -m-3 flex cursor-pointer items-center p-3 text-fg/40 hover:text-fg ${focusRing}`}
           >
             <Icon aria-hidden="true" className={size} strokeWidth={stroke} />
+            <KeyBadge action="all_inboxes" at={OVER_ICON} />
           </button>
         </Tip>
       </span>

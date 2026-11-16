@@ -369,6 +369,9 @@ const RIGHT = 'top-1/2 right-s3 -translate-y-1/2';
 /** Inside a field's right-hand end, clear of its placeholder. */
 export const INSIDE_END = 'top-1/2 right-1 -translate-y-1/2';
 
+/** Over an icon button's icon, which the key stands in for while it waits. */
+export const OVER_ICON = 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2';
+
 export const KeyBadge = ({
   action,
   at = RIGHT,

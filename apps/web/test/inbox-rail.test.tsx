@@ -608,6 +608,27 @@ describe('the scope in the breadcrumbs', () => {
     expect(document.querySelector('[data-crumb-sticky]')).toBeNull();
   });
 
+  it('badges the queue icon with its key while the prefix waits, and the key goes back to All', async () => {
+    board = boardOf([grove, nightly]);
+    await mount(`/inbox/${GROVE}`);
+    const icon = await allCrumb();
+    const badge = () => icon.querySelector('[data-key-badge]');
+    const key = (init: KeyboardEventInit) =>
+      act(() => {
+        fireEvent.keyDown(document, init);
+      });
+    expect(badge()).toBeNull();
+    key({ key: ' ', code: 'Space', ctrlKey: true });
+    // The sidebar's All row's key, `prefix>0`, not a number by position.
+    expect(badge()?.textContent).toBe('0');
+    key({ key: '0', code: 'Digit0' });
+    expect(badge()).toBeNull();
+    await waitFor(() => expect(location.pathname).toBe('/inbox'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-crumb-scope]')).toBeNull(),
+    );
+  });
+
   it('marks nothing and sticks nothing in All, pinned', async () => {
     board = {
       ...boardOf([grove, nightly]),
