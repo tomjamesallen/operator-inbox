@@ -27,7 +27,12 @@ const Letters = ({
   >
     <span className="min-w-0 overflow-x-clip whitespace-pre">
       {[...letters].map((letter, i) => (
-        // A letter's beat is a runtime value Tailwind cannot express.
+        // A letter's beat is a runtime value Tailwind cannot express. Each
+        // letter keeps a compositing layer of its own for good
+        // (`will-change-transform`, which WebKit honours only on a box, so
+        // `inline-block`): WebKit otherwise gives a letter a layer only while
+        // its opacity runs, and redrawing it on and off that layer at the
+        // wordmark's fractional offset nudged the row by about a pixel.
         <span
           key={i}
           style={{
@@ -37,7 +42,7 @@ const Letters = ({
                 : (letters.length - 1 - i) * LETTER_BEAT_MS
             }ms`,
           }}
-          className={`transition-opacity duration-400 ease-fade ${open ? 'opacity-100' : 'opacity-0'}`}
+          className={`inline-block transition-opacity duration-400 ease-fade will-change-transform ${open ? 'opacity-100' : 'opacity-0'}`}
         >
           {letter}
         </span>
