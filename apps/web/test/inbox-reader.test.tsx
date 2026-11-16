@@ -434,6 +434,38 @@ describe('the queues', () => {
     ).toContain('bg-yellow');
   });
 
+  // jsdom lays nothing out, so this holds the shape the placement depends on:
+  // hung from the top of the question, the dot sat over the top of the
+  // breadcrumb's queue icon, and the header's glass cut off its top on the
+  // first Question. In the icon's own slot, beside it and centred on the
+  // row, it clears both.
+  it('hangs the dots beside the breadcrumb’s queue icon, not over it', async () => {
+    board = boardOf([
+      view({
+        awaitingOperator: [
+          waiting(1, { highlight: { seq: 1, note: 'look here' } }),
+          waiting(2),
+        ],
+      }),
+    ]);
+    mount(`/inbox/${GROVE}`);
+    await screen.findByText('· look here');
+    const mark = document.querySelector(
+      '[data-zen-item] [data-zen-mark="highlight"]',
+    );
+    const slot = mark?.closest('[data-crumb-marks]');
+    expect(slot).toBeTruthy();
+    expect(mark?.closest('[data-all-inboxes-crumb]')).toBeNull();
+    expect(
+      slot?.parentElement?.querySelector('[data-all-inboxes-crumb]'),
+    ).toBeTruthy();
+    expect(slot?.className).toContain('right-full');
+    expect(slot?.className).toContain('items-center');
+    expect(
+      document.querySelectorAll('[data-zen-item] [data-crumb-marks]'),
+    ).toHaveLength(1);
+  });
+
   it('brings up the question a link names', async () => {
     board = twoWaiting();
     mount(`/inbox/${GROVE}#q=2`);
