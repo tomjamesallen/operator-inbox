@@ -263,8 +263,8 @@ const stepView = (get: Atom.AtomContext, by: 1 | -1): boolean => {
 
 // The list moves by a step, from the box too: this chord is no platform's. While
 // asking it is not on screen, and the ask's own list takes the press instead,
-// text in the box or not: the operator's words are "in all cases". A modal and
-// another field still keep it.
+// text in the box or not, in all cases. A modal and another field still keep
+// it.
 const stepFlow = (
   get: Atom.AtomContext,
   e: KeyboardEvent,
