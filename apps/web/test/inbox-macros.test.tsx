@@ -94,7 +94,9 @@ const withMacros = async () => {
   await mounted(`/inbox/${A}`);
   // The file is read beside the board; wait for its first use.
   typeBox('/');
-  await waitFor(() => expect(menu()).not.toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole('option', { name: /\/park/ })).not.toBeNull(),
+  );
   typeBox('');
 };
 
@@ -107,7 +109,7 @@ describe('the macro menu', () => {
       screen
         .getAllByRole('option')
         .map((o) => o.querySelector('span')?.textContent),
-    ).toEqual(['/agenda', '/todo', '/park']);
+    ).toEqual(['/attach', '/agenda', '/todo', '/park']);
     typeBox('Go ahead /tod');
     await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
     press({ key: 'Enter', code: 'Enter' }, box());
@@ -140,20 +142,33 @@ describe('the macro menu', () => {
     expect(box().value).toBe('/');
   });
 
-  it('with no macros file, / simply types', async () => {
-    await mounted(`/inbox/${A}`);
-    typeBox('/');
-    await settle();
-    expect(menu()).toBeNull();
-    expect(box().value).toBe('/');
-  });
-
-  it('a file that does not parse offers nothing, and says why', async () => {
-    serve.macros = '{ "macros": [ { "name": "Bad" } ] }';
+  it('with no macros file, / offers /attach alone, and an unmatched word simply types', async () => {
     await mounted(`/inbox/${A}`);
     typeBox('/');
     await waitFor(() => expect(menu()).not.toBeNull());
-    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(
+      screen
+        .getAllByRole('option')
+        .map((o) => o.querySelector('span')?.textContent),
+    ).toEqual(['/attach']);
+    typeBox('/usr');
+    await settle();
+    expect(menu()).toBeNull();
+    expect(box().value).toBe('/usr');
+  });
+
+  it('a file that does not parse offers no macro, and says why', async () => {
+    serve.macros = '{ "macros": [ { "name": "Bad" } ] }';
+    await mounted(`/inbox/${A}`);
+    typeBox('/');
+    await waitFor(() =>
+      expect(document.querySelector('[data-macro-failed]')).not.toBeNull(),
+    );
+    expect(
+      screen
+        .getAllByRole('option')
+        .map((o) => o.querySelector('span')?.textContent),
+    ).toEqual(['/attach']);
     expect(
       document.querySelector('[data-macro-failed]')?.textContent,
     ).toContain('macros.json at /c/operator-inbox/macros.json');

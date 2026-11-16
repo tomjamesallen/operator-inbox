@@ -88,6 +88,43 @@ export const matchingMacros = (
   return [...byName, ...byText];
 };
 
+/**
+ * One row of the `/` menu: the app's own `/attach`, which opens the file
+ * picker, or one of the operator's macros, which adds a card.
+ */
+export type MenuEntry =
+  | { readonly _tag: 'Attach' }
+  | { readonly _tag: 'Macro'; readonly macro: MacroConfig };
+
+export const ATTACH_NAME = 'attach';
+export const ATTACH_DESCRIPTION =
+  'Attach files, or drop or paste them on the box';
+
+/**
+ * What a `/query` offers: `/attach` first when it matches, as a macro would
+ * (by name, then by description), then the macros that match. A macro the
+ * operator named `attach` is offered after it under its own name.
+ */
+export const menuEntries = (
+  macros: ReadonlyArray<MacroConfig>,
+  query: string,
+): ReadonlyArray<MenuEntry> => {
+  const q = query.toLowerCase();
+  const attach =
+    ATTACH_NAME.startsWith(q) || ATTACH_DESCRIPTION.toLowerCase().includes(q);
+  return [
+    ...(attach ? [{ _tag: 'Attach' as const }] : []),
+    ...matchingMacros(macros, query).map((macro) => ({
+      _tag: 'Macro' as const,
+      macro,
+    })),
+  ];
+};
+
+/** The name a menu row shows after its `/`. */
+export const entryName = (e: MenuEntry): string =>
+  e._tag === 'Attach' ? ATTACH_NAME : e.macro.name;
+
 /** A one-line signature: `‹person› ‹item›`, `[priority]` when optional. */
 export const signatureOf = (m: MacroConfig): string =>
   m.params
@@ -99,8 +136,9 @@ export const signatureOf = (m: MacroConfig): string =>
     .join(' ');
 
 /**
- * The menu over the answer box: where its slash is, what follows it, and the
- * row lit. Escape shuts it for that slash. One box is on screen at a time.
+ * The menu over the box at the foot: where its slash is, what follows it,
+ * and the row lit. Escape shuts it for that slash. One box is on screen at a
+ * time.
  */
 export interface MacroMenu {
   readonly start: number;

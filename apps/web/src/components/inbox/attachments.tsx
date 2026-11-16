@@ -1,5 +1,10 @@
 import { Dialog } from '@base-ui/react/dialog';
-import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react';
+import {
+  useAtom,
+  useAtomSet,
+  useAtomSubscribe,
+  useAtomValue,
+} from '@effect/atom-react';
 import {
   type Attachment,
   attachmentSize,
@@ -10,25 +15,36 @@ import {
   addFilesAtom,
   attachmentUrl,
   dragOverAtom,
+  type PendingFile,
   pendingFilesAtom,
   pendingRefusalAtom,
+  pickerAskedAtom,
   removeFileAtom,
 } from '../../attachments';
 import { focusRing, headerButton, label } from '../styles';
+import { edgeFade, fadeEdges } from './edge-fade';
 import { ICON_EXTERNAL, Icon } from './icon';
 
-// Files on an answer: the box's drop zone and its "Attach" link, the chips
-// of what waits to be sent, and the files an answered card shows.
+// Files on an answer: the box's drop zone and its file picker, which `/attach`
+// in the box's menu opens; a card per file waiting to be sent, in the strip
+// of cards under the box; and the files an answered card shows.
 
 const ICON_ATTACH =
   'M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9';
+const ICON_FILE =
+  'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5';
+const ICON_REMOVE = 'M7 7l10 10M17 7L7 17';
 
 // Only a drag that carries files is the drop zone's: dragged text or a link
 // goes into the box as the browser would put it there.
 const carriesFiles = (e: DragEvent): boolean =>
   e.dataTransfer.types.includes('Files');
 
-/** The box at the foot, as a place files can be dropped on. */
+/**
+ * The box at the foot, as a place files can be dropped on, with its hidden
+ * file picker (several files at once), which opens when `/attach` asks for
+ * this place (`pickerAskedAtom`).
+ */
 export const AttachDrop = ({
   place,
   children,
@@ -38,8 +54,14 @@ export const AttachDrop = ({
 }) => {
   const [over, setOver] = useAtom(dragOverAtom);
   const add = useAtomSet(addFilesAtom);
+  const picker = useRef<HTMLInputElement | null>(null);
+  // Synchronous with the pick, so it is still the key press or the click the
+  // browser needs before it opens a picker.
+  useAtomSubscribe(pickerAskedAtom, (asked) => {
+    if (asked?.place === place) picker.current?.click();
+  });
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: it only catches a drop of files; the "Attach" link under it is the keyboard's way in.
+    // biome-ignore lint/a11y/noStaticElementInteractions: it only catches a drop of files; `/attach` in the box is the keyboard's way in.
     <div
       className="relative"
       data-zen-drop
@@ -66,6 +88,20 @@ export const AttachDrop = ({
         add({ place, files: [...e.dataTransfer.files] });
       }}
     >
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+        data-zen-picker
+        onChange={(e) => {
+          add({ place, files: [...(e.target.files ?? [])] });
+          // The same file picked again is a change too.
+          e.target.value = '';
+        }}
+      />
       {children}
       {over && (
         <div
@@ -80,84 +116,91 @@ export const AttachDrop = ({
 };
 
 /**
- * The line under a box that takes no files (nothing to answer, a send on
- * its way, an Inbox being picked): the "Attach" link's line, kept with the
- * link hidden, so the box never moves as the link comes and goes.
+ * A file waiting to be sent, as a card in the strip under the box: its
+ * picture, or a file's mark, over its name and size, and × to take it off.
  */
-export const AttachRowSpace = () => (
-  <div
-    aria-hidden="true"
-    className="invisible mt-s1 flex items-center gap-s1 text-11"
-    data-zen-attach-space
-  >
-    <span className="flex items-center gap-s1 py-s1 pr-s1">
-      <Icon d={ICON_ATTACH} />
-      Attach
-    </span>
-  </div>
-);
-
-/**
- * The line under the box: the "Attach" link, which opens the file picker,
- * then a chip for each file waiting to be sent, each with its own ×.
- */
-export const AttachRow = ({ place }: { readonly place: string }) => {
-  const files = useAtomValue(pendingFilesAtom(place));
-  const refused = useAtomValue(pendingRefusalAtom(place));
-  const add = useAtomSet(addFilesAtom);
+const FileCard = ({
+  place,
+  file,
+}: {
+  readonly place: string;
+  readonly file: PendingFile;
+}) => {
   const remove = useAtomSet(removeFileAtom);
-  const picker = useRef<HTMLInputElement | null>(null);
   return (
-    <div className="mt-s1 flex flex-wrap items-center gap-s1 text-11 text-fg/40">
-      <input
-        ref={picker}
-        type="file"
-        multiple
-        hidden
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={(e) => {
-          add({ place, files: [...(e.target.files ?? [])] });
-          // The same file picked again is a change too.
-          e.target.value = '';
-        }}
-      />
+    <section
+      aria-label={`/attach ${file.name}`}
+      title={`${file.name} (${attachmentSize(file.bytes)})`}
+      className="relative flex w-28 shrink-0 flex-col border border-fg/12 font-zen text-11"
+      data-zen-pending-file
+    >
+      {file.preview !== undefined ? (
+        <img src={file.preview} alt="" className="h-16 w-full object-cover" />
+      ) : (
+        <span className="flex h-16 w-full items-center justify-center bg-fg/4 text-fg/35">
+          <Icon d={ICON_FILE} />
+        </span>
+      )}
+      <span className="truncate px-s1 pt-0.5 text-fg/75" data-zen-file-name>
+        {file.name}
+      </span>
+      <span className="px-s1 pb-0.5 text-fg/35">
+        {attachmentSize(file.bytes)}
+      </span>
       <button
         type="button"
+        aria-label={`Remove ${file.name}`}
+        title="Remove"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => picker.current?.click()}
-        className="flex cursor-pointer items-center gap-s1 py-s1 pr-s1 hover:text-fg"
-        data-zen-attach
+        onClick={() => remove({ place, id: file.id })}
+        className={`absolute top-0.5 right-0.5 flex size-4 cursor-pointer items-center justify-center bg-bg/90 text-fg/40 hover:text-fg ${focusRing}`}
       >
-        <Icon d={ICON_ATTACH} />
-        Attach
+        <Icon d={ICON_REMOVE} />
       </button>
+    </section>
+  );
+};
+
+/**
+ * The cards of the files waiting in a box, side by side, wrapping: one row
+ * of the strip of cards under the box (`MacroCards`, or `FileStrip` under a
+ * box with no other cards). Nothing when there are none.
+ */
+export const FileCards = ({ place }: { readonly place: string }) => {
+  const files = useAtomValue(pendingFilesAtom(place));
+  if (files.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-s1" data-zen-file-cards>
       {files.map((f) => (
-        <span
-          key={f.id}
-          className="flex max-w-60 items-center gap-s1 border border-fg/12 py-px pr-px pl-s1 text-fg/70"
-          data-zen-pending-file
-        >
-          {f.preview !== undefined && (
-            <img src={f.preview} alt="" className="size-4 object-cover" />
-          )}
-          <span className="min-w-0 truncate">{f.name}</span>
-          <span className="shrink-0 text-fg/35">{attachmentSize(f.bytes)}</span>
-          <button
-            type="button"
-            aria-label={`Remove ${f.name}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => remove({ place, id: f.id })}
-            className="flex size-4 shrink-0 cursor-pointer items-center justify-center text-fg/35 hover:bg-fg/7 hover:text-fg"
-          >
-            <Icon d="M7 7l10 10M17 7L7 17" />
-          </button>
-        </span>
+        <FileCard key={f.id} place={place} file={f} />
       ))}
-      {refused !== undefined && (
-        <output className="text-orange">{refused}</output>
-      )}
     </div>
+  );
+};
+
+/**
+ * The strip of cards under a box whose only cards are files (a follow-up,
+ * an ask): the answer box's strip, with its height and its faded edges.
+ */
+export const FileStrip = ({ place }: { readonly place: string }) => {
+  const files = useAtomValue(pendingFilesAtom(place));
+  if (files.length === 0) return null;
+  return (
+    <div
+      ref={fadeEdges}
+      className={`mt-s1 flex max-h-cards flex-col gap-s1 overflow-y-auto ${edgeFade}`}
+      data-macro-cards
+    >
+      <FileCards place={place} />
+    </div>
+  );
+};
+
+/** Why the last files added to the box were not all taken, under it. */
+export const AttachRefusal = ({ place }: { readonly place: string }) => {
+  const refused = useAtomValue(pendingRefusalAtom(place));
+  return refused === undefined ? null : (
+    <output className="mt-s1 block text-11 text-orange">{refused}</output>
   );
 };
 
