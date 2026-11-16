@@ -73,10 +73,15 @@ export const QueueTabs = ({
   const inboxHint = useAtomValue(keyHintAtom('focus_inbox_column'));
   const shown = !intro && !raised;
   return (
+    // On a phone the row is fixed, opaque and unblurred. Safari on iOS colours
+    // the status bar from a full-width fixed bar at the top edge, but only one
+    // with a solid background and no backdrop filter; without one it lays its
+    // own soft fade over the top of the page, washing out this row and the line
+    // under it. Wider screens keep the frosted row over the reader.
     <div
       ref={header}
       data-zen-header
-      className="absolute inset-x-0 top-0 z-10 h-header bg-bg/70 text-11 backdrop-blur-md"
+      className="absolute inset-x-0 top-0 z-10 h-header bg-bg/70 text-11 backdrop-blur-md compact:fixed compact:bg-bg compact:backdrop-blur-none"
     >
       <div
         inert={!shown}
