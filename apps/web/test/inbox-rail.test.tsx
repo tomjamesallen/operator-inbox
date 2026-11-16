@@ -594,6 +594,26 @@ describe('the scope in the breadcrumbs', () => {
     ).toBe('grown');
   });
 
+  // On a phone the row wraps, the inbox on the first line and the group on the
+  // next. The icon keeps to the first line's box rather than centring on the
+  // whole row; on a wider screen it is a line and nothing changes. The pixels
+  // are the browser's: this holds the classes that place it.
+  it('hangs the queue icon from the first line when the row wraps', async () => {
+    board = boardOf([grove, nightly]);
+    await mount(`/inbox/${GROVE}`);
+    const hang = (await allCrumb()).closest('span.absolute');
+    const classes = hang?.className.split(' ') ?? [];
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'inset-y-0',
+        'items-center',
+        'compact:top-s1',
+        'compact:bottom-auto',
+        'compact:h-lh',
+      ]),
+    );
+  });
+
   it('goes back to All from the queue icon, which shows the key', async () => {
     board = boardOf([grove, nightly]);
     await mount(`/inbox/${GROVE}`);
