@@ -28,6 +28,7 @@ import {
   InboxRefusal,
   type InboxState,
   inboxState,
+  keepIdsThroughDuplicates,
   loadMetadataRules,
   type MacroInvoked,
   type MacrosInvoked,
@@ -768,6 +769,12 @@ const parsedScene = (text: string): unknown => {
   }
 };
 
+// The operator's scene as an agent reads it back, the ids of any Alt-drag
+// duplicate given back to the shapes that stayed (`keepIdsThroughDuplicates`):
+// an answer sent before the page did that itself reads the same as one after.
+const sentScene = (own: string | undefined, sent: string): string =>
+  own === undefined ? sent : keepIdsThroughDuplicates(own, sent);
+
 const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
   awaitingAgent(state).map((q) => ({
     number: q.number,
@@ -790,7 +797,7 @@ const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
           drawings: Object.fromEntries(
             Object.entries(q.sentDrawings).map(([id, scene]) => [
               id,
-              parsedScene(scene),
+              parsedScene(sentScene(q.drawings?.[id]?.scene, scene)),
             ]),
           ),
         }),
@@ -1014,8 +1021,9 @@ export const dispatchDrawing = Effect.fnUntraced(function* (opts: {
     return yield* new InputError({
       message: `inbox drawing: there is no question ${ref}`,
     });
-  const sent = q.sentDrawings?.[opts.id];
   const own = q.drawings?.[opts.id]?.scene;
+  const stored = q.sentDrawings?.[opts.id];
+  const sent = stored === undefined ? undefined : sentScene(own, stored);
   const scene = sent ?? own;
   if (scene === undefined) {
     const ids = Object.keys(q.drawings ?? {}).sort();

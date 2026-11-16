@@ -116,7 +116,7 @@ A drawing is an Excalidraw scene the operator sees as a picture in the body and 
    operator-inbox drawing asv#3 layout --compact
    ```
 
-   It prints the operator's drawing, one line per element (shapes nested in the shapes that hold them, each with its label, position and size; then the arrows, by what they join), about a twentieth of the scene's size. Without `--compact` it prints the whole scene, which `answers --json` carries too; read that only when you need an arrow's points. With no change from the operator it prints your own.
+   It prints the operator's drawing, one line per element (shapes nested in the shapes that hold them, each with its label, position and size; then the arrows, by what they join), about a twentieth of the scene's size. Without `--compact` it prints the whole scene, which `answers --json` carries too; read that only when you need an arrow's points. With no change from the operator it prints your own. An id means the same shape as before: a shape the operator moved, relabelled or restyled keeps your id, one they deleted is gone, and anything they added, a duplicate of one of your shapes included, has a new long id of its own, wherever they dragged it.
 
 ### Metadata
 
