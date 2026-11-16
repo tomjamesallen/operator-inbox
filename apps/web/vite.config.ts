@@ -27,8 +27,10 @@ const SERVE_TARGET = `http://127.0.0.1:${SERVE_PORT}`;
 // icons. Vite copies them as they are, so they are not in the bundle.
 export const PUBLIC_SHELL = [
   '/manifest.webmanifest',
+  '/icons/favicon.svg',
+  '/icons/favicon-32.png',
   '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/icons/icon-any-512.png',
   '/icons/icon-maskable-512.png',
   '/icons/apple-touch-icon.png',
 ] as const;

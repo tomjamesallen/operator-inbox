@@ -48,7 +48,7 @@ bash scripts/desktop-app.sh build
 
 It replaces an earlier build of the window, never another app at that name, and never launches it. If the window is open, quit it with ⌘Q (closing its window only hides it) and reopen it to load the new build. `--dry-run` prints the pake command and changes nothing.
 
-`bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's favicon with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
+`bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's `icon-any-512.png` (the "Oi" mark, written by `node scripts/web-icons/make.mjs`) with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
 
 ## Stopping the server
 

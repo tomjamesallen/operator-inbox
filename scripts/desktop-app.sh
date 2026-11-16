@@ -41,9 +41,10 @@ PAKE_MIN=3.17.4
 RUSTC_MIN=1.85
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# Made from the web app's favicon by scripts/desktop-app/make-icon.mjs, with
-# the macOS rounded mask, and committed. Pake bundles a local .icns as it is;
-# with no --icon it would look an icon up online instead.
+# Made from the web app's "Oi" icon (icon-any-512.png) by
+# scripts/desktop-app/make-icon.mjs, with the macOS rounded mask, and committed.
+# Pake bundles a local .icns as it is; with no --icon it would look an icon up
+# online instead.
 ICON="$ROOT/scripts/desktop-app/operator-inbox.icns"
 
 APPS_DIR="${OPERATOR_INBOX_APPLICATIONS_DIR:-$HOME/Applications}"
