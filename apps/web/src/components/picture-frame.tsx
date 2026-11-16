@@ -14,8 +14,8 @@ import { diagramSizeAtom } from '../inbox-reader';
 //
 // It sits in a `picture-room`, a container the column's width, so `100cqw`
 // below is the column. The figure around it takes the frame's width, and in
-// the reading column runs into the right margin to give it, as a code block
-// does, up to the same edge (`max-w-figure-bleed`).
+// the reading column runs into the margins either side to give it, as a
+// table does, from the left limit to the right edge (`max-w-figure-wide`).
 export const PictureFrame = ({
   width,
   height,
@@ -51,8 +51,10 @@ const px = (length: string): string => `tan(atan2(${length}, 1px))`;
  *   area: scale = min(1, W / w, H / h, sqrt(A / (w * h)))
  *
  * - 1: never larger than its own size.
- * - W: the room to the reader's right edge, the column and its right margin.
- *   The figure's `max-w-figure-bleed` and the frame's `max-w-full` hold it.
+ * - W: the room a picture may take in the reader: the column and both its
+ *   margins, from the left limit (a gutter in from the reader's left edge,
+ *   or from a sidebar pinned over it) to a gutter in from the right edge.
+ *   The figure's `max-w-figure-wide` and the frame's `max-w-full` hold it.
  * - H: `--max-height-picture`.
  * - A: the column's width times `--max-area-picture`, so a wide, short
  *   picture and a tall, narrow one take about the same room.

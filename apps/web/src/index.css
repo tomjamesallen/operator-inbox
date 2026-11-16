@@ -7,7 +7,7 @@
 /*
  * The app's styles are Tailwind utilities on the elements. This file holds
  * only what a utility cannot: the theme the utilities draw from, the dark
- * scheme's values for it, two variants, two utilities
+ * scheme's values for it, four variants, two utilities
  * (`overflow-anchor-none`, `scrollbar-none`), and one escape hatch. A value
  * the design needs and the theme lacks is added here as a token, never
  * written as a bracketed literal on an element.
@@ -162,9 +162,11 @@
      at the table's size, so its words wrap between columns rather than
      inside them. Past what the screen holds, the table scrolls sideways. */
   --container-cell: 12ch;
-  /* How far a wide block may run in the inbox reader: from the column's left
-     edge to the right edge of the `@container` around it. `%` is the column,
-     `cqw` the room. */
+  /* How far a code block may run in the inbox reader: from the column's left
+     edge to the right edge of the `@container` around it, so its lines keep
+     the text's left edge. `%` is the column, `cqw` the room. A table or a
+     picture runs the same way under config.json's `wideBlocks: "right"`, and
+     both ways under `"both"`, the default (`--spacing-wide-inset`, below). */
   --container-bleed: calc(50cqw + 50%);
   /* The width of the inbox reader's column at which a question's code moves
      out of its eyebrow into the gutter left of its title (`@code-gutter:`):
@@ -381,11 +383,46 @@
 
 /* `inline`, so the utility carries the value itself: a value in `@theme`
    lives on `:root`, and a `var()` inside it would be read there, where
-   `--reader-width` is never set. */
+   `--reader-width` and `--rail-over` are never set, and where `%` is no
+   box's. */
 @theme inline {
-  /* `--container-bleed`'s edge, for a picture's figure. The figure sits in a
-     container the column's width (`picture-room`), so there `cqw` is the
-     column, and the reader's width comes in as `--reader-width`. */
+  /* A picture in the inbox reader (a table, an svg diagram, a Mermaid
+     diagram's or a drawing's figure) no wider than the column keeps to it.
+     Under config.json's `wideBlocks: "both"`, the default, a wider one is
+     centred on the column, growing both ways, until it reaches
+     the left limit, and from there grows right only, to the right edge: so
+     it uses the room, and is centred while there is room to be. The right
+     edge is the room's (`cqw`), a gutter in from the reader's (the list's
+     `px-s5`); the left limit is the same gutter in from the reader's left
+     edge, or from the sidebar's right edge while the sidebar is pinned over
+     the reader (`--rail-over`).
+
+     The inset is the room a box `100%` wide leaves between the left limit
+     and its own left edge when it is centred on the column, or 0 when it is
+     too wide for that. It is used twice, as one sum read against two boxes:
+     as a negative left margin, where `%` is the column, it takes the
+     picture's laid-out box to the left limit; as a translation, where `%` is
+     the picture itself, it brings the picture back to its centred place, or
+     leaves it at the limit. Only `translate` can read a box's own width, and
+     the margin keeps the laid-out box inside the room, so nothing the list
+     could scroll to runs past its right edge. A picture is never narrower
+     than the column (`min-w-full`), so the two cancel for one as wide as
+     it. */
+  --spacing-wide-inset: max(0px, (100cqw - 100%) / 2 - var(--rail-over));
+  /* The widest a picture runs: from the left limit to the right edge. */
+  --container-wide: calc(100cqw - var(--rail-over));
+  /* The same two, for a figure. It sits in a container the column's width
+     (`picture-room`), so there `cqw` is the column, and the reader's width
+     comes in as `--reader-width`. */
+  --spacing-figure-wide-inset: max(
+    0px,
+    (var(--reader-width) - 100%) /
+    2 -
+    var(--rail-over)
+  );
+  --container-figure-wide: calc(var(--reader-width) - var(--rail-over));
+  /* `--container-bleed`'s edge, for a figure under `wideBlocks: "right"`:
+     from the column's left edge to the room's right edge. */
   --container-figure-bleed: calc(50cqw + var(--reader-width) / 2);
 }
 
@@ -403,6 +440,21 @@
     @slot;
   }
   @media (height < 30rem) {
+    @slot;
+  }
+}
+
+/* config.json's `wideBlocks`, which the reader carries as
+   `data-wide-blocks`: how a figure in it widens (`mermaid-diagram.tsx`,
+   `drawing-block.tsx`). One variant for each value, so neither rests on the
+   order the other's rule is written in. */
+@custom-variant wide-both {
+  :where([data-wide-blocks="both"]) & {
+    @slot;
+  }
+}
+@custom-variant wide-right {
+  :where([data-wide-blocks="right"]) & {
     @slot;
   }
 }
@@ -434,6 +486,19 @@
 @utility picture-room {
   container-type: inline-size;
   --reader-width: 100cqw;
+}
+
+/* Tailwind has no utility for this. How far into the reader the sidebar
+   reaches while it is pinned over the reader's left side: its width, set on
+   the reader (`reader.tsx`). Shut, as a drawer, or pinned in a column of its
+   own, which moves the reader rather than covering it, it is 0. A picture's
+   left limit is a gutter right of it (`--spacing-wide-inset`). Registered as
+   a length, so it is 0 where nothing sets it, and the sidebar's design width
+   (`var(--spacing-rail)`) is fixed where it is set. */
+@property --rail-over {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
 }
 
 @layer base {
@@ -621,13 +686,30 @@
   [data-question-body] > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
     @apply max-w-measure;
   }
-  /* In the one-question reading column, code and tables keep the column's
-     left edge and run right into the empty margin when they need it. A
-     drawing's or a Mermaid diagram's figure does the same, to the same edge,
-     with utilities on the element (`drawing-block.tsx`,
-     `mermaid-diagram.tsx`); images do not grow. */
-  [data-zen-flow] [data-question-body] > :is(pre, [data-table-scroll]) {
+  /* In the one-question reading column, code keeps the column's left edge,
+     the text's, and runs right into the empty margin when it needs it: it is
+     read line by line, and a line is easier to find from where the text
+     starts. A picture, a table or an svg diagram here, grows both ways under
+     config.json's `wideBlocks: "both"`, the default (`--spacing-wide-inset`):
+     it is looked at whole, so it may use the room either side. Under
+     `"right"` it keeps the text's left edge, as code does. A drawing's or a
+     Mermaid diagram's figure does the same, with utilities on the element
+     (`drawing-block.tsx`, `mermaid-diagram.tsx`). An svg diagram is core's
+     only `data:` image (a markdown image must be http(s)), alone in its
+     paragraph, which takes the picture's width instead of the measure, at
+     either setting; other images do not grow. */
+  [data-zen-flow] [data-question-body] > pre,
+  [data-wide-blocks="right"]
+    [data-zen-flow]
+    [data-question-body]
+    > :is([data-table-scroll], p:has(> img[src^="data:image/svg+xml"])) {
     @apply w-max max-w-bleed min-w-full;
+  }
+  [data-wide-blocks="both"]
+    [data-zen-flow]
+    [data-question-body]
+    > :is([data-table-scroll], p:has(> img[src^="data:image/svg+xml"])) {
+    @apply w-max max-w-wide min-w-full -ml-wide-inset translate-x-wide-inset;
   }
   [data-zen-flow] [data-question-body] table code {
     @apply wrap-anywhere;

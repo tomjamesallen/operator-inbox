@@ -1,6 +1,7 @@
 import { useAtomValue } from '@effect/atom-react';
-import { useRef } from 'react';
-import { askingAtom } from '../../inbox-reader';
+import { type CSSProperties, useRef } from 'react';
+import { railOverAtom } from '../../inbox-rail';
+import { askingAtom, wideBlocksAtom } from '../../inbox-reader';
 import { ChaseButton, FootAlerts } from './chase';
 import { AskPicker, AskPlace, Composer } from './composer';
 import { Minimap } from './minimap';
@@ -23,14 +24,27 @@ const Asking = () => (
 /** The reader: the queues, one question at a time, and the box at the foot. */
 export const InboxReader = () => {
   const asking = useAtomValue(askingAtom);
+  const railOver = useAtomValue(railOverAtom);
+  const wideBlocks = useAtomValue(wideBlocksAtom);
   const header = useRef<HTMLDivElement>(null);
   const foot = useRef<HTMLDivElement>(null);
   return (
     // `isolate`: the reader is one layer of the page, so nothing inside it
     // (the stuck breadcrumb, the header's glass, the chase button) can rise
-    // above the sidebar or the masthead, whatever its own `z-` says.
+    // above the sidebar or the masthead, whatever its own `z-` says. A
+    // sidebar pinned over it says how far it reaches (`--rail-over`), so a
+    // wide picture keeps clear of it: a dragged width is a runtime value
+    // Tailwind cannot express. `data-wide-blocks` is config.json's
+    // `wideBlocks`: whether a wide table or picture grows both ways or right
+    // only, which the stylesheet and the figures' variants read.
     <main
       data-inbox-reader
+      data-wide-blocks={wideBlocks}
+      style={
+        railOver === undefined
+          ? undefined
+          : ({ '--rail-over': railOver } as CSSProperties)
+      }
       className="relative isolate h-full min-w-0 flex-1 bg-bg font-zen text-fg"
     >
       <QueueTabs header={header} />

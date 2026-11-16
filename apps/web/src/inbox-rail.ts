@@ -40,6 +40,7 @@ import {
   activeQueueAtom,
   freshMarksAtom,
   metadataRulesFailureAtom,
+  type RailState,
   railStateAtom,
   shownQueuesAtom,
   troublesAtom,
@@ -121,6 +122,30 @@ export const railPushesAtom = Atom.make((get): boolean => {
   if (measure === undefined || get(railStateAtom) !== 'docked') return false;
   return railWidthOf(get(inboxRailWidthAtom), measure.design) > measure.room;
 });
+
+/**
+ * How far the sidebar reaches over the reader, as a CSS length: its width
+ * while it is pinned in the gutter, where it covers the reader's left side.
+ * Shut, as a drawer, which passes over the question and goes, or pinned in a
+ * column of its own, which moves the reader rather than covering it, it
+ * reaches nowhere. A wide picture in a question keeps a gutter clear of it
+ * (`--rail-over`, `--spacing-wide-inset` in `index.css`).
+ */
+export const railOverOf = (
+  rail: RailState,
+  pushes: boolean,
+  stored: number | null,
+): string | undefined => {
+  if (rail !== 'docked' || pushes) return undefined;
+  // As the sidebar draws itself: the dragged width, else `w-rail`.
+  return stored === null
+    ? 'var(--spacing-rail)'
+    : `${railWidthOf(stored, RAIL_MIN_PX)}px`;
+};
+
+export const railOverAtom = Atom.make((get) =>
+  railOverOf(get(railStateAtom), get(railPushesAtom), get(inboxRailWidthAtom)),
+);
 
 /** Tells the machine when the fit changes. Mounted at the page's root. */
 export const railFitFeedAtom: Atom.Atom<void> = Atom.readable((get) => {
