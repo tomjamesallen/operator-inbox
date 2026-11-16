@@ -19,11 +19,11 @@ import { PictureFrame } from './picture-frame';
 import { focusRing, headerButton, label } from './styles';
 
 // An `<Excalidraw id="…"/>` line of a question's body: the Question's drawing
-// of that id, inline as a static picture the column's width, in the frame
-// every picture in a body shares (`PictureFrame`), sized from the scene
-// itself (core's `drawingBox`) before Excalidraw has even loaded, so the
-// question mounts at the height it keeps. It is edited only full screen (⤢,
-// a Base UI Dialog), and only while the question waits on the operator.
+// of that id, inline as a static picture, in the frame every picture in a
+// body shares (`PictureFrame`), sized from the scene itself (core's
+// `drawingBox`) before Excalidraw has even loaded, so the question mounts at
+// the height it keeps. It is edited only full screen (⤢, a Base UI Dialog),
+// and only while the question waits on the operator.
 //
 // While it waits, the picture is the operator's edit when there is one
 // (`drawings.ts`), marked as going with the answer, with REVERT beside it. An
@@ -87,6 +87,15 @@ export const DrawingBlock = ({
 // line, so on a narrow column a mark drops under the label rather than
 // folding into a column of words; ⤢ (`open`) sits outside the wrap, pinned
 // to the right edge, so it never leaves the frame.
+//
+// In the reading column the figure is sized as a code block is (`index.css`,
+// `[data-zen-flow] [data-question-body] > pre`): the column's width at least,
+// as wide as its picture asks, and no further than the right edge of the
+// reader (`max-w-figure-bleed`: the code block's edge, written from inside
+// the column-wide `picture-room` its picture is sized in). The label row and
+// the notice keep out of that sum (`contain-inline-size`), so only the
+// picture widens the figure, and a long id or mark wraps or truncates in the
+// width the picture gave.
 const Figure = ({
   id,
   marks,
@@ -100,22 +109,27 @@ const Figure = ({
   readonly notice?: ReactNode;
   readonly children: ReactNode;
 }) => (
-  <figure className="my-s2 border border-fg/13" data-drawing={id}>
-    <div className="flex items-center gap-s2 px-s2 py-0.5">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-s2 gap-y-0.5">
-        <span
-          className={`min-w-0 flex-auto truncate ${label}`}
-          title={`Drawing · ${id}`}
-        >
-          Drawing · {id}
-        </span>
-        {marks}
+  <div className="picture-room">
+    <figure
+      className="my-s2 border border-fg/13 in-data-zen-flow:w-max in-data-zen-flow:max-w-figure-bleed in-data-zen-flow:min-w-full"
+      data-drawing={id}
+    >
+      <div className="flex contain-inline-size items-center gap-s2 px-s2 py-0.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-s2 gap-y-0.5">
+          <span
+            className={`min-w-0 flex-auto truncate ${label}`}
+            title={`Drawing · ${id}`}
+          >
+            Drawing · {id}
+          </span>
+          {marks}
+        </div>
+        {open}
       </div>
-      {open}
-    </div>
-    {notice}
-    <div className="border-t border-fg/10 p-s2">{children}</div>
-  </figure>
+      {notice}
+      <div className="border-t border-fg/10 p-s2">{children}</div>
+    </figure>
+  </div>
 );
 
 const SentMark = () => (
@@ -290,7 +304,7 @@ const Conflict = ({
 }) => (
   <div
     role="alert"
-    className="flex flex-wrap items-center gap-s2 border-t border-fg/10 px-s2 py-s1 text-12 text-orange"
+    className="flex contain-inline-size flex-wrap items-center gap-s2 border-t border-fg/10 px-s2 py-s1 text-12 text-orange"
     data-drawing-conflict
   >
     <span className="flex-1">
