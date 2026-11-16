@@ -14,7 +14,7 @@ import { focusRing, headerButton, label } from './styles';
 export const MermaidDiagram = ({ source }: { readonly source: string }) => (
   <figure className="my-s2 border border-fg/13" data-mermaid>
     <div className="flex items-center gap-s2 px-s2 py-0.5">
-      <span className={`flex-1 ${label}`}>Diagram</span>
+      <span className={`min-w-0 flex-1 truncate ${label}`}>Diagram</span>
       <FullScreen source={source} />
     </div>
     <div className="border-t border-fg/10 p-s2">
@@ -26,7 +26,7 @@ export const MermaidDiagram = ({ source }: { readonly source: string }) => (
 const FullScreen = ({ source }: { readonly source: string }) => (
   <Dialog.Root>
     <Dialog.Trigger
-      className={`${headerButton()} ${focusRing}`}
+      className={`shrink-0 ${headerButton()} ${focusRing}`}
       aria-label="Show the diagram full screen"
       title="Full screen"
     >
