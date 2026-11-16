@@ -33,8 +33,8 @@ catalog:
   # The inbox page's interaction flow is an XState 6 machine bound through
   # @xstate/effect. Both are pinned exactly and move together, for
   # kairos-es's reason above.
-  xstate: 6.0.0-alpha.73
-  "@xstate/effect": 1.0.0-alpha.12
+  xstate: 6.0.0-beta.1
+  "@xstate/effect": 1.0.0-beta.0
   # Mermaid draws the ```mermaid fences in question bodies, in the browser
   # only, loaded by a dynamic import when a diagram is first opened.
   mermaid: ^12.1.0
