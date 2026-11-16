@@ -55,8 +55,8 @@ catalogs:
       specifier: ^6.1.2
       version: 6.2.1
     '@xstate/effect':
-      specifier: 1.0.0-alpha.12
-      version: 1.0.0-alpha.12
+      specifier: 1.0.0-beta.0
+      version: 1.0.0-beta.0
     effect:
       specifier: ^4.0.5
       version: 4.1.2
@@ -106,8 +106,8 @@ catalogs:
       specifier: ^5.0.5
       version: 5.1.0
     xstate:
-      specifier: 6.0.0-alpha.73
-      version: 6.0.0-alpha.73
+      specifier: 6.0.0-beta.1
+      version: 6.0.0-beta.1
 
 overrides:
   source-map-js: '>=1.2.2'
@@ -194,7 +194,7 @@ importers:
         version: link:../../packages/core
       '@xstate/effect':
         specifier: 'catalog:'
-        version: 1.0.0-alpha.12(effect@4.1.2)(xstate@6.0.0-alpha.73)
+        version: 1.0.0-beta.0(effect@4.1.2)(xstate@6.0.0-beta.1)
       effect:
         specifier: 'catalog:'
         version: 4.1.2
@@ -215,7 +215,7 @@ importers:
         version: 0.28.0
       xstate:
         specifier: 'catalog:'
-        version: 6.0.0-alpha.73
+        version: 6.0.0-beta.1
     devDependencies:
       '@effect/language-service':
         specifier: 'catalog:'
@@ -1378,12 +1378,12 @@ packages:
   '@vitest/spy@5.1.0':
     resolution: {integrity: sha512-2DPO5OMHWKrBngC+fCmTQqemNF0gidRhp3lxbBmRhW+M1XJrfgPpqNqWVevXtn2f2ufD5ZaR1B6B641aAlcX5A==}
 
-  '@xstate/effect@1.0.0-alpha.12':
-    resolution: {integrity: sha512-D72whH2VWGnvMefc3CrylVwgqu2Ph2jfA861RG3gbLOk0mkXH8ZUn9h+IZO//xRKaCPFfKMXkXnqy4aIED1THg==}
+  '@xstate/effect@1.0.0-beta.0':
+    resolution: {integrity: sha512-UW9oREcMeU5iiL/lOL0Ol8Gu4kbR4uHpzv8qW6+tEWNpQ/Yaf3SqqoHtN5johpO9XCRNBSFuNoKQeJrLDyoo8A==}
     peerDependencies:
       '@oxlint/plugins': ^1.76.0
       effect: ^4.0.0
-      xstate: ^6.0.0-alpha.73
+      xstate: ^6.0.0-beta.0
     peerDependenciesMeta:
       '@oxlint/plugins':
         optional: true
@@ -2213,8 +2213,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  xstate@6.0.0-alpha.73:
-    resolution: {integrity: sha512-Ru3g082hzyn2h1TspciGFgHplK35jZl6Sl808cspInc0xx/RsALM8sc3AoQpg2KusApD2HPlX7liaVnSxlMyHw==}
+  xstate@6.0.0-beta.1:
+    resolution: {integrity: sha512-HzG+CdBxkxcqBv91aUfbscjKhREhnu949en+Ype3kIZ0cUVmK7LsPWU06GMyu+O7z9bIq52eDPQfzlUM7AtJ9g==}
     hasBin: true
 
 snapshots:
@@ -2999,10 +2999,10 @@ snapshots:
 
   '@vitest/spy@5.1.0': {}
 
-  '@xstate/effect@1.0.0-alpha.12(effect@4.1.2)(xstate@6.0.0-alpha.73)':
+  '@xstate/effect@1.0.0-beta.0(effect@4.1.2)(xstate@6.0.0-beta.1)':
     dependencies:
       effect: 4.1.2
-      xstate: 6.0.0-alpha.73
+      xstate: 6.0.0-beta.1
 
   acorn@8.19.0: {}
 
@@ -3845,4 +3845,4 @@ snapshots:
 
   ws@8.22.2: {}
 
-  xstate@6.0.0-alpha.73: {}
+  xstate@6.0.0-beta.1: {}
