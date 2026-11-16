@@ -16,7 +16,8 @@ export const httpUrl = (s: string): string | undefined =>
 // The escaping promise it rests on: a question's body comes from core's
 // `renderQuestionMarkdown` (`packages/core/src/question-markdown.ts`), full
 // GFM through `marked`, with its renderer overridden so that raw HTML, block
-// or inline, is escaped to text; an anchor is made only for http(s) or mailto
+// or inline, is escaped to text, but for a bare `<small>` paired with its
+// `</small>` among the same siblings, written as the bare tags; an anchor is made only for http(s) or mailto
 // (with `target="_blank"`); an `<img>` only for an http(s) source, or for an
 // ```svg fence as a base64 `data:image/svg+xml` URL, which a browser loads
 // with no script and no external fetch; any other target renders as text.

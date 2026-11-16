@@ -9,7 +9,9 @@
 // The page injects this HTML (`RenderedBody` in apps/web), so safety is
 // decided here, by overriding the renderer for every token that could carry
 // markup or a URL:
-// - raw HTML in the source, block or inline, is escaped and shown as text;
+// - raw HTML in the source, block or inline, is escaped and shown as text,
+//   with one exception: a bare `<small>` and its `</small>`, paired among
+//   the same siblings, render as a `small` element (`pairSmallTags` below);
 // - a link is an anchor only for an http(s) or mailto target, and opens in a
 //   new tab with no referrer; any other target renders as its text;
 // - an image is an `<img>` only for an http(s) source, lazy, with its alt
@@ -58,9 +60,91 @@ const svgImage = (body: string): string | undefined => {
   return `<img src="data:image/svg+xml;base64,${base64(bytes)}" alt="diagram" loading="lazy">`;
 };
 
-const marked = new Marked({
+// --- <small> ----------------------------------------------------------------
+//
+// The one raw tag let through. Only the bare tag counts, in any case: `<small>`
+// with an attribute, or any other tag, stays escaped text. A tag renders only
+// when it is paired with its partner among the same sibling tokens (the
+// inline tokens of one paragraph, cell or emphasis; or the blocks of one
+// body, list item or quote), so every `<small>` this renderer writes is
+// closed inside the element that opened it, and a stray one cannot stretch
+// small text over the rest of the page. An unpaired tag stays escaped text.
+//
+// As a block, it is a `<small>` line and a `</small>` line with blank lines
+// round the markdown between them; or, with no blank line inside, one HTML
+// block of the form `<small>\n…\n</small>`, whose inside is read as markdown.
+
+const SMALL_OPEN = /^<small\s*>$/i;
+const SMALL_CLOSE = /^<\/small\s*>$/i;
+const SMALL_BLOCK = /^<small\s*>\n([\s\S]*)\n<\/small\s*>$/i;
+
+// A paired tag, swapped in for its `html` token; drawn by the `small`
+// extension renderer.
+const smallTag = (raw: string, close: boolean): Tokens.Generic => ({
+  type: 'small',
+  raw,
+  close,
+});
+
+const isHtml = (token: Token): token is Tokens.HTML | Tokens.Tag =>
+  token.type === 'html';
+
+// Pairs the `<small>` tags among `tokens`, and among every token list nested
+// in them, in place: each paired tag's token becomes a `small` one.
+const pairSmallTags = (tokens: Array<Token>): void => {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i] as Token;
+    const inner = isHtml(token)
+      ? SMALL_BLOCK.exec(token.text.trim())?.[1]
+      : undefined;
+    if (inner !== undefined && (token as Tokens.HTML).block) {
+      const body: Array<Token> = marked.lexer(inner);
+      pairSmallTags(body);
+      tokens.splice(
+        i,
+        1,
+        smallTag('<small>', false),
+        ...body,
+        smallTag('</small>', true),
+      );
+      i += body.length + 1;
+      continue;
+    }
+    if (token.type === 'list') {
+      pairSmallTags((token as Tokens.List).items);
+    } else if (token.type === 'table') {
+      const table = token as Tokens.Table;
+      for (const cell of table.header) pairSmallTags(cell.tokens);
+      for (const row of table.rows)
+        for (const cell of row) pairSmallTags(cell.tokens);
+    } else if ('tokens' in token && Array.isArray(token.tokens)) {
+      pairSmallTags(token.tokens);
+    }
+  }
+  const open: Array<number> = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i] as Token;
+    if (!isHtml(token)) continue;
+    const text = token.text.trim();
+    if (SMALL_OPEN.test(text)) open.push(i);
+    else if (SMALL_CLOSE.test(text)) {
+      const start = open.pop();
+      if (start === undefined) continue;
+      tokens[start] = smallTag((tokens[start] as Token).raw, false);
+      tokens[i] = smallTag(token.raw, true);
+    }
+  }
+};
+
+const marked: Marked = new Marked({
   gfm: true,
   async: false,
+  extensions: [
+    {
+      name: 'small',
+      renderer: (token) => (token.close ? '</small>' : '<small>'),
+    },
+  ],
   renderer: {
     html({ text }: Tokens.HTML | Tokens.Tag) {
       return escapeHtml(text);
@@ -97,8 +181,11 @@ const marked = new Marked({
 });
 
 /** Render an inbox question's markdown body to safe HTML. */
-export const renderQuestionMarkdown = (markdown: string): string =>
-  marked.parse(markdown, { async: false });
+export const renderQuestionMarkdown = (markdown: string): string => {
+  const tokens = marked.lexer(markdown);
+  pairSmallTags(tokens);
+  return marked.parser(tokens);
+};
 
 /** One part of a question's body: rendered markdown, or a Mermaid diagram. */
 export type QuestionBodyPart =
@@ -138,6 +225,8 @@ export const renderQuestionParts = (
     if (run.length === 0) return;
     // Reference links are defined once for the whole body, so every run
     // carries the body's definitions.
+    // `<small>` pairs within the run, so a pair split by a fence stays text.
+    pairSmallTags(run);
     const list = Object.assign(run, { links: tokens.links }) as TokensList;
     const html = marked.parser(list);
     if (html.trim().length > 0) parts.push({ kind: 'html', html });

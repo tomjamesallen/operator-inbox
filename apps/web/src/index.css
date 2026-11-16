@@ -66,6 +66,10 @@
   --text-14: calc(14px * var(--ui-scale));
   --text-16: calc(16px * var(--ui-scale));
   --text-18: calc(18px * var(--ui-scale));
+  /* A question body's `<small>`: a step down from whatever text it sits in,
+     body, heading or table alike, so it is relative rather than a drawn
+     size, and the scale reaches it through its parent. */
+  --text-small: 0.85em;
   /* A field on a touch screen (`pointer-coarse:text-field`). iOS Safari zooms
      the page into any field drawn under 16px, and does not zoom back, so this
      one size is a fixed 16px, outside `--ui-scale`: the scale's steps either
@@ -591,6 +595,9 @@
     @variant compact {
       @apply wrap-anywhere;
     }
+  }
+  [data-question-body] small {
+    @apply text-small text-fg/55;
   }
   [data-question-body] del {
     @apply text-fg/45 line-through;

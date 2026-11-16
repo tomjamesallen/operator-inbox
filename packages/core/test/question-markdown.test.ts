@@ -111,6 +111,92 @@ describe('renderQuestionMarkdown — raw HTML', () => {
   });
 });
 
+describe('renderQuestionMarkdown — <small>', () => {
+  it('renders an inline pair as a small element, with markdown inside', () => {
+    expect(r('a <small>b **c** `d`</small> e')).toBe(
+      '<p>a <small>b <strong>c</strong> <code>d</code></small> e</p>\n',
+    );
+  });
+
+  it('takes the tag in any case, and writes it in lower case', () => {
+    expect(r('<SMALL>x</Small>')).toBe('<p><small>x</small></p>\n');
+  });
+
+  it('renders inside emphasis, a list item, a table cell and a link', () => {
+    expect(r('*<small>x</small>*')).toBe('<p><em><small>x</small></em></p>\n');
+    expect(r('- <small>x</small>')).toBe(
+      '<ul>\n<li><small>x</small></li>\n</ul>\n',
+    );
+    expect(r('| a |\n|---|\n| <small>y</small> |')).toContain(
+      '<td><small>y</small></td>',
+    );
+    expect(r('[<small>x</small>](https://example.com)')).toContain(
+      '<a href="https://example.com" rel="noreferrer" target="_blank"><small>x</small></a>',
+    );
+  });
+
+  it('renders a block pair round markdown, blank lines and all', () => {
+    expect(r('<small>\n\nSome *text*.\n\n- one\n\n</small>')).toBe(
+      '<small><p>Some <em>text</em>.</p>\n<ul>\n<li>one</li>\n</ul>\n</small>',
+    );
+  });
+
+  it('reads the inside of a <small> HTML block as markdown', () => {
+    expect(r('<small>\nSome **text**\n</small>')).toBe(
+      '<small><p>Some <strong>text</strong></p>\n</small>',
+    );
+  });
+
+  it('renders a block pair inside a list item and a quote', () => {
+    expect(r('- item\n\n  <small>\n\n  note\n\n  </small>')).toContain(
+      '<small><p>note</p>\n</small>',
+    );
+    expect(r('> <small>\n>\n> q\n>\n> </small>')).toBe(
+      '<blockquote>\n<small><p>q</p>\n</small></blockquote>\n',
+    );
+  });
+
+  it('leaves an unpaired tag as text', () => {
+    expect(r('a <small>b')).toBe('<p>a &lt;small&gt;b</p>\n');
+    expect(r('a </small>b')).toBe('<p>a &lt;/small&gt;b</p>\n');
+    // Split across paragraphs, the tags are not siblings.
+    expect(r('<small>a\n\nb</small>')).not.toContain('<small>');
+    // Split across a link's text and the text after it.
+    expect(r('[<small>a](https://example.com) b</small>')).not.toContain(
+      '<small>',
+    );
+  });
+
+  it('leaves a <small> with an attribute as text, and its close with it', () => {
+    expect(r('<small class="x" onclick="y">a</small>')).toBe(
+      '<p>&lt;small class=&quot;x&quot; onclick=&quot;y&quot;&gt;a&lt;/small&gt;</p>\n',
+    );
+  });
+
+  it('still escapes every other tag beside a rendered <small>', () => {
+    expect(
+      r(
+        '<small>s</small> <b>b</b> <div>d</div> <script>x</script> <smaller>z</smaller>',
+      ),
+    ).toBe(
+      '<p><small>s</small> &lt;b&gt;b&lt;/b&gt; &lt;div&gt;d&lt;/div&gt; &lt;script&gt;x&lt;/script&gt; &lt;smaller&gt;z&lt;/smaller&gt;</p>\n',
+    );
+    expect(r('<script>\n<small>x</small>\n</script>')).not.toContain('<small>');
+    expect(r('<div>\n\n<small>x</small>\n\n</div>')).toBe(
+      '&lt;div&gt;<p><small>x</small></p>\n&lt;/div&gt;',
+    );
+  });
+
+  it('leaves a <small> inside code as code', () => {
+    expect(r('`<small>x</small>`')).toBe(
+      '<p><code>&lt;small&gt;x&lt;/small&gt;</code></p>\n',
+    );
+    expect(r('```\n<small>x</small>\n```')).toBe(
+      '<pre><code>&lt;small&gt;x&lt;/small&gt;\n</code></pre>\n',
+    );
+  });
+});
+
 describe('renderQuestionMarkdown — svg fences', () => {
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>';
@@ -193,6 +279,18 @@ describe('renderQuestionParts — mermaid fences', () => {
       kind: 'html',
       html: renderQuestionMarkdown('<script>x</script>'),
     });
+  });
+
+  it('renders <small> in a part, and leaves a pair split by a fence as text', () => {
+    expect(
+      renderQuestionParts(
+        'a <small>b</small>\n\n<small>\n\n```mermaid\ngraph TD; A-->B\n```\n\n</small>',
+      ),
+    ).toEqual([
+      { kind: 'html', html: '<p>a <small>b</small></p>\n&lt;small&gt;' },
+      { kind: 'mermaid', source: 'graph TD; A-->B' },
+      { kind: 'html', html: '&lt;/small&gt;' },
+    ]);
   });
 
   it('is one html part without a fence, and none for an empty body', () => {
