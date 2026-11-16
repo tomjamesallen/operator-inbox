@@ -40,6 +40,9 @@ catalog:
   mermaid: ^12.1.0
   # Fuse.js ranks the Cmd+P question search (title over body).
   fuse.js: ^7.5.0
+  # Lucide draws the queue tabs' icons. Each icon is its own export, so the
+  # build carries only the ones imported.
+  lucide-react: ^1.70.0
   # vite 8 is a line vitest 5 accepts, so the app and the test runner share
   # one vite.
   vite: ^8.1.6

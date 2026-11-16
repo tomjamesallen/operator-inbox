@@ -21,6 +21,7 @@
     "@xstate/effect": "catalog:",
     "effect": "catalog:",
     "fuse.js": "catalog:",
+    "lucide-react": "catalog:",
     "mermaid": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",

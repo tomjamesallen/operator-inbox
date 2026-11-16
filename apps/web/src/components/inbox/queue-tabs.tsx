@@ -1,5 +1,6 @@
 import { Tabs } from '@base-ui/react/tabs';
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
+import { Archive, Bot, Inbox, type LucideIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 import { QUEUE_NAMES, QUEUE_TITLES, type QueueName } from '../../inbox-queues';
 import {
@@ -35,6 +36,13 @@ const AskButton = () => {
   );
 };
 
+// Each queue's tab is an icon; its title is the tab's name and its tooltip.
+const QUEUE_ICONS: Readonly<Record<QueueName, LucideIcon>> = {
+  inbox: Inbox,
+  agent: Bot,
+  processed: Archive,
+};
+
 // The three queues, on the row the burger and the wordmark share. They go at
 // once as the sidebar lies over the row, and come back only once the wordmark
 // has shut.
@@ -49,6 +57,7 @@ export const QueueTabs = ({
   const intro = useAtomValue(readerIntroAtom);
   const raised = useAtomValue(railRaisedAtom);
   const send = useAtomSet(inboxReaderAtoms.send);
+  const inboxHint = useAtomValue(keyHintAtom('focus_inbox_column'));
   const shown = !intro && !raised;
   return (
     <div
@@ -75,31 +84,43 @@ export const QueueTabs = ({
             {QUEUE_NAMES.map((q) => {
               const on = q === queue && !asking;
               const count = queues[q].length;
+              const QueueIcon = QUEUE_ICONS[q];
               return (
-                <Tabs.Tab
+                <Tip
                   key={q}
-                  value={q}
-                  className={`group relative flex cursor-pointer items-center whitespace-nowrap ${on ? 'text-fg/70' : 'text-fg/25 hover:text-fg/60'}`}
+                  label={QUEUE_TITLES[q]}
+                  keys={q === 'inbox' ? inboxHint.first : undefined}
                 >
-                  {q === 'agent' ? (
-                    <>
-                      <span className="compact:hidden">{QUEUE_TITLES[q]}</span>
-                      <span className="hidden compact:inline">Agent</span>
-                    </>
-                  ) : (
-                    QUEUE_TITLES[q]
-                  )}
-                  {/* An eyebrow, out of the flow so a count changing moves no
-                      tab. Nothing to clear: an empty queue shows none. */}
-                  {q !== 'processed' && count > 0 && (
-                    <span
-                      data-zen-count
-                      className={`absolute bottom-full left-full -mb-1 text-9 leading-none font-medium tabular-nums ${on ? 'text-fg/70' : 'text-fg/35 group-hover:text-fg/60'}`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </Tabs.Tab>
+                  <Tabs.Tab
+                    value={q}
+                    aria-label={
+                      q !== 'processed' && count > 0
+                        ? `${QUEUE_TITLES[q]}, ${count}`
+                        : QUEUE_TITLES[q]
+                    }
+                    aria-keyshortcuts={
+                      q === 'inbox' ? inboxHint.aria : undefined
+                    }
+                    className={`group relative flex cursor-pointer items-center ${on ? 'text-fg/70' : 'text-fg/25 hover:text-fg/60'}`}
+                  >
+                    <QueueIcon
+                      aria-hidden="true"
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                    {/* An eyebrow, out of the flow so a count changing moves no
+                        tab. Nothing to clear: an empty queue shows none. */}
+                    {q !== 'processed' && count > 0 && (
+                      <span
+                        data-zen-count
+                        aria-hidden="true"
+                        className={`absolute bottom-full left-full -mb-1 text-9 leading-none font-medium tabular-nums ${on ? 'text-fg/70' : 'text-fg/35 group-hover:text-fg/60'}`}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </Tabs.Tab>
+                </Tip>
               );
             })}
           </Tabs.List>
