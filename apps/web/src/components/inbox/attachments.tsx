@@ -78,6 +78,24 @@ export const AttachDrop = ({
 };
 
 /**
+ * The line under a box that takes no files (nothing to answer, a send on
+ * its way, an Inbox being picked): the "Attach" link's line, kept with the
+ * link hidden, so the box never moves as the link comes and goes.
+ */
+export const AttachRowSpace = () => (
+  <div
+    aria-hidden="true"
+    className="invisible mt-s1 flex items-center gap-s1 text-11"
+    data-zen-attach-space
+  >
+    <span className="flex items-center gap-s1 py-s1 pr-s1">
+      <Icon d={ICON_ATTACH} />
+      Attach
+    </span>
+  </div>
+);
+
+/**
  * The line under the box: the "Attach" link, which opens the file picker,
  * then a chip for each file waiting to be sent, each with its own ×.
  */
