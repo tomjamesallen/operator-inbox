@@ -19,6 +19,7 @@ import {
 import { pickCrumbAtom } from '../../inbox-rail';
 import {
   answerOf,
+  askedAttachmentsOf,
   attachmentsOf,
   followUpsOf,
   headOf,
@@ -334,7 +335,10 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   // The files are kept on the machine that holds the Inbox, and only
   // Local's can be read back from this page.
   const readable = item.machine === LOCAL_MACHINE_KEY;
-  const asked = isAsked(item.question) ? attachmentsOf(item.question) : [];
+  // An operator's question's files, or the agent's own on its question.
+  const asked = isAsked(item.question)
+    ? attachmentsOf(item.question)
+    : askedAttachmentsOf(item.question);
   const state = isSending(item)
     ? 'sending'
     : 'answeredSeq' in item.question || 'processedSeq' in item.question

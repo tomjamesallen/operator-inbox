@@ -1,3 +1,4 @@
+import { Dialog } from '@base-ui/react/dialog';
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react';
 import {
   type Attachment,
@@ -13,7 +14,8 @@ import {
   pendingRefusalAtom,
   removeFileAtom,
 } from '../../attachments';
-import { Icon } from './icon';
+import { focusRing, headerButton, label } from '../styles';
+import { ICON_EXTERNAL, Icon } from './icon';
 
 // Files on an answer: the box's drop zone and its "Attach" link, the chips
 // of what waits to be sent, and the files an answered card shows.
@@ -183,20 +185,7 @@ export const AttachmentList = ({
       return (
         <li key={a.path} className="min-w-0">
           {image ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              title={`${a.name} (${attachmentSize(a.bytes)})`}
-              className="block border border-fg/12 hover:border-fg/40"
-            >
-              <img
-                src={url}
-                alt={a.name}
-                loading="lazy"
-                className="block max-h-40 max-w-60 object-contain"
-              />
-            </a>
+            <ImageLightbox attachment={a} url={url} />
           ) : (
             <a
               {...(url === undefined ? {} : { href: url, download: a.name })}
@@ -214,4 +203,75 @@ export const AttachmentList = ({
       );
     })}
   </ul>
+);
+
+/**
+ * An attached image: its thumbnail, which opens the image over the page,
+ * fitted to the window. Escape, a click on the backdrop and CLOSE dismiss
+ * it; "Open original" opens the file itself in a new tab. One for every
+ * card that shows files: an answer's, a follow-up's and an operator's
+ * question's.
+ */
+export const ImageLightbox = ({
+  attachment,
+  url,
+}: {
+  readonly attachment: Attachment;
+  readonly url: string;
+}) => (
+  <Dialog.Root>
+    <Dialog.Trigger
+      // The card under it lights on a click; the image is not the card's.
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Show ${attachment.name}`}
+      title={`${attachment.name} (${attachmentSize(attachment.bytes)})`}
+      className={`block cursor-zoom-in border border-fg/12 hover:border-fg/40 ${focusRing}`}
+      data-zen-thumbnail
+    >
+      <img
+        src={url}
+        alt={attachment.name}
+        loading="lazy"
+        className="block max-h-40 max-w-60 object-contain"
+      />
+    </Dialog.Trigger>
+    <Dialog.Portal>
+      <Dialog.Backdrop className="fixed inset-0 z-30 bg-fg/20" />
+      <Dialog.Popup
+        className="fixed inset-s4 z-40 flex flex-col border border-fg/20 bg-bg p-s3"
+        data-zen-lightbox
+      >
+        <div className="flex items-center gap-s3">
+          <Dialog.Title className={`min-w-0 flex-1 truncate ${label}`}>
+            {attachment.name}
+          </Dialog.Title>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className={`flex shrink-0 items-center gap-s1 text-11 text-fg/40 hover:text-fg ${focusRing}`}
+          >
+            <Icon d={ICON_EXTERNAL} />
+            Open original
+          </a>
+          <Dialog.Close className={`${headerButton()} ${focusRing}`}>
+            CLOSE
+          </Dialog.Close>
+        </div>
+        {/* A click beside the image, inside the frame, dismisses it too. */}
+        <Dialog.Close
+          render={<div />}
+          nativeButton={false}
+          className="mt-s2 flex min-h-0 flex-1 cursor-zoom-out items-center justify-center"
+          aria-label={`Close ${attachment.name}`}
+        >
+          <img
+            src={url}
+            alt={attachment.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        </Dialog.Close>
+      </Dialog.Popup>
+    </Dialog.Portal>
+  </Dialog.Root>
 );

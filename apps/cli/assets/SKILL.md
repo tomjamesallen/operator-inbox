@@ -62,7 +62,7 @@ Once the Inbox is open, every question you would have asked the operator in the 
 operator-inbox ask --title "<the decision, as a question>" --body-file <path>
 ```
 
-It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text, except `<small>…</small>`, which renders as small, muted text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn inline as a picture, never larger than its own size, scaled down to fit the page (a wide one may run into the margins either side of the text; at most about 600 px tall), with a full-screen view one click away. Use one for a flow, a sequence or a state machine the operator has to follow. `ask` and `edit` parse each fence with Mermaid and refuse a body holding a diagram it cannot parse, naming the fence and the line, so nothing reaches the operator broken. Keep every statement on one line: a label never carries on onto the next line (write `<br/>` for a line break inside it), and in a sequence diagram a `;` ends the statement, so write one inside a label as `#59;`. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. For a layout the operator should rearrange, use a **drawing** (*Drawings* below). For a chart, a 3D scene or an interactive diagram the operator explores, use an **HTML block** (*HTML blocks* below). Otherwise prefer a pseudocode block, a file tree or a table.
+It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text, except `<small>…</small>`, which renders as small, muted text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn inline as a picture, never larger than its own size, scaled down to fit the page (a wide one may run into the margins either side of the text; at most about 600 px tall), with a full-screen view one click away. Use one for a flow, a sequence or a state machine the operator has to follow. `ask` and `edit` parse each fence with Mermaid and refuse a body holding a diagram it cannot parse, naming the fence and the line, so nothing reaches the operator broken. Keep every statement on one line: a label never carries on onto the next line (write `<br/>` for a line break inside it), and in a sequence diagram a `;` ends the statement, so write one inside a label as `#59;`. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. For a layout the operator should rearrange, use a **drawing** (*Drawings* below). For a chart, a 3D scene or an interactive diagram the operator explores, use an **HTML block** (*HTML blocks* below). For a screenshot or any local file, attach it with `--attach` (*Images and files* below), never a private URL. Otherwise prefer a pseudocode block, a file tree or a table.
 
 **The operator will read it cold, maybe days later, with nothing else open.** So each body holds:
 
@@ -148,6 +148,18 @@ An HTML block is a whole HTML document you write, which the page runs in a sandb
    ```
 
    At most 8 blocks per Question. A tag naming an id the Question does not carry shows a "no HTML block named …" box. `edit` takes `--html` too, and replaces that block only. A script that throws shows the operator one line under the block, "A script in this block failed", and the browser hides why, so keep a block's script small and check it draws before you ask.
+
+### Images and files
+
+To show the operator a screenshot, a rendered page or any local file, **attach it with `--attach <file>`**, once per file:
+
+```sh
+operator-inbox ask --title "Does the lightbox look right?" --body-file body.md --attach shot.png --attach build.log
+```
+
+Each file is copied into the app's store, beside the Inbox, before the Question is logged, so it stays readable after your scratch file is gone. Under the body, an image (PNG, JPEG, GIF, WebP or AVIF) shows as a thumbnail the operator can click to open full size, and any other file as its name, to download. To show an attached image in place in the body, write a line `![alt text](attachment:shot.png)`, naming the file as it was attached; it shows the image there too.
+
+**Never link a private image by URL**: an image on a private GitHub repo (a `github.com/…/blob/…?raw=true` link) or behind any sign-in never loads in the app, and the operator sees a broken box. Only a public `https://` image loads by URL. At most 10 files per Question, 20 MiB each, 40 MiB together. `edit` takes `--attach` too, and adds the file to the ones the Question has; an edit never removes one.
 
 ### Metadata
 
@@ -345,7 +357,7 @@ If a Question is still right but its wording or context is wrong, edit it instea
 operator-inbox edit asv#3 --title "<new title>" --body-file <path>
 ```
 
-Either flag may be left out to keep that field, `--drawing <id>=<file>` sets one drawing (§2, *Drawings*), and `--html <id>=<file>` one HTML block (§2, *HTML blocks*). If the operator had already changed that drawing, the app asks them to keep theirs or take yours before they can send. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
+Either flag may be left out to keep that field, `--drawing <id>=<file>` sets one drawing (§2, *Drawings*), `--html <id>=<file>` one HTML block (§2, *HTML blocks*), and `--attach <file>` adds a file (§2, *Images and files*). If the operator had already changed that drawing, the app asks them to keep theirs or take yours before they can send. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
 
 ## 5. Archive the Inbox when the work is finished
 

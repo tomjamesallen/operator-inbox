@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,6 +12,8 @@ import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
 import {
   type Attachment,
+  decideAsk,
+  decideEdit,
   InboxId,
   QuestionNumber,
   QuestionRevision,
@@ -17,13 +25,23 @@ import {
   InboxNotFound,
   OperatorInboxApi,
 } from '@operator-inbox/core/api';
-import { ConfigProvider, Effect, Layer, Option, Ref } from 'effect';
+import {
+  ConfigProvider,
+  Effect,
+  type FileSystem,
+  Layer,
+  Option,
+  Ref,
+} from 'effect';
 import { FetchHttpClient, type HttpClient, HttpServer } from 'effect/http';
 import { HttpApiClient } from 'effect/http-api';
 import {
+  attachedFilesOf,
   dispatchAnswers,
   dispatchAsk,
+  dispatchEdit,
   dispatchOpen,
+  keepAgentFiles,
 } from '../src/commands/inbox';
 import { envProvider } from '../src/env-config';
 import { AttachmentsRoot, planAttachments } from '../src/inbox-attachments';
@@ -107,7 +125,10 @@ const run = <A, E>(
   ) => Effect.Effect<
     A,
     E,
-    HttpServer.HttpServer | HttpClient.HttpClient | InboxLog
+    | HttpServer.HttpServer
+    | HttpClient.HttpClient
+    | InboxLog
+    | FileSystem.FileSystem
   >,
 ) => {
   const state = mkdtempSync(path.join(tmpdir(), 'operator-inbox-attach-'));
@@ -404,5 +425,173 @@ describe('the file is kept before the answer is appended', () => {
       );
       expect(yield* Ref.get(seen)).toStrictEqual([true]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+describe('the agent’s own files on its question (`ask --attach`, `edit --attach`)', () => {
+  // The files the agent passes, written to a scratch folder as it would.
+  const scratch = () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'operator-inbox-attach-src-'));
+    const shot = path.join(dir, 'shot.png');
+    const log = path.join(dir, 'run.log');
+    writeFileSync(shot, PNG);
+    writeFileSync(log, LOG);
+    return { shot, log };
+  };
+
+  it.effect(
+    'keeps each file before the question, shows it under the body and in it, and reads it back',
+    () =>
+      run((port, root) =>
+        Effect.gen(function* () {
+          yield* open;
+          const { shot, log } = scratch();
+          const files = yield* attachedFilesOf('ask', [shot, log]);
+          expect(files?.map((f) => [f.name, f.type])).toStrictEqual([
+            ['shot.png', 'image/png'],
+            ['run.log', 'text/plain'],
+          ]);
+          const body = 'Here:\n\n![the page](attachment:shot.png)';
+          const attachments = yield* keepAgentFiles(
+            ID,
+            files,
+            (state, planned) =>
+              decideAsk(state, {
+                inboxId: ID,
+                title: 'Does it look right?',
+                body,
+                attachments: planned,
+              }),
+          );
+          // On disk before the question is asked.
+          for (const a of attachments ?? []) {
+            expect(a.path.startsWith(`${root}/${ID}/`)).toBe(true);
+            expect(existsSync(a.path)).toBe(true);
+          }
+          yield* dispatchAsk({
+            inboxId: ID,
+            title: 'Does it look right?',
+            body,
+            ...(attachments === undefined ? {} : { attachments }),
+          });
+
+          const client = yield* clientOf(port);
+          const board = yield* client.inbox.board({ query: {} });
+          const q = board.views.find((v) => v.inboxId === ID)
+            ?.awaitingOperator[0];
+          expect(q?.askedAttachments?.map((a) => a.name)).toStrictEqual([
+            'shot.png',
+            'run.log',
+          ]);
+          const [image] = q?.askedAttachments ?? [];
+          const url = `/api/attachments/${image?.path.split('/').slice(-3).join('/')}`;
+          expect(q?.bodyHtml).toContain(
+            `<img src="${url}" alt="the page" loading="lazy" data-attachment-image>`,
+          );
+          const got = yield* get(port, url);
+          expect(got.status).toBe(200);
+          expect(got.headers['content-type']).toBe('image/png');
+          expect(got.body).toStrictEqual(PNG);
+        }),
+      ),
+  );
+
+  it.effect(
+    'an edit adds a file, and one already there leaves nothing to change',
+    () =>
+      run((port) =>
+        Effect.gen(function* () {
+          yield* open;
+          const { shot, log } = scratch();
+          const first = yield* keepAgentFiles(
+            ID,
+            yield* attachedFilesOf('ask', [shot]),
+            (state, planned) =>
+              decideAsk(state, {
+                inboxId: ID,
+                title: 'Which?',
+                body: '',
+                attachments: planned,
+              }),
+          );
+          yield* dispatchAsk({
+            inboxId: ID,
+            title: 'Which?',
+            body: '',
+            ...(first === undefined ? {} : { attachments: first }),
+          });
+          const added = yield* keepAgentFiles(
+            ID,
+            yield* attachedFilesOf('edit', [log]),
+            (state, planned) =>
+              decideEdit(state, {
+                inboxId: ID,
+                number: n(1),
+                attachments: planned,
+              }),
+          );
+          expect(
+            yield* dispatchEdit({
+              inboxId: ID,
+              number: 1,
+              ...(added === undefined ? {} : { attachments: added }),
+            }),
+          ).toMatch(/^edited /);
+          const again = yield* Effect.flip(
+            keepAgentFiles(
+              ID,
+              yield* attachedFilesOf('edit', [shot]),
+              (state, planned) =>
+                decideEdit(state, {
+                  inboxId: ID,
+                  number: n(1),
+                  attachments: planned,
+                }),
+            ),
+          );
+          expect(again.message).toContain('nothing changed');
+          const client = yield* clientOf(port);
+          const board = yield* client.inbox.board({ query: {} });
+          const q = board.views.find((v) => v.inboxId === ID)
+            ?.awaitingOperator[0];
+          expect(q?.revision).toBe(2);
+          expect(q?.askedAttachments?.map((a) => a.name)).toStrictEqual([
+            'shot.png',
+            'run.log',
+          ]);
+        }),
+      ),
+  );
+
+  it.effect(
+    'a refused question writes no file, and a missing one is named',
+    () =>
+      run((_port, root) =>
+        Effect.gen(function* () {
+          yield* open;
+          const { shot } = scratch();
+          const refused = yield* Effect.flip(
+            keepAgentFiles(
+              ID,
+              yield* attachedFilesOf('ask', [shot]),
+              (state, planned) =>
+                decideAsk(state, {
+                  inboxId: ID,
+                  title: ' ',
+                  body: '',
+                  attachments: planned,
+                }),
+            ),
+          );
+          expect(refused.message).toContain('a question needs a title');
+          expect(filesUnder(root)).toStrictEqual([]);
+          const missing = yield* Effect.flip(
+            attachedFilesOf('ask', ['/nowhere/at/all.png']),
+          );
+          expect(missing.message).toBe(
+            'inbox ask: cannot read the file to attach at /nowhere/at/all.png',
+          );
+        }),
+      ),
   );
 });

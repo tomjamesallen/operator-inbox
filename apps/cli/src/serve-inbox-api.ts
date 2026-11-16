@@ -1,5 +1,6 @@
 import {
   type Attachment,
+  type Attachments,
   askEvents,
   awaitingAgent,
   awaitingOperator,
@@ -28,6 +29,7 @@ import {
   type InboxState,
   inboxState,
   inboxStateStamped,
+  isImageAttachment,
   type LocalInboxBoard,
   type LocalInboxIndex,
   type MachineRead,
@@ -164,7 +166,7 @@ export const toInboxView = (
     revision: q.revision,
     metadata: q.metadata,
     title: q.title,
-    ...renderedQuestionBody(q.body),
+    ...renderedQuestionBody(q.body, attachmentImages(q)),
     askedSeq: q.askedStamp?.seq ?? 0,
     ...(q.askedStamp?.at === undefined ? {} : { askedAt: q.askedStamp.at }),
     ...(q.highlight === undefined
@@ -179,6 +181,7 @@ export const toInboxView = (
         }),
     ...drawingRefsDto(q),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+    ...askedAttachmentsDto(q),
   })),
   // Oldest answered first: the order the agent will probably process them in.
   awaitingAgent: [...awaitingAgent(state)]
@@ -191,7 +194,7 @@ export const toInboxView = (
       revision: q.revision,
       metadata: q.metadata,
       title: q.title,
-      ...renderedQuestionBody(q.body),
+      ...renderedQuestionBody(q.body, attachmentImages(q)),
       response: q.response ?? '',
       answeredSeq: q.answeredStamp?.seq ?? 0,
       ...(q.answeredStamp?.at === undefined
@@ -208,13 +211,14 @@ export const toInboxView = (
       ...(q.comments === undefined ? {} : { comments: q.comments }),
       ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
       ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
+      ...askedAttachmentsDto(q),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
     revision: q.revision,
     metadata: q.metadata,
     title: q.title,
-    ...renderedQuestionBody(q.body),
+    ...renderedQuestionBody(q.body, attachmentImages(q)),
     withdrawn: q.withdrawn,
     ...(q.response === undefined ? {} : { response: q.response }),
     ...(q.withdrawn ? { reason: q.reason ?? '' } : {}),
@@ -236,8 +240,32 @@ export const toInboxView = (
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
     ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
+    ...askedAttachmentsDto(q),
   })),
 });
+
+const askedAttachmentsDto = (
+  q: InboxQuestion,
+): { readonly askedAttachments?: Attachments } =>
+  q.askedAttachments === undefined
+    ? {}
+    : { askedAttachments: q.askedAttachments };
+
+// A body's `attachment:<name>` images, each the URL this serve reads the
+// agent's file of that name back from (`serve-attachments.ts`): an image
+// only, by the last three segments of where it is kept. A name the Question
+// carries no image of renders as its alt text.
+const attachmentImages =
+  (q: InboxQuestion) =>
+  (name: string): string | undefined => {
+    const file = (q.askedAttachments ?? []).find(
+      (a) => a.name === name && isImageAttachment(a.type),
+    );
+    if (file === undefined) return undefined;
+    const parts = file.path.split('/').slice(-3);
+    if (parts.length < 3 || parts.some((p) => p === '')) return undefined;
+    return `/api/attachments/${parts.map(encodeURIComponent).join('/')}`;
+  };
 
 // A Question's drawings as the board carries them: each its scene's hash and
 // size, and its revision; never the scene, whichever shape it was logged in

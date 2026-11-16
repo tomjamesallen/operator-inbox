@@ -635,6 +635,12 @@ export const attachmentsOf = (
 ): ReadonlyArray<Attachment> =>
   'attachments' in q ? (q.attachments ?? []) : [];
 
+/** The files the agent attached to its question, shown under its body. */
+export const askedAttachmentsOf = (
+  q: ReaderItem['question'],
+): ReadonlyArray<Attachment> =>
+  'askedAttachments' in q ? (q.askedAttachments ?? []) : [];
+
 export interface FollowUp {
   readonly key: string;
   readonly text: string;
