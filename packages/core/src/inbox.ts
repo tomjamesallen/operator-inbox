@@ -8,6 +8,7 @@ import {
   type MetadataValue,
   metadataPatch,
 } from './inbox-metadata';
+import { type MacroInvoked, MacrosInvoked } from './macros';
 import { InboxCode, InboxId, SessionId } from './schema/identifiers';
 
 // The Inbox: a session's shared question queue with the operator, held as an
@@ -122,6 +123,9 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // `drawings` holds only the drawings the operator changed, each the whole
 // edited scene; a drawing left alone is not sent. Optional for the same
 // reason.
+// `macros` holds the macros the operator invoked, in the order they stacked
+// them, each with its instruction copied in (`macros.ts`). With macros,
+// `response` may be ''. Optional for the same reason.
 export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   inboxId: InboxId,
   number: QuestionNumber,
@@ -129,6 +133,7 @@ export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   deferred: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
   drawings: Schema.optionalKey(Drawings),
+  macros: Schema.optionalKey(MacrosInvoked),
 });
 export type QuestionAnswered = typeof QuestionAnswered.Type;
 
@@ -318,6 +323,7 @@ export const MovedQuestion = Schema.Struct({
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
   drawings: Schema.optionalKey(Schema.Record(Schema.String, QuestionDrawing)),
   sentDrawings: Schema.optionalKey(Drawings),
+  macros: Schema.optionalKey(MacrosInvoked),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -488,6 +494,8 @@ export interface InboxQuestion {
   readonly drawings?: Readonly<Record<string, QuestionDrawing>>;
   // The drawings the operator changed and sent with their answer, by id.
   readonly sentDrawings?: Drawings;
+  // The macros the operator invoked with their answer, in order.
+  readonly macros?: MacrosInvoked;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -651,6 +659,7 @@ export const evolveInbox = (
         ...(event.drawings === undefined
           ? {}
           : { sentDrawings: event.drawings }),
+        ...(event.macros === undefined ? {} : { macros: event.macros }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
       }));
     case 'AnswerProcessed':
@@ -753,6 +762,7 @@ export const evolveInbox = (
               ...(q.sentDrawings === undefined
                 ? {}
                 : { sentDrawings: q.sentDrawings }),
+              ...(q.macros === undefined ? {} : { macros: q.macros }),
             },
           ],
         };
@@ -1002,7 +1012,8 @@ export type InboxRefusalReason =
   | 'moved'
   | 'same-inbox'
   | 'code-taken'
-  | 'bad-drawing';
+  | 'bad-drawing'
+  | 'bad-macro';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
 // name, so the agent can look at it and adopt it.
@@ -1536,6 +1547,9 @@ export const decideAnswer = (
     readonly highlightReply?: true;
     // The drawings the operator changed, by id: each the whole edited scene.
     readonly drawings?: Drawings;
+    // The macros the operator invoked, in order. With one, the response may
+    // be empty: a macro is a complete answer on its own.
+    readonly macros?: ReadonlyArray<MacroInvoked>;
   },
 ): Result.Result<QuestionAnswered, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1561,8 +1575,21 @@ export const decideAnswer = (
       'changed',
       `${questionRef(state.code, input.number)} changed after you opened it; read it again before answering`,
     );
-  if (input.deferred !== true && input.response.trim().length === 0)
+  const macros = input.macros ?? [];
+  if (
+    input.deferred !== true &&
+    macros.length === 0 &&
+    input.response.trim().length === 0
+  )
     return refuse('empty', 'an answer cannot be empty');
+  if (macros.length > MAX_MACROS_PER_ANSWER)
+    return refuse(
+      'bad-macro',
+      `an answer carries at most ${MAX_MACROS_PER_ANSWER} macros, not ${macros.length}`,
+    );
+  const blank = macros.find((m) => m.instruction.trim().length === 0);
+  if (blank !== undefined)
+    return refuse('bad-macro', `/${blank.macro} has no instruction`);
   const unknown = Object.keys(input.drawings ?? {}).find(
     (id) => q.drawings?.[id] === undefined,
   );
@@ -1583,8 +1610,16 @@ export const decideAnswer = (
     ...(drawings === undefined || Object.keys(drawings).length === 0
       ? {}
       : { drawings }),
+    ...(isNonEmptyMacros(macros) ? { macros } : {}),
   }));
 };
+
+/** The most macros one answer may carry. */
+export const MAX_MACROS_PER_ANSWER = 20;
+
+const isNonEmptyMacros = (
+  macros: ReadonlyArray<MacroInvoked>,
+): macros is MacrosInvoked => macros.length > 0;
 
 /**
  * The agent marks an answer processed. It cannot close a question the operator
@@ -1864,6 +1899,7 @@ const movedQuestionOf = (
       : { highlightReply: q.highlightReply }),
     ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+    ...(q.macros === undefined ? {} : { macros: q.macros }),
   };
 };
 

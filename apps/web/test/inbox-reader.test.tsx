@@ -167,6 +167,8 @@ beforeEach(() => {
           },
         })
       );
+    if (url.pathname === '/api/macros')
+      return json({ path: '/c/operator-inbox/macros.json', text: null });
     if (url.pathname === '/api/keybindings') return json({ text: '' });
     return json(board);
   });

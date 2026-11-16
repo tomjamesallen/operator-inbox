@@ -6,6 +6,7 @@ import { inboxSubcommands } from './commands/inbox';
 import { infoCommand } from './commands/info';
 import { installCommand } from './commands/install';
 import { installClaudeHooksCommand } from './commands/install-claude-hooks';
+import { macrosCommand } from './commands/macros';
 import { serveCommand } from './commands/serve';
 import { skillCommand } from './commands/skill';
 import { machineTunnelCommand } from './commands/tunnel';
@@ -36,6 +37,7 @@ const mainCommand = Command.make('operator-inbox', {}).pipe(
     installClaudeHooksCommand,
     importLogCommand,
     infoCommand,
+    macrosCommand,
     skillCommand,
   ]),
 );

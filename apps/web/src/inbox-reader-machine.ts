@@ -1,4 +1,8 @@
-import { InboxId, InboxMachineKey } from '@operator-inbox/core/api';
+import {
+  InboxId,
+  InboxMachineKey,
+  MacroInvoked,
+} from '@operator-inbox/core/api';
 import { setupEffect } from '@xstate/effect';
 import { createActorAtoms } from '@xstate/effect/atom';
 import { Layer, Schema } from 'effect';
@@ -43,6 +47,8 @@ const SendingAnswer = Schema.Struct({
   item: InboxItem,
   response: Schema.String,
   deferred: Schema.Boolean,
+  // The macros it carries, shown with it as it goes.
+  macros: Schema.Array(MacroInvoked),
   landed: Schema.Boolean,
 });
 export type SendingAnswer = typeof SendingAnswer.Type;
@@ -351,6 +357,7 @@ const setup = setupEffect({
         ...Key,
         response: Schema.String,
         deferred: Schema.Boolean,
+        macros: Schema.Array(MacroInvoked),
       }),
       AnswerLanded: Schema.Struct(Key),
       AnswerFailed: Schema.Struct({
@@ -598,6 +605,7 @@ export const readerMachine = setup.createMachine({
                 item,
                 response: event.response,
                 deferred: event.deferred,
+                macros: event.macros,
                 landed: false,
               },
             ],

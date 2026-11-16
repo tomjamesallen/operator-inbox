@@ -4,6 +4,7 @@ import {
   configPath,
   keybindingsPath,
   loadXdgConfigHome,
+  macrosPath,
   metadataPath,
   stateDir,
 } from '@operator-inbox/core';
@@ -26,6 +27,7 @@ export interface Info {
   readonly configFile: string;
   readonly metadataFile: string;
   readonly keybindingsFile: string;
+  readonly macrosFile: string;
   readonly stateDir: string;
   readonly databasePath: string;
   readonly databaseSource: 'env' | 'config' | 'default';
@@ -61,6 +63,7 @@ export const readInfo = Effect.gen(function* () {
     configFile: configPath(xdgConfigHome),
     metadataFile: metadataPath(xdgConfigHome),
     keybindingsFile: keybindingsPath(xdgConfigHome),
+    macrosFile: macrosPath(xdgConfigHome),
     stateDir: state,
     databasePath: database.path,
     databaseSource: database.source,

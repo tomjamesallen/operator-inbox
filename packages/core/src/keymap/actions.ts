@@ -156,6 +156,12 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
       'Ask the agent to highlight the question it asks in reply to this send',
   },
   {
+    id: 'toggle_macro_info',
+    section: 'Questions',
+    description:
+      'In a macro card under the answer box: show or hide what the macro tells the agent',
+  },
+  {
     id: 'copy_question',
     section: 'Questions',
     description: 'Copy the selected question',
@@ -261,6 +267,9 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   'ctrl+shift+enter=defer_to_agent',
   'prefix>u=defer_to_agent',
   'prefix>h=toggle_highlight_reply',
+  // Matched by the key's place, as every letter is, so a Mac's ⌥I, a dead key
+  // that types nothing of its own, still counts.
+  'alt+i=toggle_macro_info',
   'prefix>y=copy_question',
   'prefix>o=open_session',
   'prefix>d=dismiss_highlight',
@@ -313,4 +322,31 @@ export const WIDGET_KEYS: ReadonlyArray<{
     what: 'Make the box taller or shorter',
   },
   { keys: 'Tab', where: 'Anywhere', what: 'Move through what can be clicked' },
+];
+
+// The keys a macro card and the macro menu own while they have the focus,
+// for the help sheet's Macros section. Like `WIDGET_KEYS`, they cannot be
+// rebound; the card's ⌥I is the keymap's `toggle_macro_info`, and Send's
+// chord is the keymap's too, so the help lists those from the keymap.
+export const MACRO_KEYS: ReadonlyArray<{
+  readonly keys: string;
+  readonly what: string;
+}> = [
+  { keys: '/', what: 'Open the macros, at the start of a word' },
+  {
+    keys: '↑ ↓ · ↩ or Tab · Esc',
+    what: 'In the macro menu: choose one · add its card · close the menu',
+  },
+  {
+    keys: 'Tab · ⇧Tab',
+    what: 'From the text into the cards, then field to field',
+  },
+  { keys: '← →', what: 'Choose in a one-of; move in a many-of' },
+  { keys: 'Space', what: 'Pick or drop an option in a many-of' },
+  { keys: '↑ ↓', what: 'Step a number' },
+  {
+    keys: 'Esc',
+    what: 'Shut what the macro tells the agent; again, back to the text',
+  },
+  { keys: '⌘⌫ / Ctrl+⌫', what: 'Remove the card' },
 ];

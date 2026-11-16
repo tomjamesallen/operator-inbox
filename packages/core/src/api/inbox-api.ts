@@ -8,6 +8,7 @@ import {
   QuestionRevision,
 } from '../inbox';
 import { SessionLink } from '../inbox-metadata';
+import { MacrosInvoked } from '../macros';
 import {
   InboxCode,
   InboxId,
@@ -74,6 +75,9 @@ const drawings = Schema.optionalKey(
 );
 // The drawings the operator changed and sent with their answer, by id.
 const sentDrawings = Schema.optionalKey(Drawings);
+// The macros the operator invoked with their answer, in order (core's
+// `macros.ts`). An optional key, so a machine on an older build still decodes.
+const macros = Schema.optionalKey(MacrosInvoked);
 
 export const InboxOperatorQuestionDto = Schema.Struct({
   number: QuestionNumber,
@@ -127,6 +131,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   deferred,
   drawings,
   sentDrawings,
+  macros,
 });
 export type InboxAgentQuestionDto = typeof InboxAgentQuestionDto.Type;
 
@@ -154,6 +159,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   deferred,
   drawings,
   sentDrawings,
+  macros,
 });
 export type InboxProcessedQuestionDto = typeof InboxProcessedQuestionDto.Type;
 
@@ -506,6 +512,8 @@ export const AnswerPayload = Schema.Struct({
   highlightReply,
   // The drawings the operator changed, by id: each the whole edited scene.
   drawings: Schema.optionalKey(Drawings),
+  // The macros the operator invoked, in order, each with its instruction.
+  macros,
 });
 export type AnswerPayload = typeof AnswerPayload.Type;
 

@@ -47,5 +47,9 @@
   "KeybindingsUnreadable": {
     "message": "Could not read /c/operator-inbox/keybindings.",
     "_tag": "KeybindingsUnreadable"
+  },
+  "MacrosUnreadable": {
+    "message": "Could not read /c/operator-inbox/macros.json.",
+    "_tag": "MacrosUnreadable"
   }
 }

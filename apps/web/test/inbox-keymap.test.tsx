@@ -105,6 +105,8 @@ beforeEach(() => {
     }
     if (url.pathname === '/api/inbox-config')
       return json({ metadata: { extras: 'allow', keys: [] } });
+    if (url.pathname === '/api/macros')
+      return json({ path: '/c/operator-inbox/macros.json', text: null });
     if (url.pathname === '/api/keybindings') return json({ text: null });
     return json(BOARD);
   });

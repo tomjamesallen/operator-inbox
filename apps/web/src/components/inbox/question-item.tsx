@@ -1,5 +1,10 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
-import { LOCAL_MACHINE_KEY, questionRef } from '@operator-inbox/core/api';
+import {
+  LOCAL_MACHINE_KEY,
+  type MacroArg,
+  type MacroInvoked,
+  questionRef,
+} from '@operator-inbox/core/api';
 import { memo } from 'react';
 import {
   copyMarkAtom,
@@ -137,18 +142,57 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
   );
 };
 
+// An argument as the card showed it; one left empty went to the agent.
+const argText = (value: MacroArg): string =>
+  value === null
+    ? '—'
+    : Array.isArray(value)
+      ? value.join(', ')
+      : String(value);
+
+// The macros an answer carried, one line each: `/name` and its arguments.
+const SentMacros = ({
+  macros,
+}: {
+  readonly macros: ReadonlyArray<MacroInvoked>;
+}) => (
+  <ul className="mt-s1 flex flex-col gap-0.5 font-zen text-12" data-sent-macros>
+    {macros.map((m, i) => (
+      <li
+        // Macros carry no id of their own; their place is what they are.
+        // biome-ignore lint/suspicious/noArrayIndexKey: the list never reorders
+        key={`${i}:${m.macro}`}
+        className="flex flex-wrap items-baseline gap-x-s2"
+        title={`Tells the agent: ${m.instruction}`}
+      >
+        <span className="font-medium text-fg/80">/{m.macro}</span>
+        {Object.entries(m.args).map(([name, value]) => (
+          <span key={name} className="text-fg/55">
+            <span className="text-fg/35">{name}</span> {argText(value)}
+          </span>
+        ))}
+      </li>
+    ))}
+  </ul>
+);
+
 const Said = ({
   label,
   text,
+  macros = [],
   className,
 }: {
   readonly label: string;
   readonly text: string;
+  readonly macros?: ReadonlyArray<MacroInvoked>;
   readonly className: string;
 }) => (
   <div className={`${className} max-w-measure text-14 leading-prose`}>
     <p className="font-zen text-11 text-fg/40">{label}</p>
-    <p className="mt-s1 whitespace-pre-wrap text-fg/80">{text}</p>
+    {text !== '' && (
+      <p className="mt-s1 whitespace-pre-wrap text-fg/80">{text}</p>
+    )}
+    {macros.length > 0 && <SentMacros macros={macros} />}
   </div>
 );
 
@@ -190,9 +234,15 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
               : 'open',
         }}
       />
-      {answer !== undefined && answer.text !== '' && (
-        <Said className="mt-s5" label={answer.label} text={answer.text} />
-      )}
+      {answer !== undefined &&
+        (answer.text !== '' || answer.macros.length > 0) && (
+          <Said
+            className="mt-s5"
+            label={answer.label}
+            text={answer.text}
+            macros={answer.macros}
+          />
+        )}
       {followUpsOf(queues, item).map((f) => (
         <Said
           key={f.key}

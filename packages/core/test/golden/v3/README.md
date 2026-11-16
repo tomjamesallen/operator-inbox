@@ -11,10 +11,11 @@ What is here:
 - `inbox-code-change-events.jsonl`: `InboxCodeChanged`, and an `InboxCodeAssigned` in the current three-letter form, which came after `inbox-code-events.jsonl` was pinned and so have their own file.
 - `inbox-highlight-reply-events.jsonl`: `highlightReply` on a `QuestionAnswered`, an operator's `QuestionAsked` and a `QuestionMoved`'s question, which came after the event goldens above were pinned and so have their own file.
 - `inbox-drawing-events.jsonl`: `drawings` on a `QuestionAsked`, a `QuestionEdited` and a `QuestionAnswered`, and a `QuestionMoved`'s question carrying its drawings and the ones sent with its answer, which came after the event goldens above were pinned and so have their own file.
+- `inbox-macro-events.jsonl`: `macros` on a `QuestionAnswered`, on a deferral with no note, and on a `QuestionMoved`'s question, which came after the event goldens above were pinned and so have their own file.
 - `dto-inbox-board.json`, `dto-inbox-index.json`: the inbox API's two read DTOs.
 - `dto-inbox-board-coded.json`: the board read with an Inbox's `code` on its row and its view, pinned apart for the same reason.
-- `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, rename), the answer and ask payloads with `highlightReply`, and the answer payload with `drawings`.
-- `http-error-bodies.json`: the body of every error the inbox API sends. The messages of `InboxConfigUnreadable` and `KeybindingsUnreadable` name the app's own config paths.
+- `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, rename), the answer and ask payloads with `highlightReply`, the answer payload with `drawings`, and the answer payload with `macros` and no text.
+- `http-error-bodies.json`: the body of every error the inbox API sends. The messages of `InboxConfigUnreadable`, `KeybindingsUnreadable` and `MacrosUnreadable` name the app's own config paths.
 - `http-status.json`: the status of every error the inbox API sends, and every endpoint's method, path, successes and errors.
 
 biome must never format this directory (the root `biome.json` excludes `**/test/golden`): a formatted golden is no longer the bytes the core writes.

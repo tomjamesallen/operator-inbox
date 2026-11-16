@@ -19,6 +19,7 @@ import { NetAddress } from 'effect/net';
 import { makeInboxApiLive } from './serve-inbox-api';
 import { makeInboxConfigApiLive } from './serve-inbox-config-api';
 import { makeKeybindingsApiLive } from './serve-keybindings-api';
+import { makeMacrosApiLive } from './serve-macros-api';
 import { staticRoutesLive } from './serve-static';
 
 // The HTTP server behind `operator-inbox serve`: the `OperatorInboxApi`
@@ -264,6 +265,7 @@ export const OperatorInboxApiLive = HttpApiBuilder.layer(OperatorInboxApi).pipe(
   Layer.provide(makeInboxApiLive(OperatorInboxApi)),
   Layer.provide(makeInboxConfigApiLive(OperatorInboxApi)),
   Layer.provide(makeKeybindingsApiLive(OperatorInboxApi)),
+  Layer.provide(makeMacrosApiLive(OperatorInboxApi)),
   Layer.provide(RequestDecodeErrorsLive),
 );
 

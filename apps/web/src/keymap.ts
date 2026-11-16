@@ -59,6 +59,12 @@ import {
 import { composerOf, inboxReaderAtoms, litOf } from './inbox-reader-machine';
 import { stepViewAtom } from './inbox-swipe';
 import {
+  focusedMacroCardAtom,
+  macroInfoOpenAtom,
+  macrosFileAtom,
+  toggledIn,
+} from './macros';
+import {
   clearSelectionByKey,
   questionSearchOpenAtom,
   toggleSearchByKey,
@@ -185,8 +191,12 @@ const dialogOpen = (get: Atom.AtomContext): boolean =>
   get.once(questionSearchOpenAtom) ||
   get.once(inboxPickerOpenAtom);
 
+// The answer box, and the fields of the macro cards under it: Send's chord
+// sends from either.
 const isComposerBox = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement && target.dataset.zenBox !== undefined;
+  target instanceof HTMLElement &&
+  (target.dataset.zenBox !== undefined ||
+    target.closest('[data-macro-card]') !== null);
 
 // A single chord pressed in a field that is not the answer box belongs to that
 // field: Ctrl+Enter in a rename must not send the draft. A sequence has no
@@ -459,6 +469,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     get.set(toggleHighlightReplyAtom, undefined);
     return true;
   },
+  // The card the focus is in shows what its macro tells the agent, or stops.
+  toggle_macro_info: (get) => {
+    const card = get.once(focusedMacroCardAtom);
+    if (dialogOpen(get) || card === undefined) return false;
+    const open = get.once(macroInfoOpenAtom);
+    get.set(macroInfoOpenAtom, toggledIn(open, card, !open.includes(card)));
+    return true;
+  },
   copy_question: (get) => {
     const item = litItem(get);
     if (item === undefined) return false;
@@ -498,6 +516,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
   refresh: (get) => {
     get.refresh(keybindingsFileAtom);
+    get.refresh(macrosFileAtom);
     get.refresh(inboxBoardAtom);
     return true;
   },

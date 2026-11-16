@@ -14,6 +14,7 @@ export * from './inbox-metadata';
 export * from './inbox-mode';
 export * from './inbox-watch';
 export * from './machines';
+export * from './macros';
 export * from './question-markdown';
 export * from './schema';
 export * from './schema-issues';

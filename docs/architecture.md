@@ -49,7 +49,7 @@ The server can also show the Inboxes of other machines (`inboxMachines` in `conf
 
 ## The web app
 
-A Vite single-page app in React, styled with Tailwind v4 and built on Base UI components. State lives in Effect Atom atoms and XState machines, not in hand-wired hooks. The page polls the API for the board, keeps a draft per Question, and answers through the API. Its key bindings are a keymap: the defaults, with the user's `keybindings` file applied in order.
+A Vite single-page app in React, styled with Tailwind v4 and built on Base UI components. State lives in Effect Atom atoms and XState machines, not in hand-wired hooks. The page polls the API for the board, keeps a draft per Question, and answers through the API. Its key bindings are a keymap: the defaults, with the user's `keybindings` file applied in order. Its macros come from `macros.json`, which serve hands over as text (`GET /api/macros`) and the page decodes with core's `decodeMacrosFile`, as the CLI's `operator-inbox macros` does; an answer carries each macro invoked, its instruction copied in (`macros.ts` in core).
 
 ## Hooks, inbox mode and the watcher
 
@@ -64,6 +64,7 @@ A Vite single-page app in React, styled with Tailwind v4 and built on Base UI co
 | `~/.config/operator-inbox/config.json` | this machine's settings: `databasePath`, `serve.tailnet`, `inboxMachines` |
 | `~/.config/operator-inbox/metadata.json` | the metadata rules (optional; the built-in defaults otherwise) |
 | `~/.config/operator-inbox/keybindings` | key overrides, one binding per line (optional) |
+| `~/.config/operator-inbox/macros.json` | the macros the answer box offers (optional; none otherwise) |
 | `~/.local/state/operator-inbox/` | the event log, `inbox-sessions/` and `inbox-watchers/` |
 
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` move them, as usual. The app only reads the preference files, so they may be symlinks into a repo you keep them in. Nothing is read from or written to the checkout at run time. Environment variables are read through Effect's `Config`, and all are named `OPERATOR_INBOX_*`.

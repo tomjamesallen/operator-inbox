@@ -1,0 +1,341 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { describe, expect, it } from '@effect/vitest';
+import {
+  CONFIG_DIR_NAME,
+  decideAnswer,
+  InboxId,
+  MACROS_FILE,
+  type MacroInvoked,
+  QuestionNumber,
+  SessionId,
+} from '@operator-inbox/core';
+import { ConfigProvider, Effect, Option, Result } from 'effect';
+import { Command } from 'effect/cli';
+import { TestConsole } from 'effect/testing';
+import {
+  dispatchAnswers,
+  dispatchAsk,
+  dispatchOpen,
+} from '../src/commands/inbox';
+import {
+  macrosCommand,
+  readMacros,
+  renderMacros,
+} from '../src/commands/macros';
+import { envProvider } from '../src/env-config';
+import {
+  decideAndAppend,
+  type InboxLog,
+  InboxLogInMemory,
+} from '../src/inbox-store';
+import { readMacrosFile } from '../src/serve-macros-api';
+
+// Macros through the CLI: `macros` prints and checks the file, serve hands
+// its text to the page as it is, and `answers` prints each macro an answer
+// carries after its response.
+
+const FILE = {
+  macros: [
+    {
+      name: 'agenda',
+      description: 'Add an item to someone’s agenda',
+      instruction:
+        'Add the item to the named person’s agenda.\nDo not message them.',
+      params: [
+        { name: 'person', type: 'enum', options: ['Mira', 'Tobin'] },
+        { name: 'item', type: 'text', placeholder: 'what to raise' },
+      ],
+    },
+    {
+      name: 'todo',
+      description: 'Add a to-do',
+      instruction: 'Add this to the to-do list.',
+      params: [
+        { name: 'text', type: 'text' },
+        {
+          name: 'priority',
+          type: 'number',
+          min: 1,
+          max: 4,
+          default: 2,
+          required: false,
+        },
+        {
+          name: 'labels',
+          type: 'enum',
+          multiple: true,
+          options: ['blocked', 'risky'],
+          required: false,
+        },
+      ],
+    },
+    {
+      name: 'park',
+      description: 'Park this thread',
+      instruction: 'Stop work on this thread until asked.',
+      params: [],
+    },
+  ],
+};
+
+const configHome = (text?: string) => {
+  const xdg = mkdtempSync(path.join(tmpdir(), 'operator-inbox-macros-'));
+  if (text !== undefined) {
+    mkdirSync(path.join(xdg, CONFIG_DIR_NAME));
+    writeFileSync(path.join(xdg, CONFIG_DIR_NAME, MACROS_FILE), text);
+  }
+  return xdg;
+};
+
+const under =
+  (xdg: string) =>
+  <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices>) =>
+    effect.pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        envProvider({ XDG_CONFIG_HOME: xdg }),
+      ),
+      Effect.provide(NodeServices.layer),
+    );
+
+const printed = Effect.map(TestConsole.logLines, (lines) =>
+  lines.map(String).join('\n'),
+);
+
+describe('operator-inbox macros', () => {
+  it.effect(
+    'prints each macro, what it tells the agent and its parameters',
+    () =>
+      Effect.gen(function* () {
+        const xdg = configHome(JSON.stringify(FILE));
+        const report = yield* under(xdg)(readMacros);
+        const file = path.join(xdg, CONFIG_DIR_NAME, MACROS_FILE);
+        expect(renderMacros(report)).toBe(
+          [
+            '/agenda — Add an item to someone’s agenda',
+            '  tells the agent: Add the item to the named person’s agenda.',
+            '    Do not message them.',
+            '  person    one of: Mira, Tobin',
+            '  item      text (what to raise)',
+            '/todo — Add a to-do',
+            '  tells the agent: Add this to the to-do list.',
+            '  text      text',
+            '  priority  number 1 to 4, default 2, optional',
+            '  labels    any of: blocked, risky, optional',
+            '/park — Park this thread',
+            '  tells the agent: Stop work on this thread until asked.',
+            '  (no parameters)',
+            `3 macros in ${file}`,
+          ].join('\n'),
+        );
+      }),
+  );
+
+  it.effect('--json prints the path and the macros as the file has them', () =>
+    Effect.gen(function* () {
+      const xdg = configHome(JSON.stringify(FILE));
+      yield* under(xdg)(
+        Command.runWith(macrosCommand, { version: '0.0.0' })(['--json']),
+      );
+      expect(JSON.parse(yield* printed)).toEqual({
+        path: path.join(xdg, CONFIG_DIR_NAME, MACROS_FILE),
+        macros: FILE.macros,
+      });
+    }),
+  );
+
+  it.effect('no file is no macros, and not a failure', () =>
+    Effect.gen(function* () {
+      const report = yield* under(configHome())(readMacros);
+      expect(report.exists).toBe(false);
+      expect(report.macros).toEqual([]);
+      expect(renderMacros(report)).toMatch(
+        /^no macros: there is no .*macros\.json, so \/ in the answer box simply types$/,
+      );
+    }),
+  );
+
+  it.effect('a file that does not decode fails, saying why', () =>
+    Effect.gen(function* () {
+      const bad = yield* Effect.flip(
+        under(
+          configHome(
+            JSON.stringify({ macros: [FILE.macros[2], FILE.macros[2]] }),
+          ),
+        )(readMacros),
+      );
+      expect(bad.message).toContain('macros.1.name — /park is named twice');
+      const notJson = yield* Effect.flip(
+        under(configHome('{ macros: '))(readMacros),
+      );
+      expect(notJson.message).toContain('is not valid JSON');
+    }),
+  );
+});
+
+describe('serve’s macros file', () => {
+  it.effect(
+    'answers no file with its path and no text, and a file as it is',
+    () =>
+      Effect.gen(function* () {
+        const none = configHome();
+        expect(yield* under(none)(readMacrosFile())).toEqual({
+          path: path.join(none, CONFIG_DIR_NAME, MACROS_FILE),
+          text: null,
+        });
+        // Not decoded here: a bad file is the page's to report.
+        const bad = configHome('{ not json');
+        expect((yield* under(bad)(readMacrosFile())).text).toBe('{ not json');
+      }),
+  );
+
+  it.effect('fails a file that is there and cannot be read', () =>
+    Effect.gen(function* () {
+      const xdg = configHome();
+      mkdirSync(path.join(xdg, CONFIG_DIR_NAME, MACROS_FILE), {
+        recursive: true,
+      });
+      const read = yield* Effect.result(under(xdg)(readMacrosFile()));
+      expect(Result.isFailure(read) && read.failure._tag).toBe(
+        'MacrosUnreadable',
+      );
+    }),
+  );
+});
+
+const ID = InboxId.make('01INBOXMACROAAAAAAAAAAAAAA');
+
+const provide = <A, E>(effect: Effect.Effect<A, E, InboxLog>) =>
+  effect.pipe(Effect.provide(InboxLogInMemory));
+
+const opened = Effect.gen(function* () {
+  yield* dispatchOpen({
+    session: Option.some({ sessionId: SessionId.make('s'), cwd: '/w/app' }),
+    inbox: Option.none(),
+    label: Option.some('app'),
+    freshId: ID,
+    cwd: '/w',
+  });
+  yield* dispatchAsk({
+    inboxId: ID,
+    title: 'What next?',
+    body: 'The checklist is drafted.',
+  });
+});
+
+const answer = (
+  response: string,
+  macros: ReadonlyArray<MacroInvoked>,
+  deferred?: true,
+) =>
+  decideAndAppend(ID, (state) =>
+    Result.map(
+      decideAnswer(state, {
+        inboxId: ID,
+        number: QuestionNumber.make(1),
+        response,
+        macros,
+        ...(deferred === undefined ? {} : { deferred }),
+      }),
+      (event) => ({ events: [event], result: undefined }),
+    ),
+  );
+
+const AGENDA: MacroInvoked = {
+  macro: 'agenda',
+  instruction:
+    'Add the item to the named person’s agenda.\nDo not message them.',
+  args: { person: 'Mira', item: null },
+};
+const LABEL: MacroInvoked = {
+  macro: 'label',
+  instruction: 'Apply these labels.',
+  args: { labels: ['blocked', 'risky'], weight: 2 },
+};
+const PARK: MacroInvoked = {
+  macro: 'park',
+  instruction: 'Stop work on this thread until asked.',
+  args: {},
+};
+
+describe('answers with macros', () => {
+  it.effect('prints a block per macro after the response, in order', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* answer('Go ahead with the rota first.', [AGENDA, LABEL, PARK]);
+        expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+          [
+            '#1 What next?',
+            '  Go ahead with the rota first.',
+            '  MACRO 1 of 3: /agenda',
+            '    instruction: Add the item to the named person’s agenda.',
+            '      Do not message them.',
+            '    person = "Mira"',
+            '    item = null',
+            '  MACRO 2 of 3: /label',
+            '    instruction: Apply these labels.',
+            '    labels = ["blocked","risky"]',
+            '    weight = 2',
+            '  MACRO 3 of 3: /park',
+            '    instruction: Stop work on this thread until asked.',
+            '    (no parameters)',
+          ].join('\n'),
+        );
+        const json = JSON.parse(
+          yield* dispatchAnswers({ inboxId: ID, json: true }),
+        );
+        expect(json[0].macros).toStrictEqual([AGENDA, LABEL, PARK]);
+      }),
+    ),
+  );
+
+  it.effect('an answer of macros alone prints no empty line for its text', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* answer('', [PARK]);
+        expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+          [
+            '#1 What next?',
+            '  MACRO 1 of 1: /park',
+            '    instruction: Stop work on this thread until asked.',
+            '    (no parameters)',
+          ].join('\n'),
+        );
+      }),
+    ),
+  );
+
+  it.effect('a deferral carries its macros under its line', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* answer('', [PARK], true);
+        const text = yield* dispatchAnswers({ inboxId: ID, json: false });
+        expect(text.split('\n').slice(1, 3)).toEqual([
+          '  DEFERRED TO AGENT: you decide. Record what you chose and why.',
+          '  MACRO 1 of 1: /park',
+        ]);
+      }),
+    ),
+  );
+
+  it.effect('an answer with no macros has no block and no key', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* answer('Yes.', []);
+        expect(
+          yield* dispatchAnswers({ inboxId: ID, json: false }),
+        ).not.toContain('MACRO');
+        expect(
+          JSON.parse(yield* dispatchAnswers({ inboxId: ID, json: true }))[0],
+        ).not.toHaveProperty('macros');
+      }),
+    ),
+  );
+});

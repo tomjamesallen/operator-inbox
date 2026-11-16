@@ -50,7 +50,7 @@ The `@effect/language-service` plugin (`packages/typescript-config/base.json`) m
 
 ## Where things live
 
-- Config: `$XDG_CONFIG_HOME/operator-inbox/` (default `~/.config/operator-inbox/`): `config.json` (this machine's settings), `metadata.json` and `keybindings` (the user's preferences, which may be symlinks; the app only reads them).
+- Config: `$XDG_CONFIG_HOME/operator-inbox/` (default `~/.config/operator-inbox/`): `config.json` (this machine's settings), `metadata.json`, `keybindings` and `macros.json` (the user's preferences, which may be symlinks; the app only reads them).
 - Data: `$XDG_STATE_HOME/operator-inbox/` (default `~/.local/state/operator-inbox/`).
 - The launch agent: `~/Library/LaunchAgents/com.operator-inbox.serve.plist`, rendered per machine by `scripts/setup.sh` and never tracked; its log is `$XDG_STATE_HOME/operator-inbox/serve.log`.
 - Nothing is read from or written to the checkout at run time. The web build and the CLI's assets are found relative to the CLI package.

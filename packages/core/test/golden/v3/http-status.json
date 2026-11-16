@@ -9,6 +9,7 @@
     "InboxNotFound": 404,
     "InboxUnavailable": 503,
     "KeybindingsUnreadable": 500,
+    "MacrosUnreadable": 500,
     "MuteRefused": 409,
     "OpenSessionRefused": 409,
     "PinRefused": 409,
@@ -265,6 +266,22 @@
         ],
         "500": [
           "KeybindingsUnreadable"
+        ]
+      }
+    },
+    {
+      "endpoint": "macros.read",
+      "method": "GET",
+      "path": "/api/macros",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ],
+        "500": [
+          "MacrosUnreadable"
         ]
       }
     }

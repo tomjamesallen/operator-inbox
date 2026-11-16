@@ -9,6 +9,8 @@ import {
   chordCaps,
   KEYMAP_ACTIONS,
   KEYMAP_SECTIONS,
+  keysLabel,
+  MACRO_KEYS,
   sequenceText,
   WIDGET_KEYS,
 } from '@operator-inbox/core/keymap';
@@ -22,6 +24,7 @@ import {
   keymapPendingAtom,
   keymapSourceAtom,
 } from '../keymap';
+import { macrosSourceAtom } from '../macros';
 import { dim, label, modalField, modalPanel } from './styles';
 
 // The key bindings, as the keymap holds them now: every action by section,
@@ -114,6 +117,38 @@ const Source = () => {
   );
 };
 
+// Where the macros came from: the file, none, or why it cannot be used, as
+// `Source` says it for the keybindings.
+const MacrosSource = () => {
+  const source = useAtomValue(macrosSourceAtom);
+  return (
+    <div className={`mt-s1 text-11.5 ${dim}`} data-testid="macros-source">
+      {source._tag === 'Loading' && <p>Reading your macros file…</p>}
+      {source._tag === 'Failed' && (
+        <p className="text-red" role="alert">
+          No macros, since your macros file cannot be used: {source.message}
+        </p>
+      )}
+      {source._tag === 'None' && (
+        <p>
+          No macros. To add some, write{' '}
+          <code className="text-fg/70">{source.path}</code>, then Ctrl+R or
+          reload.
+        </p>
+      )}
+      {source._tag === 'Loaded' && (
+        <p>
+          {source.macros.length === 0
+            ? 'No macros'
+            : source.macros.map((m) => `/${m.name}`).join(', ')}{' '}
+          from <code className="text-fg/70">{source.path}</code>. Edit it, then
+          Ctrl+R or reload.
+        </p>
+      )}
+    </div>
+  );
+};
+
 // Every word of the query, anywhere in what a row says or in its keys.
 const matchesQuery = (query: string, ...texts: ReadonlyArray<string>) => {
   const haystack = texts.join(' ').toLowerCase();
@@ -146,6 +181,19 @@ export const KeymapHelp = () => {
   const widgets = WIDGET_KEYS.filter((w) =>
     matchesQuery(q, 'in place', w.what, w.where, w.keys),
   );
+  // The card's own keys, and the two of the keymap's that act in it, as
+  // the keymap binds them now.
+  const macroKeys = [
+    ...MACRO_KEYS,
+    {
+      keys: keysLabel(keymap, 'toggle_macro_info') ?? 'unbound',
+      what: 'Show or hide what the macro tells the agent',
+    },
+    {
+      keys: keysLabel(keymap, 'send_response', 1) ?? 'unbound',
+      what: 'Send; with a required field empty, go to it first; again, send it as it is',
+    },
+  ].filter((k) => matchesQuery(q, 'macros', k.what, k.keys));
   return (
     <Dialog.Root
       open={open}
@@ -177,6 +225,32 @@ export const KeymapHelp = () => {
           />
           <div className="min-h-0 flex-1 overflow-y-auto px-s3 pb-s3">
             <Source />
+            {macroKeys.length > 0 && (
+              <section className="mt-s3" aria-label="Macros">
+                <h3 className={label}>Macros</h3>
+                <MacrosSource />
+                <table className="mt-s1 w-full border-collapse">
+                  <tbody>
+                    {macroKeys.map((k) => (
+                      <tr
+                        key={k.what}
+                        className="border-t border-fg/8 align-baseline"
+                      >
+                        <td className="py-0.75 pr-s2 text-fg/80">
+                          {k.what}
+                          <div className="text-10.5 text-fg/35">
+                            Answer box, macro card
+                          </div>
+                        </td>
+                        <td className="py-0.75 text-right text-11 whitespace-nowrap text-fg/70">
+                          {k.keys}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
             {sections.map(({ section, actions }) => (
               <section key={section} className="mt-s3" aria-label={section}>
                 <h3 className={label}>{section}</h3>
@@ -243,11 +317,13 @@ export const KeymapHelp = () => {
                 </table>
               </section>
             )}
-            {sections.length === 0 && widgets.length === 0 && (
-              <p className={`mt-s3 text-12 ${dim}`} data-keymap-no-match>
-                No key binding matches.
-              </p>
-            )}
+            {sections.length === 0 &&
+              widgets.length === 0 &&
+              macroKeys.length === 0 && (
+                <p className={`mt-s3 text-12 ${dim}`} data-keymap-no-match>
+                  No key binding matches.
+                </p>
+              )}
           </div>
         </Dialog.Popup>
       </Dialog.Portal>
