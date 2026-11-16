@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   A,
   answered,
+  B,
   board,
   box,
   mounted,
@@ -131,6 +132,22 @@ describe('attaching files to an answer', () => {
       ],
     });
     await waitFor(() => expect(chips()).toEqual([]));
+  });
+});
+
+describe('the attach line', () => {
+  it('keeps its place under a box that takes no files, with the link hidden', async () => {
+    await mounted(`/inbox/${B}`);
+    expect(document.querySelector('[data-zen-attach]')).not.toBeNull();
+    expect(document.querySelector('[data-zen-attach-space]')).toBeNull();
+    // Quarry has nothing with the agent, so the box there takes nothing.
+    await onQueue(/With the agent/);
+    await waitFor(() =>
+      expect(document.querySelector('[data-zen-attach]')).toBeNull(),
+    );
+    const space = document.querySelector('[data-zen-attach-space]');
+    expect(space?.className).toContain('invisible');
+    expect(space?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 

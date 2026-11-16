@@ -58,7 +58,7 @@ import {
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { listenOnAtom } from '../../readout/readout';
-import { AttachDrop, AttachRow } from './attachments';
+import { AttachDrop, AttachRow, AttachRowSpace } from './attachments';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
@@ -457,37 +457,43 @@ const PickBox = () => {
   const step = useAtomSet(stepAskAtom);
   const { cursor } = useAtomValue(askChoicesAtom);
   return (
-    <Frame>
-      <Box
-        value={query}
-        placeholder="Which inbox?"
-        onChange={setQuery}
-        combobox={{
-          active:
-            cursor === undefined ? undefined : pickChoiceId(cursor.inboxId),
-        }}
-        onKeyDown={(e) => {
-          // ⌘↑ and ⌘↓ are the keymap's, which does the same.
-          if (e.metaKey) return;
-          if (e.key === 'ArrowDown') step(1);
-          else if (e.key === 'ArrowUp') step(-1);
-          else if (e.key === 'Escape') send({ type: 'AskClosed' });
-          else if (e.key === 'Enter' && cursor !== undefined)
-            pick(cursor.inboxId);
-          else return;
-          e.preventDefault();
-        }}
-      />
-      <Actions label="Ask" ready={false} />
-    </Frame>
+    <>
+      <Frame>
+        <Box
+          value={query}
+          placeholder="Which inbox?"
+          onChange={setQuery}
+          combobox={{
+            active:
+              cursor === undefined ? undefined : pickChoiceId(cursor.inboxId),
+          }}
+          onKeyDown={(e) => {
+            // ⌘↑ and ⌘↓ are the keymap's, which does the same.
+            if (e.metaKey) return;
+            if (e.key === 'ArrowDown') step(1);
+            else if (e.key === 'ArrowUp') step(-1);
+            else if (e.key === 'Escape') send({ type: 'AskClosed' });
+            else if (e.key === 'Enter' && cursor !== undefined)
+              pick(cursor.inboxId);
+            else return;
+            e.preventDefault();
+          }}
+        />
+        <Actions label="Ask" ready={false} />
+      </Frame>
+      <AttachRowSpace />
+    </>
   );
 };
 
 const NoBox = () => (
-  <Frame>
-    <Box value="" placeholder="" disabled onChange={() => undefined} />
-    <Actions label="Send" ready={false} />
-  </Frame>
+  <>
+    <Frame>
+      <Box value="" placeholder="" disabled onChange={() => undefined} />
+      <Actions label="Send" ready={false} />
+    </Frame>
+    <AttachRowSpace />
+  </>
 );
 
 /** The list of Inboxes to ask in, where the question would be. */
