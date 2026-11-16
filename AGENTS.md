@@ -14,7 +14,7 @@ A pnpm and Turborepo monorepo:
 
 The skill an agent reads is `apps/cli/assets/SKILL.md`, printed by `operator-inbox skill`.
 
-`scripts/setup.sh` (`pnpm run setup`; bare `pnpm setup` is pnpm's own command) sets the app up on a machine and rebuilds it: install, build, link the bin, the launch agent that runs `serve`, and the hooks. Its usage is in its header comment and in `README.md`.
+`scripts/setup.sh` (`pnpm run setup`; bare `pnpm setup` is pnpm's own command) sets the app up on a machine and rebuilds it: install, build, link the bin, the launch agent that runs `serve`, and the hooks. Its `rebuild` mode installs and builds only, and touches a launch agent only when it is already loaded: it restarts it and keeps its plist as installed, except that a `node` the plist names that no longer exists is replaced, that path alone, with this shell's `node`, and the agent reloaded. It never points the agent at the checkout it runs from. After restarting it, it checks the server answers and exits non-zero, naming the log the installed plist writes, when it does not. Its usage is in its header comment and in `README.md`.
 
 ## The stack
 

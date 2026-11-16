@@ -22,7 +22,7 @@ bash scripts/setup.sh
 
 Options:
 
-- `bash scripts/setup.sh rebuild` installs and builds, then restarts the server only if its launch agent is already loaded. It never installs the hooks and never starts an agent that is not loaded, so it is the one to run after a `git pull`, by hand or from an external sync job.
+- `bash scripts/setup.sh rebuild` installs and builds, then, only if the server's launch agent is already loaded, restarts it onto the new build and checks it answers, exiting non-zero and naming the log the installed plist writes when it does not. It keeps the installed plist as it is, so the agent goes on running the checkout, store and environment it was set up with, whichever shell or checkout runs `rebuild` (run from a checkout the agent does not run, it says so). The one change it makes: when the `node` the plist names no longer exists (an upgrade moved it), it replaces that path with the `node` on this shell's PATH, keeps every other byte, and reloads the agent. If the agent then fails to load, it says the `launchctl bootstrap` command that loads it and exits non-zero. It never installs the hooks and never starts an agent that is not loaded, so it is the one to run after a `git pull`, by hand or from an external sync job.
 - `--no-hooks` leaves `~/.claude/settings.json` alone.
 - `--dry-run` prints every action, and the plist it would write, and changes nothing.
 

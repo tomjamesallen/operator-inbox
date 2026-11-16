@@ -9,14 +9,20 @@
 # `operator-inbox serve` and (re)load it, install the Claude Code hooks
 # (unless --no-hooks), then check the server answers.
 #
-# rebuild: install the dependencies, build, and restart the launch agent only
-# if it is already loaded. It never installs hooks and never loads an agent
-# that is not loaded, so an external sync job can run it after a pull.
+# rebuild: install the dependencies, build, and, only if the launch agent is
+# already loaded, restart it and check the server answers, exiting non-zero
+# when it does not. The installed plist is kept as it is, with one exception:
+# when the node it names no longer exists (an upgrade moved it), that one path
+# is replaced with this shell's node, every other byte kept, and the agent
+# reloaded. So it never points the agent at a different checkout, store or
+# environment, whatever shell or checkout runs it. It never installs hooks
+# and never loads an agent that is not loaded, so an external sync job can
+# run it after a pull.
 #
 # --dry-run prints every action and changes nothing.
 #
-# Safe to re-run: the launch agent's plist is rendered for this machine on
-# every run and is rewritten and reloaded only when it differs from the one
+# Safe to re-run: all renders the launch agent's plist for this machine on
+# every run and rewrites and reloads it only when it differs from the one
 # installed; otherwise a loaded agent is just restarted onto the new build.
 #
 # Overrides, mostly for testing the script without touching the machine:
@@ -46,7 +52,7 @@ PNPM_LINK="${OPERATOR_INBOX_PNPM_LINK:-pnpm}"
 DOMAIN="gui/$(id -u)"
 
 usage() {
-  sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 MODE=all
@@ -139,8 +145,10 @@ xml_escape() {
 # PATH for the agent: node's own folder, the folder of any tool serve spawns
 # (Herdr, for the Inbox machines), then the system folders.
 agent_path() {
+  # The tools serve spawns, one entry each.
+  local tools=(herdr)
   local dirs=("$(dirname "$NODE")") tool dir out="" d
-  for tool in herdr; do
+  for tool in "${tools[@]}"; do
     if dir="$(command -v "$tool" 2>/dev/null)"; then
       dirs+=("$(dirname "$dir")")
     fi
@@ -210,54 +218,193 @@ is_loaded() {
 }
 
 AGENT_RUNNING=0
+# The log the agent writes: this shell's, unless rebuild finds the installed
+# plist names another.
+AGENT_LOG="$LOG_FILE"
+
+# Render the plist into "$1" and lint it.
+render_checked() {
+  render_plist >"$1"
+  plutil -lint -s "$1" >/dev/null || {
+    echo "setup: the rendered launch agent plist does not lint:" >&2
+    plutil -lint "$1" >&2 || true
+    exit 1
+  }
+}
+
+# Is the installed plist the one rendered into "$1"?
+plist_current() {
+  [[ -f "$PLIST" ]] && cmp -s "$1" "$PLIST"
+}
+
+# Install the plist rendered into "$1", or under --dry-run show it.
+write_plist() {
+  if ((DRY_RUN)); then
+    say "would write $PLIST:"
+    sed 's/^/    /' "$1"
+  else
+    mkdir -p "$LAUNCH_AGENTS_DIR"
+    cp "$1" "$PLIST"
+    say "wrote $PLIST"
+  fi
+}
+
+# Load the agent from its plist. Just after a bootout, launchd can refuse a
+# bootstrap for a moment (error 5, an input/output error), so it is tried a few
+# times. If it never loads, say the one command that loads it and stop.
+load_agent() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if run "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST"; then
+      return 0
+    fi
+    if ((attempt < 5)); then
+      say "bootstrap failed; trying again"
+      sleep 1
+    fi
+  done
+  echo "setup: the launch agent $LABEL is not loaded; load it with: launchctl bootstrap $DOMAIN $(printf '%q' "$PLIST")" >&2
+  exit 1
+}
+
+# Unload the agent, then load it again from its plist.
+reload_agent() {
+  run "$LAUNCHCTL" bootout "$DOMAIN/$LABEL"
+  load_agent
+}
 
 setup_agent() {
   local rendered
   rendered="$(mktemp "${TMPDIR:-/tmp}/operator-inbox-plist.XXXXXX")"
   # shellcheck disable=SC2064 # expand now: the path is local to this function
   trap "rm -f '$rendered'" RETURN
-  render_plist >"$rendered"
-  plutil -lint -s "$rendered" >/dev/null || {
-    echo "setup: the rendered launch agent plist does not lint:" >&2
-    plutil -lint "$rendered" >&2 || true
-    exit 1
-  }
+  render_checked "$rendered"
 
-  if [[ -f "$PLIST" ]] && cmp -s "$rendered" "$PLIST"; then
+  if plist_current "$rendered"; then
     say "launch agent plist $PLIST is up to date"
     if is_loaded; then
       run "$LAUNCHCTL" kickstart -k "$DOMAIN/$LABEL"
       note "launch agent $LABEL restarted onto the new build"
     else
-      run "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST"
+      load_agent
       note "launch agent $LABEL loaded"
     fi
   else
-    if ((DRY_RUN)); then
-      say "would write $PLIST:"
-      sed 's/^/    /' "$rendered"
-    else
-      mkdir -p "$LAUNCH_AGENTS_DIR"
-      cp "$rendered" "$PLIST"
-      say "wrote $PLIST"
-    fi
+    write_plist "$rendered"
     if is_loaded; then
-      run "$LAUNCHCTL" bootout "$DOMAIN/$LABEL"
+      reload_agent
+    else
+      load_agent
     fi
-    run "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST"
     note "launch agent $LABEL written and loaded ($PLIST)"
   fi
   AGENT_RUNNING=1
 }
 
-restart_agent_if_loaded() {
-  if is_loaded; then
+# The node a plist runs: the first string of its ProgramArguments, in the
+# layout render_plist writes. Empty when it is not in that layout.
+plist_node() {
+  awk '
+    /<key>ProgramArguments<\/key>/ { args = 1; next }
+    args && /<string>.*<\/string>/ {
+      sub(/^[^<]*<string>/, ""); sub(/<\/string>[[:space:]]*$/, "")
+      gsub(/&lt;/, "<"); gsub(/&gt;/, ">"); gsub(/&amp;/, "\\&")
+      print; exit
+    }
+  ' "$1"
+}
+
+# The string a plist gives key "$2", in the layout render_plist writes (the
+# <string> on the line after the <key>). Empty when it has none.
+plist_string() {
+  KEY="$2" awk '
+    want && /<string>.*<\/string>/ {
+      sub(/^[^<]*<string>/, ""); sub(/<\/string>[[:space:]]*$/, "")
+      gsub(/&lt;/, "<"); gsub(/&gt;/, ">"); gsub(/&amp;/, "\\&")
+      print; exit
+    }
+    { want = ($0 ~ ("<key>" ENVIRON["KEY"] "</key>")) }
+  ' "$1"
+}
+
+# The entry a plist runs: the second string of its ProgramArguments.
+plist_entry() {
+  awk '
+    /<key>ProgramArguments<\/key>/ { args = 1; next }
+    args && /<string>.*<\/string>/ {
+      if (++n == 2) {
+        sub(/^[^<]*<string>/, ""); sub(/<\/string>[[:space:]]*$/, "")
+        gsub(/&lt;/, "<"); gsub(/&gt;/, ">"); gsub(/&amp;/, "\\&")
+        print; exit
+      }
+    }
+  ' "$1"
+}
+
+# Write into "$2" the plist "$1" with only its node line changed, to this
+# shell's node; every other line is copied as it is.
+swap_node() {
+  SWAP_NODE="$(xml_escape "$NODE")" awk '
+    /<key>ProgramArguments<\/key>/ { args = 1; print; next }
+    args && !done && /<string>.*<\/string>/ {
+      match($0, /^[^<]*/)
+      printf "%s<string>%s</string>\n", substr($0, 1, RLENGTH), ENVIRON["SWAP_NODE"]
+      done = 1; next
+    }
+    { print }
+  ' "$1" >"$2"
+}
+
+# rebuild: a loaded agent is restarted onto the new build, from the plist it
+# was loaded with. The plist is changed only when the node it names is gone,
+# and then only that path. An agent that is not loaded is left alone.
+rebuild_agent() {
+  if ! is_loaded; then
+    say "launch agent $LABEL is not loaded; left alone (run setup.sh to install it)"
+    note "launch agent not loaded, so not restarted"
+    return
+  fi
+  local installed_node installed_entry
+  if [[ -f "$PLIST" ]]; then
+    installed_node="$(plist_node "$PLIST")"
+    installed_entry="$(plist_entry "$PLIST")"
+    local log
+    log="$(plist_string "$PLIST" StandardOutPath)"
+    [[ -n "$log" ]] || log="$(plist_string "$PLIST" StandardErrorPath)"
+    [[ -n "$log" ]] && AGENT_LOG="$log"
+  else
+    say "warning: launch agent $LABEL is loaded but $PLIST is missing; restarting it as loaded (run setup.sh to write it)"
+    installed_node=""
+    installed_entry=""
+  fi
+  if [[ -n "$installed_entry" && "$installed_entry" != "$ENTRY" ]]; then
+    say "launch agent $LABEL runs $installed_entry, not this checkout's build; it is restarted onto that one, and left pointing at it"
+    note "launch agent runs $installed_entry, not this checkout"
+  fi
+
+  if [[ -z "$installed_node" ]] || [[ -f "$installed_node" && -x "$installed_node" ]]; then
     run "$LAUNCHCTL" kickstart -k "$DOMAIN/$LABEL"
     note "launch agent $LABEL restarted onto the new build"
   else
-    say "launch agent $LABEL is not loaded; left alone (run setup.sh to install it)"
-    note "launch agent not loaded, so not restarted"
+    say "launch agent plist $PLIST names node $installed_node, which is gone; pointing it at $NODE"
+    local swapped
+    swapped="$(mktemp "${TMPDIR:-/tmp}/operator-inbox-plist.XXXXXX")"
+    # shellcheck disable=SC2064 # expand now: the path is local to this function
+    trap "rm -f '$swapped'" RETURN
+    swap_node "$PLIST" "$swapped"
+    if [[ "$(plist_node "$swapped")" != "$NODE" ]]; then
+      echo "setup: could not replace the node in $PLIST; left it alone (run setup.sh to rewrite it)" >&2
+      exit 1
+    fi
+    if command -v plutil >/dev/null 2>&1 && ! plutil -lint -s "$swapped" >/dev/null; then
+      echo "setup: $PLIST with its node replaced does not lint; left it alone (run setup.sh to rewrite it)" >&2
+      exit 1
+    fi
+    write_plist "$swapped"
+    reload_agent
+    note "launch agent $LABEL plist pointed at node $NODE, and the agent reloaded ($PLIST)"
   fi
+  AGENT_RUNNING=1
 }
 
 if [[ "$(uname -s)" != Darwin ]]; then
@@ -271,7 +418,7 @@ elif [[ "$MODE" == all ]]; then
   fi
   setup_agent
 else
-  restart_agent_if_loaded
+  rebuild_agent
 fi
 
 # --- Hooks -----------------------------------------------------------------
@@ -290,7 +437,9 @@ fi
 
 # --- Answer check ----------------------------------------------------------
 
-if [[ "$MODE" == all ]] && ((AGENT_RUNNING)); then
+# Whether serve answered after a restart; rebuild fails when it did not (below).
+answered=1
+if ((AGENT_RUNNING)); then
   if ((DRY_RUN)); then
     say "would check $HEALTH_URL answers"
   else
@@ -305,7 +454,7 @@ if [[ "$MODE" == all ]] && ((AGENT_RUNNING)); then
     if ((answered)); then
       note "serve answers at $HEALTH_URL"
     else
-      note "serve did NOT answer at $HEALTH_URL yet; see $LOG_FILE"
+      note "serve did NOT answer at $HEALTH_URL yet; see $AGENT_LOG"
     fi
   fi
 fi
@@ -315,3 +464,11 @@ say "summary${DRY_LABEL:+ (dry run: nothing changed)}:"
 for line in "${SUMMARY[@]}"; do
   printf '  - %s\n' "$line"
 done
+
+# rebuild is what an unattended sync job runs, so a restart onto a build that
+# does not answer is a failure it must see. all leaves it as a summary note:
+# a person reads that summary, and the hooks and bin it set up stand anyway.
+if [[ "$MODE" == rebuild ]] && ((!answered)); then
+  echo "setup: serve did not answer at $HEALTH_URL after the restart; read $AGENT_LOG" >&2
+  exit 1
+fi
