@@ -178,7 +178,7 @@ const List = () => {
 };
 
 const Foot = () => (
-  <div className="flex shrink-0 flex-wrap items-baseline justify-end gap-x-s3 px-s3 py-s2">
+  <div className="flex shrink-0 flex-wrap items-baseline justify-start gap-x-s3 px-s3 py-s2">
     <a
       href="https://www.tomjamesallen.co.uk/"
       target="_blank"
