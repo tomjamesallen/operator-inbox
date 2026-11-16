@@ -17,6 +17,7 @@ import {
   type ReaderItem,
   shownQueuesAtom,
 } from '../inbox-reader';
+import { followHandsOffAtom } from './follow';
 import { jumpFrom } from './locate';
 import {
   type PlayerSnapshot,
@@ -462,6 +463,9 @@ export const jumpAtom = Atom.writable(
     if (lit === undefined) return;
     const target = jumpFrom(lit.ready.segments, ctx.get(readoutTimeAtom), by);
     if (target === undefined) return;
+    // A jump is the operator asking to see that paragraph: following takes
+    // the scroll back from them.
+    ctx.set(followHandsOffAtom, false);
     ctx.set(
       playerAtoms.send,
       ctx.get(playerStateAtom) === 'playing'

@@ -170,13 +170,13 @@ const Cursor = ({
     hidden || s === undefined || w === undefined
       ? undefined
       : measure(root, ready, script.segments, s, w);
-  const playing = state === 'playing';
   // The escape hatch: the list scrolls to follow the cursor each time it
-  // moves to another word while it plays, by the word's box or a described
-  // block's, measured on the page.
+  // moves to another word, by the word's box or a described block's,
+  // measured on the page: as it plays, and when a paragraph jump moves it
+  // while paused.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the cursor moving should scroll, not each frame's redraw
   useEffect(() => {
-    if (!playing || d === undefined) return;
+    if (d === undefined) return;
     const box = d.kind === 'described' ? d.block : (d.word[0] ?? d.sentence[0]);
     if (box === undefined) return;
     const origin = root.getBoundingClientRect().top;
@@ -189,7 +189,7 @@ const Cursor = ({
       origin + box.top,
       origin + box.top + box.height,
     );
-  }, [key, playing]);
+  }, [key]);
   return d === undefined ? null : <Band d={d} />;
 };
 

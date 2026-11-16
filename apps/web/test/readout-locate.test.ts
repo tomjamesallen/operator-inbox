@@ -143,9 +143,10 @@ describe('a described block’s box', () => {
 
 describe('following the reading', () => {
   const zone = { top: 40, bottom: 640, margin: 150 };
-  it('moves nothing inside the catch zone, and just enough at its edges', () => {
+  it('moves nothing inside the catch zone, and turns the page at its edges', () => {
     expect(followBy(zone, 300, 320)).toBe(0);
-    expect(followBy(zone, 500, 520)).toBe(30);
+    // At the low edge: the line jumps up to the high edge, not just inside.
+    expect(followBy(zone, 500, 520)).toBe(310);
     expect(followBy(zone, 100, 120)).toBe(-90);
     // Taller than the zone: its top is held at the high edge.
     expect(followBy(zone, 400, 1400)).toBe(210);

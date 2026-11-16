@@ -2,9 +2,11 @@ import { Atom } from 'effect/reactivity';
 
 // The list scrolls to follow the text being read, inside a catch zone:
 // nothing moves while the cursor is comfortably on screen; once it comes
-// within `margin` of the top or the bottom of the reading area (under the
-// header, over the answer box), the list scrolls just enough to hold it at
-// that edge, so it is carried along line by line. A wheel or a touch on the
+// within `margin` of the bottom of the reading area (over the answer box),
+// the list turns the page: one smooth jump that brings the line being read up
+// to `margin` under the top (under the header), so the eye reads on down a
+// fresh screen rather than chasing text that creeps up line by line. Text
+// above the zone is brought down to the same place. A wheel or a touch on the
 // list hands the scroll to the operator until the text being read is back in
 // the reading area, by their scrolling or by the reading reaching it.
 
@@ -62,19 +64,15 @@ export const zoneOf = (doc: Document): Zone | undefined => {
 };
 
 /**
- * How far to scroll to keep the span `top`–`bottom` (client pixels) inside
- * the catch zone: 0 while it is comfortably inside. A span taller than the
- * zone keeps its top at the high edge. Pure.
+ * How far to scroll for the span `top`–`bottom` (client pixels): 0 while it
+ * is comfortably inside the catch zone; once it reaches the zone's low edge,
+ * or is above its high edge, far enough to put its top at the high edge (a
+ * page turn). Pure.
  */
 export const followBy = (zone: Zone, top: number, bottom: number): number => {
   const low = zone.bottom - zone.margin;
   const high = zone.top + zone.margin;
-  const by =
-    bottom > low
-      ? Math.min(bottom - low, top - high)
-      : top < high
-        ? top - high
-        : 0;
+  const by = bottom > low || top < high ? top - high : 0;
   return Math.abs(by) < 1 ? 0 : by;
 };
 
