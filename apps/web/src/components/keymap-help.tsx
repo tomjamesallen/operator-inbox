@@ -181,13 +181,17 @@ export const KeymapHelp = () => {
   const widgets = WIDGET_KEYS.filter((w) =>
     matchesQuery(q, 'in place', w.what, w.where, w.keys),
   );
-  // The card's own keys, and the two of the keymap's that act in it, as
+  // The card's own keys, and the three of the keymap's that act in it, as
   // the keymap binds them now.
   const macroKeys = [
     ...MACRO_KEYS,
     {
       keys: keysLabel(keymap, 'toggle_macro_info') ?? 'unbound',
       what: 'Show or hide what the macro tells the agent',
+    },
+    {
+      keys: keysLabel(keymap, 'undo_card_removal') ?? 'unbound',
+      what: 'Bring back the card last removed, while nothing is typed since',
     },
     {
       keys: keysLabel(keymap, 'send_response', 1) ?? 'unbound',

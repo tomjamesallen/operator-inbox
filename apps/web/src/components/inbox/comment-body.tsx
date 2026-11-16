@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
 } from 'react';
+import { removeCardAtom } from '../../card-undo';
 import { copyText } from '../../clipboard';
 import {
   commentAt,
@@ -23,7 +24,6 @@ import {
   litCommentAtom,
   type Point,
   readCommentSelection,
-  removeCommentAtom,
 } from '../../comments';
 import { commentHereAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
@@ -195,7 +195,8 @@ export const CommentableBody = ({
   const hover = useAtomSet(hoverCommentAtom);
   const commentHere = useAtomSet(commentHereAtom);
   const edit = useAtomSet(editCommentAtom);
-  const remove = useAtomSet(removeCommentAtom);
+  // Kept to undo, as the card's × is (`card-undo.ts`).
+  const remove = useAtomSet(removeCardAtom);
   const ref = useBodyRef(itemKey);
   // Measured while drawing: the body's layout is the previous commit's, and
   // a change of its size draws again (`commentBodyAtom`).
@@ -301,7 +302,10 @@ export const CommentableBody = ({
                   className={MENU_ITEM}
                   onClick={() => {
                     if (here.commentId !== undefined)
-                      remove({ key: itemKey, id: here.commentId });
+                      remove({
+                        key: itemKey,
+                        card: { _tag: 'Comment', id: here.commentId },
+                      });
                   }}
                 >
                   Remove comment {numberOf(here.commentId)}

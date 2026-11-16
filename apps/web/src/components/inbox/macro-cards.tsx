@@ -21,11 +21,8 @@ import {
   missingMacroParams,
 } from '@operator-inbox/core/api';
 import type { KeyboardEvent } from 'react';
-import {
-  commentStop,
-  commentsInOrderAtom,
-  removeCommentAtom,
-} from '../../comments';
+import { removeCardAtom } from '../../card-undo';
+import { commentStop, commentsInOrderAtom } from '../../comments';
 import { boxFocusAskedAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
 import {
@@ -489,7 +486,8 @@ export const MacroCards = ({
 }) => {
   const [cards, setCards] = useAtom(macroCardsAtom(itemKey));
   const comments = useAtomValue(commentsInOrderAtom(itemKey));
-  const removeComment = useAtomSet(removeCommentAtom);
+  // A removal is kept to undo (`card-undo.ts`).
+  const removeCard = useAtomSet(removeCardAtom);
   const heldOn = useAtomValue(macroHeldAtom(itemKey));
   const askFocus = useAtomSet(askMacroFocusAtom);
   const bumpBoxFocus = useAtomSet(boxFocusAskedAtom);
@@ -533,7 +531,7 @@ export const MacroCards = ({
           comment={c}
           number={at + 1}
           remove={() => {
-            removeComment({ key: itemKey, id: c.id });
+            removeCard({ key: itemKey, card: { _tag: 'Comment', id: c.id } });
             focusAfter(at);
           }}
         />
@@ -546,7 +544,10 @@ export const MacroCards = ({
           held={held}
           setArg={(name, v) => write(withArg(cards, card.id, name, v))}
           remove={() => {
-            write(cards.filter((c) => c.id !== card.id));
+            removeCard({
+              key: itemKey,
+              card: { _tag: 'Macro', id: card.id, inboxId, number },
+            });
             focusAfter(comments.length + at);
           }}
         />

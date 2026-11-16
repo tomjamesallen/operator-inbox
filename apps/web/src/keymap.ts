@@ -12,6 +12,7 @@ import {
 import { Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
+import { undoableRemovalAtom, undoCardRemovalAtom } from './card-undo';
 import { readCommentSelection } from './comments';
 import { failureText } from './failure';
 import {
@@ -545,6 +546,20 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (dialogOpen(get) || card === undefined) return false;
     const open = get.once(macroInfoOpenAtom);
     get.set(macroInfoOpenAtom, toggledIn(open, card, !open.includes(card)));
+    return true;
+  },
+  // Newest first across the answer box: a card removal with nothing done to
+  // the answer since comes back, whatever history the focused field has from
+  // before it; after an edit the press is the browser's (`card-undo.ts`).
+  // Another field, and a modal, keep it.
+  undo_card_removal: (get, e, binding) => {
+    if (dialogOpen(get) || otherFieldKeeps(binding, e)) return false;
+    const snapshot = get.once(readerSnapshotAtom);
+    const composer = snapshot === undefined ? undefined : composerOf(snapshot);
+    if (composer?._tag !== 'Answer' && composer?._tag !== 'Held') return false;
+    const { key } = composer.item;
+    if (get.once(undoableRemovalAtom(key)) === undefined) return false;
+    get.set(undoCardRemovalAtom, { key });
     return true;
   },
   // `c` with nothing held is a letter, so any field keeps it; ⌘⌥M is a chord,

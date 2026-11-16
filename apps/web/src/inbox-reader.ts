@@ -16,6 +16,7 @@ import { Effect, Exit, Option } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
+import { cardRemovalsAtom } from './card-undo';
 import { clockAtom, nowMillis } from './clock';
 import {
   type Anchor,
@@ -843,6 +844,8 @@ const answerWriteAtom = Atom.family((key: string) =>
               registry.set(macroHeldAtom(key), undefined);
               // And the comments; a failed send keeps them too.
               registry.set(commentsAtom(key), []);
+              // Nothing removed from it can come back now.
+              registry.set(cardRemovalsAtom(key), []);
               const { target } = registry.get(linkTargetAtom);
               if (
                 target?.inboxId === inboxId &&
