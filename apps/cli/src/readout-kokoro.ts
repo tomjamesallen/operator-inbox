@@ -20,6 +20,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { readHome } from './home-dir';
 import { assetsDirOf, moduleDir } from './package-paths';
 import {
+  type ReadoutPace,
   ReadoutVoiceError,
   type ReadoutVoiceService,
   type SpokenScript,
@@ -57,6 +58,10 @@ const READY_WITHIN = Duration.minutes(10);
 // than this is taken as hung, and the child is stopped.
 const SPOKEN_WITHIN = Duration.minutes(10);
 const STDERR_TAIL = 20;
+// The child holds the model, about 800 MB, for as long as it runs. Left idle
+// this long, it is stopped, and the next request starts it again (a few
+// seconds to load the model).
+export const READOUT_IDLE_STOP = Duration.minutes(5);
 
 /**
  * The Python a launcher script runs under, from its text: a plain shebang
@@ -288,12 +293,13 @@ const startSidecar = (
   });
 
 /**
- * The Kokoro voice `voice`, its child started on the first `speak` and kept
- * in the scope this runs in.
+ * The Kokoro voice `voice`, its child started on the first `speak`, kept in
+ * the scope this runs in, and stopped once it has been idle for `idleStop`.
  */
 export const makeKokoroVoice = (
   voice: string,
   script: string = path.join(assetsDirOf(moduleDir), READOUT_SCRIPT_FILE),
+  idleStop: Duration.Duration = READOUT_IDLE_STOP,
 ) =>
   Effect.gen(function* () {
     const parent = yield* Effect.scope;
@@ -302,6 +308,9 @@ export const makeKokoroVoice = (
     >();
     const current = yield* Ref.make(Option.none<Sidecar>());
     const lock = yield* Semaphore.make(1);
+    const locked = Semaphore.withPermits(lock, 1);
+    // Counts the requests, so a stop timer knows whether one came after it.
+    const requests = yield* Ref.make(0);
 
     const drop = (sidecar: Sidecar) =>
       Ref.set(current, Option.none()).pipe(
@@ -320,18 +329,33 @@ export const makeKokoroVoice = (
       return started;
     });
 
+    // After a request, wait out the idle time; if no request came meanwhile,
+    // stop the child and give its memory back.
+    const stopWhenIdle = (seen: number) =>
+      Effect.sleep(idleStop).pipe(
+        Effect.andThen(
+          locked(
+            Effect.gen(function* () {
+              if ((yield* Ref.get(requests)) !== seen) return;
+              const have = yield* Ref.get(current);
+              if (Option.isSome(have)) yield* drop(have.value);
+            }),
+          ),
+        ),
+        Effect.forkIn(parent),
+        Effect.asVoid,
+      );
+
     const speak = (
       segments: Parameters<ReadoutVoiceService['speak']>[0],
       to: string,
+      pace: ReadoutPace,
     ) =>
-      Semaphore.withPermits(
-        lock,
-        1,
-      )(
+      locked(
         Effect.gen(function* () {
           const child = yield* sidecar;
           const reply = yield* child
-            .send(JSON.stringify({ segments, out: to }))
+            .send(JSON.stringify({ segments, out: to, pace }))
             // A child that hung or died is stopped, so the next request
             // starts a fresh one.
             .pipe(Effect.tapError(() => drop(child)));
@@ -347,7 +371,14 @@ export const makeKokoroVoice = (
               : 'the voice answered out of turn',
           );
         }),
-      ).pipe(Effect.provide(context));
+      ).pipe(
+        Effect.ensuring(
+          Ref.updateAndGet(requests, (n) => n + 1).pipe(
+            Effect.flatMap(stopWhenIdle),
+          ),
+        ),
+        Effect.provide(context),
+      );
 
     return {
       id: `${KOKORO_MODEL}/${voice}`,

@@ -18,6 +18,14 @@ export class ReadoutVoiceError extends Data.TaggedError('ReadoutVoiceError')<{
   readonly message: string;
 }> {}
 
+/**
+ * How hard to push the machine. `now`: the script the operator is waiting
+ * on, made as fast as the voice can. `background`: a script made ahead, which
+ * nobody waits on yet, made gently enough that the rest of the machine stays
+ * responsive.
+ */
+export type ReadoutPace = 'now' | 'background';
+
 /** What a spoken script came to: its length in seconds and its timed segments. */
 export interface SpokenScript {
   readonly duration: number;
@@ -38,10 +46,11 @@ export interface ReadoutVoiceService {
    * `unavailable` when it is not.
    */
   readonly available: Effect.Effect<void, ReadoutVoiceError>;
-  /** Speak `segments` into an MP3 at `to`. */
+  /** Speak `segments` into an MP3 at `to`, at `pace`. */
   readonly speak: (
     segments: ReadonlyArray<ReadoutSegment>,
     to: string,
+    pace: ReadoutPace,
   ) => Effect.Effect<SpokenScript, ReadoutVoiceError>;
 }
 
