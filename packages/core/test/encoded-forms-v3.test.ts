@@ -684,6 +684,109 @@ describe('drawings as blobs in the log', () => {
   });
 });
 
+// Attachments: the files the operator attached, each where it is kept on
+// disk, on an answer that is files alone, on an operator's question, and
+// carried by a move. They came after the event goldens above were pinned,
+// and so have their own file. The bytes are never on an event.
+const SHOT = {
+  path: '/state/operator-inbox/attachments/01J00000000000000000000IA1/0123456789abcdef/screenshot.png',
+  name: 'screenshot.png',
+  type: 'image/png',
+  bytes: 41_234,
+};
+const LOG = {
+  path: '/state/operator-inbox/attachments/01J00000000000000000000IA1/fedcba9876543210/build.log',
+  name: 'build.log',
+  type: 'text/plain',
+  bytes: 812,
+};
+
+const ATTACHMENT_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(1),
+    response: '',
+    attachments: [SHOT, LOG],
+  },
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(2),
+    title: 'Why does this fail?',
+    body: 'Why does this fail?',
+    operatorQuestion: true,
+    attachments: [LOG],
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Which one?',
+      body: 'Pick one.',
+      revision: rev(1),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: '',
+      withdrawn: false,
+      attachments: [SHOT],
+    },
+  },
+];
+
+describe('attachments in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = ATTACHMENT_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-attachment-events.jsonl', lines);
+    const read = golden('inbox-attachment-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(ATTACHMENT_EVENTS);
+  });
+
+  it('reads every event logged before attachments with none', () => {
+    for (const name of ['inbox-events.jsonl', 'inbox-macro-events.jsonl'])
+      for (const line of golden(name).split('\n').filter(Boolean))
+        expect(decodeEvent(line)).not.toHaveProperty('attachments');
+  });
+
+  // The schemas of a build from before `attachments`: these events with the
+  // key taken out, and nothing else changed, as Effect Schema reads a struct
+  // by default (an unknown key is dropped, never refused).
+  const { _tag: _a, attachments: _aa, ...askedFields } = QuestionAsked.fields;
+  const {
+    _tag: _n,
+    attachments: _na,
+    ...answeredFields
+  } = QuestionAnswered.fields;
+  const { _tag: _m, ...movedFields } = QuestionMoved.fields;
+  const { attachments: _ma, ...movedQuestionFields } = MovedQuestion.fields;
+  const OlderEvent = Schema.fromJsonString(
+    Schema.Union([
+      Schema.TaggedStruct('QuestionAsked', askedFields),
+      Schema.TaggedStruct('QuestionAnswered', answeredFields),
+      Schema.TaggedStruct('QuestionMoved', {
+        ...movedFields,
+        question: Schema.Struct(movedQuestionFields),
+      }),
+    ]),
+  );
+
+  it('an older build reads every new line, dropping the files, never failing', () => {
+    for (const line of golden('inbox-attachment-events.jsonl')
+      .split('\n')
+      .filter(Boolean)) {
+      const read = Schema.decodeUnknownSync(OlderEvent)(line);
+      expect(read).not.toHaveProperty('attachments');
+      if (read._tag === 'QuestionMoved')
+        expect(read.question).not.toHaveProperty('attachments');
+    }
+  });
+});
+
 // Macros: on an answer, on a deferral with no note, and carried by a move,
 // which came after the event goldens above were pinned and so have their own
 // file.

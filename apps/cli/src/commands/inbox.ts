@@ -1,5 +1,8 @@
 import {
+  type Attachment,
+  type Attachments,
   askEvents,
+  attachmentSize,
   awaitingAgent,
   awaitingOperator,
   CODE_COUNT,
@@ -861,6 +864,9 @@ export interface AnswerLine {
   // each the quote with its context either side, where it sat, and what they
   // said.
   readonly comments?: QuestionComments;
+  // The files the operator attached, in the order they added them: each
+  // where it is kept on disk, its name, media type and size.
+  readonly attachments?: Attachments;
 }
 
 // A scene the event holds as JSON text, parsed for `--json`. Text that will
@@ -923,6 +929,7 @@ const answerLineOf = (
       }),
   ...(q.macros === undefined ? {} : { macros: q.macros }),
   ...(q.comments === undefined ? {} : { comments: q.comments }),
+  ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
 });
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
@@ -986,6 +993,21 @@ export const commentLines = (
         }),
       ];
 
+// One block for the files, after the response: each one's path, so the
+// agent reads it with its own tools, then what it is.
+export const attachmentLines = (
+  attachments: ReadonlyArray<Attachment>,
+): ReadonlyArray<string> =>
+  attachments.length === 0
+    ? []
+    : [
+        `ATTACHED FILES (${attachments.length}); read each at its path:`,
+        ...attachments.map(
+          (a) =>
+            `- ${a.path} (${a.type === '' ? 'unknown type' : a.type}, ${attachmentSize(a.bytes)})`,
+        ),
+      ];
+
 export const renderAnswers = (
   answers: ReadonlyArray<AnswerLine>,
   json: boolean,
@@ -1006,12 +1028,15 @@ export const renderAnswers = (
           ...(a.highlightReply === true ? [HIGHLIGHT_REPLY_LINE] : []),
           ...(a.deferred === true && a.response === ''
             ? []
-            : (a.macros !== undefined || a.comments !== undefined) &&
+            : (a.macros !== undefined ||
+                  a.comments !== undefined ||
+                  a.attachments !== undefined) &&
                 a.response.trim() === ''
               ? []
               : a.response.split('\n')),
           ...commentLines(a.comments ?? []),
           ...macroLines(a.macros ?? []),
+          ...attachmentLines(a.attachments ?? []),
         ]
           .map((line) => `  ${line}`)
           .join('\n')}`,

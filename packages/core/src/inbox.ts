@@ -1,4 +1,5 @@
 import { Data, Effect, Result, Schema } from 'effect';
+import { type Attachment, Attachments, checkAttachments } from './attachment';
 import {
   commentProblem,
   commentsInBodyOrder,
@@ -176,6 +177,9 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   // size, never the document, which is a row of the store's blob table
   // (`html-block.ts`). Optional for the same reason.
   htmls: Schema.optionalKey(HtmlBlocks),
+  // On an operator's question only: the files they attached, each where it
+  // is kept on disk (`attachment.ts`). Optional for the same reason.
+  attachments: Schema.optionalKey(Attachments),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
 
@@ -196,6 +200,9 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // `comments` holds the operator's comments on the Question's text, in the
 // order their spans sit in the body (`comments.ts`). With comments,
 // `response` may be ''. Optional for the same reason.
+// `attachments` holds the files the operator attached, each where it is kept
+// on disk (`attachment.ts`), in the order they were added. With one,
+// `response` may be ''. Optional for the same reason.
 export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   inboxId: InboxId,
   number: QuestionNumber,
@@ -206,6 +213,7 @@ export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   drawingRefs: Schema.optionalKey(DrawingRefs),
   macros: Schema.optionalKey(MacrosInvoked),
   comments: Schema.optionalKey(QuestionComments),
+  attachments: Schema.optionalKey(Attachments),
 });
 export type QuestionAnswered = typeof QuestionAnswered.Type;
 
@@ -412,6 +420,9 @@ export const MovedQuestion = Schema.Struct({
     Schema.Record(Schema.String, QuestionDrawingRef),
   ),
   sentDrawingRefs: Schema.optionalKey(DrawingRefs),
+  // The operator's files. They stay where they were kept: a move carries
+  // their paths, never the files.
+  attachments: Schema.optionalKey(Attachments),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -630,6 +641,8 @@ export interface InboxQuestion {
   readonly macros?: MacrosInvoked;
   // The operator's comments on its text, sent with their answer, in body order.
   readonly comments?: QuestionComments;
+  // The files the operator attached to their answer, or to their question.
+  readonly attachments?: Attachments;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -809,6 +822,9 @@ export const evolveInbox = (
               ...(event.highlightReply === undefined
                 ? {}
                 : { highlightReply: event.highlightReply }),
+              ...(event.attachments === undefined
+                ? {}
+                : { attachments: event.attachments }),
               ...(stamp === undefined
                 ? {}
                 : { askedStamp: stamp, answeredStamp: stamp }),
@@ -855,6 +871,9 @@ export const evolveInbox = (
         ...sentDrawingsOf(event),
         ...(event.macros === undefined ? {} : { macros: event.macros }),
         ...(event.comments === undefined ? {} : { comments: event.comments }),
+        ...(event.attachments === undefined
+          ? {}
+          : { attachments: event.attachments }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
       }));
     case 'AnswerProcessed':
@@ -968,6 +987,9 @@ export const evolveInbox = (
               ...(q.macros === undefined ? {} : { macros: q.macros }),
               ...(q.comments === undefined ? {} : { comments: q.comments }),
               ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+              ...(q.attachments === undefined
+                ? {}
+                : { attachments: q.attachments }),
             },
           ],
         };
@@ -1256,6 +1278,7 @@ export type InboxRefusalReason =
   | 'bad-html'
   | 'bad-macro'
   | 'bad-comment'
+  | 'bad-attachment'
   | 'unknown-group';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
@@ -1755,11 +1778,16 @@ export const decideOperatorAsk = (
     readonly text: string;
     // The operator asks the agent to highlight the Question it asks in reply.
     readonly highlightReply?: true;
+    // The files they attached, already kept on disk.
+    readonly attachments?: ReadonlyArray<Attachment>;
   },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
   const text = input.text.trim();
   if (text.length === 0) return refuse('empty', 'a question cannot be empty');
+  const attached = checkAttachments(input.attachments ?? []);
+  if (Result.isFailure(attached))
+    return refuse('bad-attachment', attached.failure);
   const highest = state.questions.reduce((n, q) => Math.max(n, q.number), 0);
   return Result.succeed({
     _tag: 'QuestionAsked',
@@ -1771,8 +1799,15 @@ export const decideOperatorAsk = (
     ...(input.highlightReply === undefined
       ? {}
       : { highlightReply: input.highlightReply }),
+    ...attachmentsOf(attached.success),
   });
 };
+
+// Attachments as an event carries them: the key left out for none.
+const attachmentsOf = (
+  attachments: ReadonlyArray<Attachment>,
+): { readonly attachments?: Attachments } =>
+  attachments.length === 0 ? {} : { attachments: [...attachments] };
 
 /**
  * Change an Inbox's metadata: set some keys, remove others. Allowed whether
@@ -1854,6 +1889,9 @@ export const decideAnswer = (
     // may be empty too: a comment says something on its own. Sent in body
     // order, whatever order they come in.
     readonly comments?: ReadonlyArray<QuestionComment>;
+    // The files the operator attached, already kept on disk. With one, the
+    // response may be empty too: a screenshot can be the whole answer.
+    readonly attachments?: ReadonlyArray<Attachment>;
   },
 ): Result.Result<QuestionAnswered, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1881,13 +1919,18 @@ export const decideAnswer = (
     );
   const macros = input.macros ?? [];
   const comments = commentsInBodyOrder(input.comments ?? []);
+  const attachments = input.attachments ?? [];
   if (
     input.deferred !== true &&
     macros.length === 0 &&
     comments.length === 0 &&
+    attachments.length === 0 &&
     input.response.trim().length === 0
   )
     return refuse('empty', 'an answer cannot be empty');
+  const attached = checkAttachments(attachments);
+  if (Result.isFailure(attached))
+    return refuse('bad-attachment', attached.failure);
   if (comments.length > MAX_COMMENTS_PER_ANSWER)
     return refuse(
       'bad-comment',
@@ -1923,6 +1966,7 @@ export const decideAnswer = (
     ...drawingRefsOf(drawings),
     ...(isNonEmptyMacros(macros) ? { macros } : {}),
     ...(isNonEmptyComments(comments) ? { comments } : {}),
+    ...attachmentsOf(attached.success),
   }));
 };
 
@@ -2245,6 +2289,7 @@ const movedQuestionOf = (
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+    ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
   };
 };
 

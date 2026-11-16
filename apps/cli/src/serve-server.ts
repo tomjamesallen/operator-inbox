@@ -17,6 +17,7 @@ import {
 import { HttpApiBuilder } from 'effect/http-api';
 import { NetAddress } from 'effect/net';
 import { ReadoutLive } from './readout';
+import { attachmentRouteLive } from './serve-attachments';
 import { makeInboxApiLive } from './serve-inbox-api';
 import { makeInboxConfigApiLive } from './serve-inbox-config-api';
 import { makeKeybindingsApiLive } from './serve-keybindings-api';
@@ -307,6 +308,7 @@ export const makeServeLayer = (
     Layer.mergeAll(
       OperatorInboxApiLive,
       readoutAudioRouteLive,
+      attachmentRouteLive,
       vendorRoutesLive,
       staticRoutesLive(webDist),
     ),

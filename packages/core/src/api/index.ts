@@ -2,6 +2,7 @@
 // re-exported from core's main barrel, which pulls node-only modules; import
 // this subpath from both apps/cli and apps/web.
 
+export * from '../attachment';
 export * from '../comments';
 export * from '../drawing';
 export * from '../html-block';

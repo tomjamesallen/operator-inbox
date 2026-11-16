@@ -549,6 +549,7 @@ describe('operator-inbox serve — Inbox machines', () => {
       const { local, machine } = yield* twoMachines;
       const direct = yield* answerQuestion(LAPTOP_ID, n(9), 'x', r(1)).pipe(
         Effect.provide(machine.context),
+        Effect.provide(NodeServices.layer),
         Effect.flip,
       );
       const forwarded = yield* local.api.inbox

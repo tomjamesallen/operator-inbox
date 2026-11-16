@@ -48,6 +48,8 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 
 **Macro parameter**: one value a **Macro** asks for: a closed list of options (one of them, or with `multiple` any number), text, or a number. Required unless it says `required: false`. A send with a required one empty is held on it once; the next send with the same ones still empty sends them as `null`, for the agent to fill. _Avoid_: argument (that is the value sent), slot.
 
+**Attachment**: a file the operator attaches to an answer, a follow-up or a question they ask, with the "Attach" link under the box, by dropping it on the box or by pasting it in. It is kept on disk on the machine that holds the Inbox, and the event carries its path, name, media type and size, never its bytes, so the agent reads the file at its path. An answer may be attachments alone. _Avoid_: upload (that is how it arrives), blob (that is the store's table).
+
 **Comment**: the operator's note on a span of a Question's body, made by selecting the text and pressing `c` (or ⌘⌥M, the floating button, or the context menu). The span stays highlighted, numbered in body order, and each comment is a card in the stack under the answer box, ahead of the **Macros**. The answer, or deferral, carries the written ones in body order as `{ quote, prefix, suffix, at, text }`: the quote and the text either side of it are what anchor it, and `at` is only a hint for drawing it again. An answer may be comments alone. _Avoid_: annotation, note.
 
 **Keymap**: the inbox page's key bindings: every action it can bind, each bound to one or more triggers (`ctrl+b`, or a sequence after the prefix, `ctrl+space>n`). It is the defaults with `keybindings` applied in order.

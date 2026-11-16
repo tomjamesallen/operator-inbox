@@ -301,6 +301,22 @@ Under `--json` they are `"macros": [{ "macro", "instruction", "args" }]`. An ans
 
 An answer may also carry the operator's **comments** on quoted spans of your Question, printed after its text as a numbered block of `On “quote”: comment` lines (`"comments": [{ "quote", "prefix", "suffix", "at", "text" }]` under `--json`): read each as part of the answer, about that span.
 
+### An answer that carries files
+
+The operator can attach **files** to an answer, a follow-up or a question they ask you: a screenshot, a log, a document. Each is kept on disk on the machine that holds the Inbox, and `answers` prints their paths after the answer's text:
+
+```text
+  ATTACHED FILES (2); read each at its path:
+  - /Users/me/.local/state/operator-inbox/attachments/01J…/9f2c…/screenshot.png (image/png, 412 KB)
+  - /Users/me/.local/state/operator-inbox/attachments/01J…/41ab…/build.log (text/plain, 18 KB)
+```
+
+Under `--json` they are `"attachments": [{ "path", "name", "type", "bytes" }]`. An answer may be files alone, with no text.
+
+1. **Read every file before you act on the answer**, with your Read tool at its path: an image is shown to you, and text is read as text. The files are part of the answer, often the most specific part of it.
+2. **Never move, edit or delete them.** They are the operator's record of what they sent; copy one into the project if the work needs it there.
+3. A path that is not there means the file was cleared away since: say so in the session, and go on with the rest of the answer.
+
 ### An answer that asks for your reply highlighted
 
 The operator can mark an answer, or a Question they ask you, **Highlight reply**. `answers` then opens it with `HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight` (`"highlightReply": true` under `--json`). It means the operator will look for your reply among many: **the Question you ask in response must be highlighted.** Ask it with `--highlight`, which highlights it as it is asked:

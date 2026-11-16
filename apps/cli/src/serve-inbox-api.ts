@@ -1,4 +1,5 @@
 import {
+  type Attachment,
   askEvents,
   awaitingAgent,
   awaitingOperator,
@@ -57,6 +58,7 @@ import {
   AnswerRefused,
   ArchiveRefused,
   AskRefused,
+  type AttachmentUpload,
   HighlightRefused,
   type InboxBoardDto,
   type InboxIndexDto,
@@ -77,6 +79,7 @@ import {
 import { Effect, Predicate, Result, SubscriptionRef } from 'effect';
 import { HttpApiBuilder } from 'effect/http-api';
 import type { InputError } from './errors';
+import { keepAttachments, plannedUploads } from './inbox-attachments';
 import {
   checkedScenes,
   drawingRefOf,
@@ -204,6 +207,7 @@ export const toInboxView = (
       ...(q.macros === undefined ? {} : { macros: q.macros }),
       ...(q.comments === undefined ? {} : { comments: q.comments }),
       ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+      ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
@@ -231,6 +235,7 @@ export const toInboxView = (
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
     ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
+    ...(q.attachments === undefined ? {} : { attachments: q.attachments }),
   })),
 });
 
@@ -429,7 +434,33 @@ export const answerQuestion = Effect.fnUntraced(function* (
   drawings?: Drawings,
   macros?: MacrosInvoked,
   comments?: QuestionComments,
+  uploads: ReadonlyArray<AttachmentUpload> = [],
 ) {
+  const refused = (refusal: InboxRefusal) =>
+    refusal.reason === 'not-found'
+      ? Effect.fail(notFound(inboxId))
+      : Effect.fail(new AnswerRefused({ message: refusal.message }));
+  const base = {
+    inboxId,
+    number,
+    response,
+    seenRevision,
+    ...(deferred === undefined ? {} : { deferred }),
+    ...(highlightReply === undefined ? {} : { highlightReply }),
+    ...(macros === undefined ? {} : { macros }),
+    ...(comments === undefined ? {} : { comments }),
+  };
+  // The files: where each goes is known from its bytes, so the answer is
+  // decided on that plan first, and one refused, or for an Inbox another
+  // machine holds, writes no file. Then each is written, BEFORE the answer
+  // is decided again and appended.
+  const attachments = yield* keptUploads(
+    inboxId,
+    uploads,
+    (message) => new AnswerRefused({ message }),
+    (state, planned) => decideAnswer(state, { ...base, attachments: planned }),
+    refused,
+  );
   // Each edited scene checked as the decision checks it, then kept in the
   // blob table BEFORE the answer is decided and appended, so the event names
   // only scenes the store holds; a refused scene is never written.
@@ -445,15 +476,9 @@ export const answerQuestion = Effect.fnUntraced(function* (
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
       decideAnswer(state, {
-        inboxId,
-        number,
-        response,
-        seenRevision,
-        ...(deferred === undefined ? {} : { deferred }),
-        ...(highlightReply === undefined ? {} : { highlightReply }),
+        ...base,
         ...(kept === undefined ? {} : { drawings: kept }),
-        ...(macros === undefined ? {} : { macros }),
-        ...(comments === undefined ? {} : { comments }),
+        attachments,
       }),
       (event) => ({
         events: [event],
@@ -470,14 +495,42 @@ export const answerQuestion = Effect.fnUntraced(function* (
     ),
     Effect.catchTag('InputError', (e) => unavailable(Effect.fail(e))),
   );
-  if (Result.isFailure(decided)) {
-    const refusal = decided.failure;
-    return yield* refusal.reason === 'not-found'
-      ? Effect.fail(notFound(inboxId))
-      : Effect.fail(new AnswerRefused({ message: refusal.message }));
-  }
+  if (Result.isFailure(decided)) return yield* refused(decided.failure);
   return yield* readBack(inboxId);
 });
+
+// The files an answer or a question carries, kept on disk: none for none.
+// The plan is decided on this machine's own read of the Inbox first
+// (`decide`), so an Inbox this log lacks is InboxNotFound before a byte is
+// written, and the write goes on to the machine that holds it, files and all.
+const keptUploads = <E, R>(
+  inboxId: InboxId,
+  uploads: ReadonlyArray<AttachmentUpload>,
+  bad: (message: string) => E,
+  decide: (
+    state: InboxState,
+    planned: ReadonlyArray<Attachment>,
+  ) => Result.Result<unknown, InboxRefusal>,
+  refused: (
+    refusal: InboxRefusal,
+  ) => Effect.Effect<never, E | InboxNotFound, R>,
+) =>
+  Effect.gen(function* () {
+    if (uploads.length === 0) return [];
+    const log = yield* InboxLog;
+    const { stamped } = yield* unavailable(log.read(inboxId));
+    const state = inboxStateStamped(stamped);
+    if (!state.opened) return yield* Effect.fail(notFound(inboxId));
+    const planned = yield* unavailable(plannedUploads(inboxId, uploads));
+    if (Result.isFailure(planned))
+      return yield* Effect.fail(bad(planned.failure));
+    const first = decide(
+      state,
+      planned.success.map((p) => p.attachment),
+    );
+    if (Result.isFailure(first)) return yield* refused(first.failure);
+    return yield* unavailable(keepAttachments(planned.success));
+  });
 
 // POST /api/inbox/:inboxId/questions. The operator asks the agent a
 // question, from the app; it waits on the agent at once. Read, decide,
@@ -486,19 +539,30 @@ export const askQuestion = Effect.fnUntraced(function* (
   inboxId: InboxId,
   text: string,
   highlightReply?: true,
+  uploads: ReadonlyArray<AttachmentUpload> = [],
 ) {
+  const refused = (refusal: InboxRefusal) =>
+    refusal.reason === 'not-found'
+      ? Effect.fail(notFound(inboxId))
+      : Effect.fail(new AskRefused({ message: refusal.message }));
+  const base = {
+    inboxId,
+    text,
+    ...(highlightReply === undefined ? {} : { highlightReply }),
+  };
+  const attachments = yield* keptUploads(
+    inboxId,
+    uploads,
+    (message) => new AskRefused({ message }),
+    (state, planned) =>
+      decideOperatorAsk(state, { ...base, attachments: planned }),
+    refused,
+  );
   const decided = yield* decideAndAppend(inboxId, (state) =>
-    Result.map(
-      decideOperatorAsk(state, {
-        inboxId,
-        text,
-        ...(highlightReply === undefined ? {} : { highlightReply }),
-      }),
-      (event) => ({
-        events: askEvents(state, event),
-        result: undefined,
-      }),
-    ),
+    Result.map(decideOperatorAsk(state, { ...base, attachments }), (event) => ({
+      events: askEvents(state, event),
+      result: undefined,
+    })),
   ).pipe(
     Effect.catchTag('AppendConditionFailed', () =>
       Effect.fail(
@@ -1220,13 +1284,19 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.drawings,
             payload.macros,
             payload.comments,
+            payload.attachments,
           ),
         ),
       )
       .handle(
         'ask',
         owned('ask', ({ params, payload }) =>
-          askQuestion(params.inboxId, payload.text, payload.highlightReply),
+          askQuestion(
+            params.inboxId,
+            payload.text,
+            payload.highlightReply,
+            payload.attachments,
+          ),
         ),
       )
       .handle(

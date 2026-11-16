@@ -1,5 +1,6 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
 import {
+  type Attachment,
   LOCAL_MACHINE_KEY,
   type MacroArg,
   type MacroInvoked,
@@ -18,9 +19,11 @@ import {
 import { pickCrumbAtom } from '../../inbox-rail';
 import {
   answerOf,
+  attachmentsOf,
   followUpsOf,
   headOf,
   heldKeyAtom,
+  isAsked,
   isSending,
   linkKeyAtom,
   type ReaderItem,
@@ -31,6 +34,7 @@ import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { QuestionBody } from '../question-body';
 import { focusRing } from '../styles';
+import { AttachmentList } from './attachments';
 import { Colophon } from './colophon';
 import { CommentableBody, CommentedBody } from './comment-body';
 import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
@@ -273,12 +277,17 @@ const Said = ({
   text,
   macros = [],
   comments = [],
+  attachments = [],
+  readable,
   className,
 }: {
   readonly label: string;
   readonly text: string;
   readonly macros?: ReadonlyArray<MacroInvoked>;
   readonly comments?: ReadonlyArray<QuestionComment>;
+  readonly attachments?: ReadonlyArray<Attachment>;
+  // Whether its files can be read back from here (`AttachmentList`).
+  readonly readable: boolean;
   readonly className: string;
 }) => (
   <div className={`${className} max-w-measure text-14 leading-prose`}>
@@ -288,6 +297,9 @@ const Said = ({
     )}
     {comments.length > 0 && <SentComments comments={comments} />}
     {macros.length > 0 && <SentMacros macros={macros} />}
+    {attachments.length > 0 && (
+      <AttachmentList attachments={attachments} readable={readable} />
+    )}
   </div>
 );
 
@@ -319,6 +331,10 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   const send = useAtomSet(inboxReaderAtoms.send);
   const { title, caption, followsUp } = headOf(item);
   const answer = answerOf(item);
+  // The files are kept on the machine that holds the Inbox, and only
+  // Local's can be read back from this page.
+  const readable = item.machine === LOCAL_MACHINE_KEY;
+  const asked = isAsked(item.question) ? attachmentsOf(item.question) : [];
   const state = isSending(item)
     ? 'sending'
     : 'answeredSeq' in item.question || 'processedSeq' in item.question
@@ -360,16 +376,22 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
           />
         </div>
       </BodyFrame>
+      {asked.length > 0 && (
+        <AttachmentList attachments={asked} readable={readable} />
+      )}
       {answer !== undefined &&
         (answer.text !== '' ||
           answer.macros.length > 0 ||
-          answer.comments.length > 0) && (
+          answer.comments.length > 0 ||
+          answer.attachments.length > 0) && (
           <Said
             className="mt-s5"
             label={answer.label}
             text={answer.text}
             macros={answer.macros}
             comments={answer.comments}
+            attachments={answer.attachments}
+            readable={readable}
           />
         )}
       {followUpsOf(queues, item).map((f) => (
@@ -378,6 +400,8 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
           className="mt-s4"
           label="You followed up:"
           text={f.text}
+          attachments={f.attachments}
+          readable={readable}
         />
       ))}
     </>
