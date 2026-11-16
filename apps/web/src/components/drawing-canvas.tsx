@@ -14,6 +14,7 @@ import type {
 import {
   DRAWING_EXPORT_PADDING,
   drawingFormat,
+  keepIdsThroughDuplicates,
 } from '@operator-inbox/core/api';
 import { type KeyboardEvent, useEffect, useRef } from 'react';
 
@@ -147,7 +148,9 @@ const prefersDark = (): boolean =>
 /**
  * The full-screen editor. It opens on `scene` (the operator's edit if there
  * is one, else the agent's) and reports each change as the whole scene's
- * text (`sceneText`): moving a box and putting it back still counts.
+ * text (`sceneText`): moving a box and putting it back still counts. An
+ * Alt-drag duplicate is reported with its ids put back against `scene`
+ * (`keepIdsThroughDuplicates`), so the shape that stayed keeps its id.
  */
 export const DrawingEditor = ({
   scene,
@@ -227,7 +230,10 @@ export const DrawingEditor = ({
           const sig = signature(elements);
           if (sig === baseline.current) return;
           baseline.current = sig;
-          pending.current = sceneText(elements);
+          pending.current = keepIdsThroughDuplicates(
+            scene,
+            sceneText(elements),
+          );
           clearTimeout(timer.current);
           timer.current = setTimeout(flush, KEEP_AFTER_MS);
         }}

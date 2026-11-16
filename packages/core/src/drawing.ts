@@ -675,3 +675,242 @@ export const summariseScene = (text: string): string => {
   const span = `${r(Math.min(...all.map((b) => b.x1)))},${r(Math.min(...all.map((b) => b.y1)))} to ${r(Math.max(...all.map((b) => b.x2)))},${r(Math.max(...all.map((b) => b.y2)))}`;
   return `scene: ${els.length} elements, spanning ${span} (x right, y down; positions are top-left corners)\n${out.join('\n')}\n`;
 };
+
+// --- ids through a duplicate --------------------------------------------------------
+//
+// Excalidraw duplicates a selection in three ways. ⌘D and copy-and-paste
+// leave the original where it was and give the copy a new id. Alt-drag does
+// the opposite: the original element is the one dragged away, and a clone
+// with a new id is left where it stood, with any arrow bound to the
+// original moved onto the clone. An agent reads the drawing back by the ids
+// it wrote, so after an Alt-drag its box seems to have moved, and a stranger
+// sits in its place. `keepIdsThroughDuplicates` gives the ids back to the
+// shapes that stayed.
+
+// How far apart, in scene units, two positions or sizes may be and still be
+// the same: a scene laid out again rounds a little.
+const NEAR = 1;
+
+const near = (a: unknown, b: unknown): boolean =>
+  typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) <= NEAR;
+
+type RawElement = Record<string, unknown>;
+
+const idOf = (e: RawElement): string | undefined =>
+  typeof e.id === 'string' ? e.id : undefined;
+
+const containerOf = (e: RawElement): string | undefined =>
+  typeof e.containerId === 'string' ? e.containerId : undefined;
+
+const isLive = (e: RawElement): boolean => e.isDeleted !== true;
+
+// The text bound inside `e`: a full scene's, which names its container.
+const boundTextIn = (
+  els: ReadonlyArray<RawElement>,
+  e: RawElement,
+): RawElement | undefined =>
+  els.find(
+    (x) =>
+      x.type === 'text' &&
+      isLive(x) &&
+      containerOf(x) !== undefined &&
+      containerOf(x) === idOf(e),
+  );
+
+const textOf = (e: RawElement): string | undefined =>
+  typeof e.originalText === 'string'
+    ? e.originalText
+    : typeof e.text === 'string'
+      ? e.text
+      : undefined;
+
+// What an element reads as: a skeleton's label, its bound text, or a text
+// element's own text.
+const wordsOf = (
+  els: ReadonlyArray<RawElement>,
+  e: RawElement,
+): string | undefined => {
+  const label = e.label;
+  if (isRecord(label) && typeof label.text === 'string') return label.text;
+  if (e.type === 'text') return textOf(e);
+  const bound = boundTextIn(els, e);
+  return bound === undefined ? undefined : textOf(bound);
+};
+
+// The style an element carries, and what Excalidraw fills in for the few a
+// skeleton leaves out (the ones the compact form sets). A key the earlier
+// element does not carry, and has no stand-in for, is not compared.
+const STYLE_KEYS = [
+  'strokeColor',
+  'backgroundColor',
+  'fillStyle',
+  'strokeWidth',
+  'strokeStyle',
+  'roughness',
+  'opacity',
+  'roundness',
+  'fontSize',
+  'fontFamily',
+  'textAlign',
+] as const;
+const STYLE_STAND_INS: Readonly<Record<string, unknown>> = {
+  backgroundColor: 'transparent',
+  strokeStyle: 'solid',
+  roundness: null,
+};
+
+const sameStyle = (before: RawElement, after: RawElement): boolean =>
+  STYLE_KEYS.every((key) => {
+    const was = before[key] ?? STYLE_STAND_INS[key];
+    if (was === undefined) return true;
+    const now = after[key] ?? STYLE_STAND_INS[key];
+    return JSON.stringify(was) === JSON.stringify(now);
+  });
+
+// Whether `after` stands where `before` stood, the same size: a size the
+// earlier element leaves out (a skeleton's text) is not compared.
+const samePlace = (before: RawElement, after: RawElement): boolean =>
+  near(before.x, after.x) &&
+  near(before.y, after.y) &&
+  (before.width === undefined || near(before.width, after.width)) &&
+  (before.height === undefined || near(before.height, after.height));
+
+// Renames: each id to the one it swaps with, both ways.
+const addSwap = (map: Map<string, string>, a: string, b: string): boolean => {
+  if (a === b) return true;
+  const known = map.get(a) ?? map.get(b);
+  if (known !== undefined) return map.get(a) === b;
+  map.set(a, b);
+  map.set(b, a);
+  return true;
+};
+
+const renamed = (
+  e: RawElement,
+  ids: ReadonlyMap<string, string>,
+  groups: ReadonlyMap<string, string>,
+): RawElement => {
+  const id = (v: unknown) =>
+    typeof v === 'string' ? (ids.get(v) ?? v) : (v as never);
+  const binding = (v: unknown) =>
+    isRecord(v) && typeof v.elementId === 'string'
+      ? { ...v, elementId: id(v.elementId) }
+      : v;
+  return {
+    ...e,
+    ...(e.id === undefined ? {} : { id: id(e.id) }),
+    ...(typeof e.containerId === 'string'
+      ? { containerId: id(e.containerId) }
+      : {}),
+    ...(typeof e.frameId === 'string' ? { frameId: id(e.frameId) } : {}),
+    ...(e.startBinding === undefined
+      ? {}
+      : { startBinding: binding(e.startBinding) }),
+    ...(e.endBinding === undefined
+      ? {}
+      : { endBinding: binding(e.endBinding) }),
+    ...(Array.isArray(e.boundElements)
+      ? {
+          boundElements: e.boundElements.map((b: unknown) =>
+            isRecord(b) && typeof b.id === 'string'
+              ? { ...b, id: id(b.id) }
+              : b,
+          ),
+        }
+      : {}),
+    ...(Array.isArray(e.groupIds)
+      ? {
+          groupIds: e.groupIds.map((g: unknown) =>
+            typeof g === 'string' ? (groups.get(g) ?? g) : g,
+          ),
+        }
+      : {}),
+  };
+};
+
+/**
+ * The edited scene with each Alt-drag duplicate's ids put back: the shape
+ * left in place takes the id it had in `before` (the agent's scene, or the
+ * scene the editor opened on), and the copy dragged away takes the clone's
+ * new id. A swap is made only when it is unambiguous: an element of `before`
+ * whose id now sits somewhere else, and exactly one element with an id
+ * `before` lacks standing where it stood, the same type, size, words and
+ * style, claimed by no other. Every reference follows the ids: bound text
+ * (swapped with its container's), `containerId`, `boundElements`, arrow
+ * bindings, `frameId`, and the group ids the clone was given. Anything else,
+ * ⌘D and paste included (their copy is never where the original was), is
+ * left as it is, and so is text that is not two scenes: the same string
+ * comes back. Pure and idempotent.
+ */
+export const keepIdsThroughDuplicates = (
+  before: string,
+  edited: string,
+): string => {
+  const was = sceneOf(parseJson(before));
+  const parsed = parseJson(edited);
+  const now = sceneOf(parsed);
+  if (was === undefined || now === undefined) return edited;
+  const wasEls = was.elements.filter(isRecord) as ReadonlyArray<RawElement>;
+  const nowEls = now.elements.filter(isRecord) as ReadonlyArray<RawElement>;
+  const wasIds = new Set(wasEls.map(idOf));
+  const liveNow = nowEls.filter(isLive);
+  const nowById = new Map(liveNow.map((e) => [idOf(e), e]));
+  // Bound text moves with its container, so only free elements are matched.
+  const free = (e: RawElement) => containerOf(e) === undefined;
+  const proposals: Array<{ moved: RawElement; stayed: RawElement }> = [];
+  for (const old of wasEls.filter((e) => isLive(e) && free(e))) {
+    const id = idOf(old);
+    const moved = id === undefined ? undefined : nowById.get(id);
+    if (moved === undefined) continue;
+    if (near(moved.x, old.x) && near(moved.y, old.y)) continue;
+    const words = wordsOf(wasEls, old);
+    const stayed = liveNow.filter(
+      (e) =>
+        idOf(e) !== undefined &&
+        !wasIds.has(idOf(e)) &&
+        free(e) &&
+        e.type === old.type &&
+        samePlace(old, e) &&
+        wordsOf(nowEls, e) === words &&
+        sameStyle(old, e),
+    );
+    const only = stayed[0];
+    if (stayed.length === 1 && only !== undefined)
+      proposals.push({ moved, stayed: only });
+  }
+  // A clone two of the earlier elements could each claim is ambiguous.
+  const claims = new Map<RawElement, number>();
+  for (const p of proposals)
+    claims.set(p.stayed, (claims.get(p.stayed) ?? 0) + 1);
+  const ids = new Map<string, string>();
+  const groups = new Map<string, string>();
+  let groupsAgree = true;
+  for (const { moved, stayed } of proposals) {
+    if (claims.get(stayed) !== 1) continue;
+    const a = idOf(moved);
+    const b = idOf(stayed);
+    if (a === undefined || b === undefined || !addSwap(ids, a, b)) continue;
+    const ta = boundTextIn(nowEls, moved);
+    const tb = boundTextIn(nowEls, stayed);
+    const tia = ta === undefined ? undefined : idOf(ta);
+    const tib = tb === undefined ? undefined : idOf(tb);
+    if (tia !== undefined && tib !== undefined) addSwap(ids, tia, tib);
+    const ga = Array.isArray(moved.groupIds) ? moved.groupIds : [];
+    const gb = Array.isArray(stayed.groupIds) ? stayed.groupIds : [];
+    if (ga.length !== gb.length) groupsAgree = false;
+    else
+      ga.forEach((g: unknown, i: number) => {
+        const h: unknown = gb[i];
+        if (typeof g !== 'string' || typeof h !== 'string') return;
+        if (!addSwap(groups, g, h)) groupsAgree = false;
+      });
+  }
+  if (ids.size === 0) return edited;
+  const noGroups = new Map<string, string>();
+  const elements = now.elements.map((e) =>
+    isRecord(e) ? renamed(e, ids, groupsAgree ? groups : noGroups) : e,
+  );
+  return JSON.stringify(
+    Array.isArray(parsed) ? elements : { ...(parsed as object), elements },
+  );
+};

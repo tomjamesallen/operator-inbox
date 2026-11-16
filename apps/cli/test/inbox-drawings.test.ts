@@ -273,6 +273,90 @@ describe('drawings through ask, answers and drawing', () => {
       ),
   );
 
+  it.effect(
+    'reads an Alt-drag duplicate back with the agent’s id on the shape that stayed',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* asked(WIREFRAME);
+          // As the page sent it before it put the ids right itself: "nav"
+          // dragged down a copy, the clone left in its place with a new id,
+          // and the arrow moved onto the clone.
+          const CLONE = 'Kq7wE2rT9yU4iO1pA6sDf';
+          const shape = (id: string, y: number, bound: string) => ({
+            type: 'rectangle',
+            id,
+            x: 0,
+            y,
+            width: 400,
+            height: 40,
+            strokeStyle: 'solid',
+            boundElements: [{ id: bound, type: 'text' }],
+            version: 3,
+          });
+          const label = (id: string, container: string, y: number) => ({
+            type: 'text',
+            id,
+            x: 170,
+            y: y + 10,
+            text: 'Header',
+            originalText: 'Header',
+            containerId: container,
+            fontSize: 16,
+            version: 3,
+          });
+          const duplicated = sceneOf([
+            { ...shape('page', 0, 'none'), height: 300, boundElements: [] },
+            shape(CLONE, 0, 'cloneLabel'),
+            label('cloneLabel', CLONE, 0),
+            {
+              type: 'rectangle',
+              id: 'main',
+              x: 0,
+              y: 60,
+              width: 400,
+              height: 200,
+              version: 2,
+            },
+            {
+              type: 'arrow',
+              id: 'down',
+              x: 200,
+              y: 40,
+              points: [
+                [0, 0],
+                [0, 20],
+              ],
+              startBinding: { elementId: CLONE },
+              endBinding: { elementId: 'main' },
+              version: 3,
+            },
+            shape('nav', 400, 'navLabel'),
+            label('navLabel', 'nav', 400),
+          ]);
+          yield* answer({ layout: duplicated });
+          const compact = yield* dispatchDrawing({
+            inboxId: ID,
+            number: 1,
+            id: 'layout',
+            compact: true,
+          });
+          expect(compact).toContain(
+            '  - box "Header" [nav] at 0,0 size 400×40',
+          );
+          expect(compact).toContain('- "Header" → [main] [down]');
+          expect(compact).toContain('- box "Header" [Kq7wE2] at 0,400');
+          const json = JSON.parse(
+            yield* dispatchAnswers({ inboxId: ID, json: true }),
+          );
+          const nav = json[0].drawings.layout.elements.find(
+            (e: { id: string }) => e.id === 'nav',
+          );
+          expect(nav).toMatchObject({ x: 0, y: 0 });
+        }),
+      ),
+  );
+
   it.effect('an answer with no drawing changed adds no line', () =>
     provide(
       Effect.gen(function* () {
