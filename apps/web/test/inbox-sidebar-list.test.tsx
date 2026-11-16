@@ -76,7 +76,8 @@ const order = (): string[] =>
 const pickRow = async (name: string, shiftKey = false): Promise<void> => {
   await openRail();
   fireEvent.click(rail().getByText(name), { shiftKey });
-  await railShut();
+  // A pick in the sidebar leaves it out: still there to pick again.
+  await openRail();
 };
 
 const openMenu = async (label: string) => {
