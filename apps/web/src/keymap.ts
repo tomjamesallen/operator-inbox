@@ -532,6 +532,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 export const isActionHandled = (id: string): boolean =>
   Object.hasOwn(HANDLERS, id);
 
+/**
+ * Whether a key's target is in a drawing's full-screen editor, or in one of
+ * the dialogs Excalidraw draws for it at the end of the page (each in an
+ * element of its own `.excalidraw` class).
+ */
+export const inDrawingEditor = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  target.closest('[data-drawing-editor], .excalidraw') !== null;
+
 // The one listener. A sequence's earlier keys are always the keymap's; its
 // last runs the action, and the browser keeps the key only when the action
 // declines it. The listener lives and dies with the Atom node. It reads the
@@ -542,6 +551,9 @@ export const keymapKeyAtom: Atom.Atom<void> = Atom.readable((get) => {
   if (typeof document === 'undefined') return;
   get.mount(keymapAtom);
   const onKey = (e: KeyboardEvent) => {
+    // A drawing's full-screen editor has keys of its own: its tools are
+    // letters, its nudges arrows.
+    if (inDrawingEditor(e.target)) return;
     const step = stepKeymap(
       get.once(keymapAtom),
       get.once(keymapPendingAtom),

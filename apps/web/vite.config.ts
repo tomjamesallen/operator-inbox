@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
+  createReadStream,
   existsSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
@@ -41,22 +44,43 @@ type BundleEntry = {
   readonly facadeModuleId?: string | null;
   readonly imports?: ReadonlyArray<string>;
   readonly dynamicImports?: ReadonlyArray<string>;
+  // Vite's own: the stylesheets and files a chunk brings in.
+  readonly viteMetadata?: {
+    readonly importedCss?: ReadonlySet<string>;
+    readonly importedAssets?: ReadonlySet<string>;
+  };
 };
+
+/**
+ * The app's own modules that exist only to bring a library in, loaded by a
+ * dynamic import as a library's package is: Excalidraw's, which imports it
+ * and its stylesheet (`src/drawings.ts` loads it). The shell treats each as a
+ * library.
+ */
+export const LIBRARY_DOORS = ['/src/components/drawing-canvas.tsx'] as const;
 
 /**
  * The chunks a library loads only on demand: those reached only through a
  * dynamic import of a package (a chunk whose own module is under
  * `node_modules`), such as Mermaid's hundred diagram chunks behind
- * `import('mermaid')`. The shell leaves them out, so installing the worker
- * does not download megabytes nobody has asked for; the worker caches each
- * one the first time it is fetched. The app's own dynamic imports stay in.
+ * `import('mermaid')`, or of one of `LIBRARY_DOORS`. The shell leaves them
+ * out, so installing the worker does not download megabytes nobody has asked
+ * for; the worker caches each one the first time it is fetched. The app's own
+ * dynamic imports stay in. So do the stylesheets and files those chunks bring
+ * in (Excalidraw's stylesheet, and the fonts it names), unless a chunk the
+ * shell keeps brings them in too.
  */
 export const lazyLibraryChunks = (
   bundle: Readonly<Record<string, BundleEntry>>,
 ): ReadonlySet<string> => {
   const chunks = Object.entries(bundle).filter(([, c]) => c.type === 'chunk');
-  const isLibrary = (file: string) =>
-    (bundle[file]?.facadeModuleId ?? '').includes('/node_modules/');
+  const isLibrary = (file: string) => {
+    const facade = bundle[file]?.facadeModuleId ?? '';
+    return (
+      facade.includes('/node_modules/') ||
+      LIBRARY_DOORS.some((door) => facade.endsWith(door))
+    );
+  };
   const kept = new Set<string>();
   const visit = (file: string) => {
     if (kept.has(file)) return;
@@ -67,10 +91,71 @@ export const lazyLibraryChunks = (
       if (!isLibrary(next)) visit(next);
   };
   for (const [file, chunk] of chunks) if (chunk.isEntry === true) visit(file);
-  return new Set(
-    chunks.map(([file]) => file).filter((file) => !kept.has(file)),
-  );
+  const lazy = chunks.map(([file]) => file).filter((file) => !kept.has(file));
+  const brought = (files: ReadonlyArray<string>) =>
+    new Set(
+      files.flatMap((file) => [
+        ...(bundle[file]?.viteMetadata?.importedCss ?? []),
+        ...(bundle[file]?.viteMetadata?.importedAssets ?? []),
+      ]),
+    );
+  const keptBrings = brought([...kept]);
+  const lazyBrings = [...brought(lazy)].filter((f) => !keptBrings.has(f));
+  return new Set([...lazy, ...lazyBrings]);
 };
+
+// --- Excalidraw's fonts ----------------------------------------------------------
+
+/**
+ * Where the build serves Excalidraw's fonts: `fonts/<Family>/<file>` under it.
+ * The page tells Excalidraw this path before loading it (`EXCALIDRAW_ASSET_PATH`
+ * in `src/drawings.ts`, which repeats it). Outside `assets/`, so the service
+ * worker never puts them in its shell and `keepEarlierBuilds` never clears
+ * them: a font's name is its content, the same in every build.
+ */
+export const EXCALIDRAW_ASSETS = 'excalidraw/';
+
+// The fonts as the package ships them, beside its production build.
+const excalidrawFontsDir = (): string =>
+  join(
+    dirname(createRequire(import.meta.url).resolve('@excalidraw/excalidraw')),
+    'fonts',
+  );
+
+const filesUnder = (dir: string): ReadonlyArray<string> =>
+  readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => relative(dir, join(d.parentPath, d.name)));
+
+/**
+ * Self-hosts Excalidraw's fonts. Without them Excalidraw fetches each one
+ * from a CDN; a local app must not. The build copies the package's fonts
+ * into `dist/excalidraw/fonts`, and the dev server serves them from the
+ * package at the same path.
+ */
+export const excalidrawFonts = (): Plugin => ({
+  name: 'operator-inbox-excalidraw-fonts',
+  configureServer(server) {
+    const root = excalidrawFontsDir();
+    server.middlewares.use(`/${EXCALIDRAW_ASSETS}fonts`, (req, res, next) => {
+      const name = decodeURIComponent((req.url ?? '').split('?')[0] ?? '');
+      const file = resolve(root, `.${name}`);
+      if (!file.startsWith(`${root}${sep}`) || !existsSync(file)) return next();
+      if (!statSync(file).isFile()) return next();
+      res.setHeader('content-type', 'font/woff2');
+      createReadStream(file).pipe(res);
+    });
+  },
+  generateBundle() {
+    const root = excalidrawFontsDir();
+    for (const file of filesUnder(root))
+      this.emitFile({
+        type: 'asset',
+        fileName: `${EXCALIDRAW_ASSETS}fonts/${file.split(sep).join('/')}`,
+        source: readFileSync(join(root, file)),
+      });
+  },
+});
 
 // Writes `dist/sw.js` from the `sw/sw.js` template: SHELL becomes `/`, every
 // built asset except a library's on-demand chunks (`lazyLibraryChunks`) and
@@ -178,7 +263,13 @@ export const keepEarlierBuilds = (): Plugin => ({
 });
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), serviceWorker(), keepEarlierBuilds()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    excalidrawFonts(),
+    serviceWorker(),
+    keepEarlierBuilds(),
+  ],
   build: {
     // `keepEarlierBuilds` clears out old assets instead; see there.
     emptyOutDir: false,

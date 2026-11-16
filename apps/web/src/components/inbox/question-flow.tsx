@@ -1,5 +1,6 @@
 import {
   useAtom,
+  useAtomMount,
   useAtomSet,
   useAtomSubscribe,
   useAtomValue,
@@ -28,6 +29,7 @@ import {
   springStep,
 } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
+import { mermaidPrefetchAtom } from '../../mermaid';
 import { introFade } from './composer';
 import { QuestionItem } from './question-item';
 import { NoQuestion } from './reader-states';
@@ -64,6 +66,21 @@ const articleOf = (s: HTMLElement, key: string) =>
     (a) => a.dataset.zenItem === key,
   );
 
+// Where the list rests with `el` brought up: centred in the space, or under
+// the header when it is taller.
+const restingTopOf = (s: HTMLElement, el: HTMLElement, bars: Bars) => {
+  const { head, height } = areaOf(s, bars);
+  return Math.max(0, el.offsetTop - head - marginOf(el, height));
+};
+
+// A smooth jump still sliding: which jump, to which question, and the top it
+// was last aimed at.
+interface Flight {
+  readonly id: number;
+  readonly key: string;
+  readonly top: number;
+}
+
 export const QuestionFlow = ({ header, foot }: Bars) => {
   const queue = useAtomValue(activeQueueAtom);
   const items = useAtomValue(shownQueuesAtom)[queue];
@@ -73,12 +90,26 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
   const placing = useAtomValue(placingAtom);
   const intro = useAtomValue(readerIntroAtom);
   const send = useAtomSet(inboxReaderAtoms.send);
+  // Each diagram on the board is drawn as the board arrives, so a question
+  // mounts with its picture's size, not short of it.
+  useAtomMount(mermaidPrefetchAtom);
   const scroller = useRef<HTMLDivElement>(null);
-  const anchor = useRef<{ key: string; top: number } | undefined>(undefined);
+  // The read question's top in the list, and the list's scroll when it was
+  // taken. The scroll is kept rather than read again when correcting: a
+  // question above shrinking can pull the end of the list up past the scroll,
+  // and the browser clamps the scroll before this sees the change, so a
+  // correction added to the clamped scroll would count the shrink twice.
+  const anchor = useRef<
+    { key: string; top: number; scroll: number } | undefined
+  >(undefined);
   // Where the steps are heading, so quick presses add up.
   const pagingTo = useRef<number | undefined>(undefined);
   // The jump already under way, so measuring again does not start it over.
   const jumped = useRef<number | undefined>(undefined);
+  // The smooth jump still sliding, from its `scrollTo` to its `scrollend`, so
+  // a question changing size on its way re-aims it rather than leaving it to
+  // land where its target used to be.
+  const flight = useRef<Flight | undefined>(undefined);
   // The focused key as `paint` reads it, from a scroll or a resize alike.
   const litKey = useRef<string | undefined>(undefined);
   // Each question's fade, and those still moving. Not state: see `paint`.
@@ -211,33 +242,72 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
     if (jump === undefined || s === null) return;
     if (jumped.current === jump.id && (jump.smooth || !placing)) return;
     jumped.current = jump.id;
+    flight.current = undefined;
     const el = articleOf(s, jump.key);
     if (el === undefined) return;
-    const { head, height } = areaOf(s, { header, foot });
-    const top = Math.max(0, el.offsetTop - head - marginOf(el, height));
+    const top = restingTopOf(s, el, { header, foot });
     if (!jump.smooth) {
       s.scrollTop = top;
       // Placed from these numbers: the anchor below must not correct for them.
-      anchor.current = { key: jump.key, top: el.offsetTop };
+      anchor.current = {
+        key: jump.key,
+        top: el.offsetTop,
+        scroll: s.scrollTop,
+      };
     }
     // No distance to go is no `scrollend`, and the lock would sit out its time.
     else if (Math.abs(top - s.scrollTop) < 1)
       send({ type: 'JumpEnded', id: jump.id });
-    else s.scrollTo({ top, behavior: 'smooth' });
+    else {
+      flight.current = { id: jump.id, key: jump.key, top };
+      s.scrollTo({ top, behavior: 'smooth' });
+    }
   }, [jumpId, ends]);
 
-  // A question arriving above must not push the one being read out of place.
+  // A question changing size above the one being read must not push it out
+  // of place: one arriving, or a picture in one drawn late. Run on a render
+  // and on a resize alike, since a picture loading renders nothing here. The
+  // anchor is the question's top in the list, which a scroll does not move,
+  // so the reader's own scroll is never undone: only a move of the question
+  // itself is. While a smooth jump slides, the slide is re-aimed instead,
+  // since setting `scrollTop` would stop it dead; and a keyed step still
+  // under way is carried by the same distance, for the same reason.
+  const hold = useCallback(
+    (key: string | undefined) => {
+      const s = scroller.current;
+      const el =
+        s === null || key === undefined ? undefined : articleOf(s, key);
+      if (s === null || el === undefined || key === undefined) {
+        anchor.current = undefined;
+        return;
+      }
+      const flying = flight.current;
+      const was = anchor.current;
+      if (flying !== undefined) {
+        const target = articleOf(s, flying.key);
+        const top =
+          target === undefined
+            ? flying.top
+            : restingTopOf(s, target, { header, foot });
+        if (Math.abs(top - flying.top) >= 1) {
+          flight.current = { ...flying, top };
+          s.scrollTo({ top, behavior: 'smooth' });
+        }
+      } else if (was?.key === key && was.top !== el.offsetTop) {
+        const by = el.offsetTop - was.top;
+        s.scrollTop = was.scroll + by;
+        if (pagingTo.current !== undefined) {
+          pagingTo.current += by;
+          s.scrollTo({ top: pagingTo.current, behavior: 'smooth' });
+        }
+      }
+      anchor.current = { key, top: el.offsetTop, scroll: s.scrollTop };
+    },
+    [header, foot],
+  );
+
   useLayoutEffect(() => {
-    const s = scroller.current;
-    const el = s === null || lit === undefined ? undefined : articleOf(s, lit);
-    if (s === null || el === undefined || lit === undefined) {
-      anchor.current = undefined;
-      return;
-    }
-    const was = anchor.current;
-    if (was?.key === lit && was.top !== el.offsetTop)
-      s.scrollTop += el.offsetTop - was.top;
-    anchor.current = { key: lit, top: el.offsetTop };
+    hold(lit);
   });
 
   // Any render can move the focus or the questions. Before the browser paints,
@@ -248,18 +318,22 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
   });
 
   // A question or the answer box changing size moves what is in view with no
-  // scroll: typing, a fold opening, the window.
+  // scroll: typing, a fold opening, a picture drawn, the window. The read
+  // question is held in place first, so the paint sees where it rests.
   const itemKeys = items.map((i) => i.key).join();
   // biome-ignore lint/correctness/useExhaustiveDependencies: on a new list
   useLayoutEffect(() => {
     const s = scroller.current;
     if (s === null || typeof ResizeObserver === 'undefined') return;
-    const watch = new ResizeObserver(paint);
+    const watch = new ResizeObserver(() => {
+      hold(litKey.current);
+      paint();
+    });
     watch.observe(s);
     if (foot.current !== null) watch.observe(foot.current);
     for (const el of s.querySelectorAll('[data-zen-item]')) watch.observe(el);
     return () => watch.disconnect();
-  }, [itemKeys, queue, foot, paint]);
+  }, [itemKeys, queue, foot, hold, paint]);
 
   useEffect(
     () => () => {
@@ -277,6 +351,7 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
     const end = s.scrollHeight - s.clientHeight;
     const top = (pagingTo.current ?? s.scrollTop) + by * STEP_PX;
     pagingTo.current = Math.max(0, Math.min(end, top));
+    flight.current = undefined;
     send({ type: 'ScrollTaken' });
     s.scrollTo({ top: pagingTo.current, behavior: 'smooth' });
   });
@@ -284,7 +359,23 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
   const onScroll = () => {
     const s = scroller.current;
     if (s === null) return;
+    // Held first: a picture may have moved the read question since the last
+    // frame's observer ran, and the reading line below must not see it out of
+    // place, or it takes the question above for the one being read. A scroll
+    // of the reader's own moves the list, not the question, so this only
+    // takes the new scroll as the anchor's, and never undoes it.
+    hold(litKey.current);
     paint();
+    // A slide that has come to rest needs no more aiming, though its
+    // `scrollend` may not have come yet. Its top may lie past the end.
+    const flying = flight.current;
+    if (
+      flying !== undefined &&
+      Math.abs(
+        Math.min(flying.top, s.scrollHeight - s.clientHeight) - s.scrollTop,
+      ) < 1
+    )
+      flight.current = undefined;
     // The reading line is the middle of the space, where a jump centres.
     const { head, height } = areaOf(s, { header, foot });
     const line = s.scrollTop + head + height / 2;
@@ -297,6 +388,7 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
 
   const taken = () => {
     pagingTo.current = undefined;
+    flight.current = undefined;
     send({ type: 'ScrollTaken' });
   };
 
@@ -314,6 +406,7 @@ export const QuestionFlow = ({ header, foot }: Bars) => {
       onScroll={onScroll}
       onScrollEnd={() => {
         pagingTo.current = undefined;
+        flight.current = undefined;
         if (jumpId !== undefined) send({ type: 'JumpEnded', id: jumpId });
       }}
       onWheel={taken}

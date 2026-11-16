@@ -1,6 +1,7 @@
 import { SERVE_DEFAULT_PORT } from '@operator-inbox/core/api';
 import { describe, expect, it } from 'vitest';
-import config from '../vite.config';
+import { EXCALIDRAW_ASSET_PATH } from '../src/drawings';
+import config, { EXCALIDRAW_ASSETS } from '../vite.config';
 
 // The dev server's /api proxy to `operator-inbox serve`. Nothing else exercises it
 // in a test, and each setting below breaks the dev app in a way no other test
@@ -20,5 +21,12 @@ describe('the dev server proxy', () => {
     expect(typeof api).toBe('object');
     if (typeof api !== 'object') return;
     expect(api.changeOrigin).toBe(true);
+  });
+});
+
+// The page tells Excalidraw where its fonts are; the build puts them there.
+describe('Excalidraw’s fonts', () => {
+  it('are looked for where the build copies them', () => {
+    expect(EXCALIDRAW_ASSET_PATH).toBe(`/${EXCALIDRAW_ASSETS}`);
   });
 });

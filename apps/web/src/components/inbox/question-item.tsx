@@ -14,6 +14,7 @@ import {
   followUpsOf,
   headOf,
   heldKeyAtom,
+  isSending,
   linkKeyAtom,
   type ReaderItem,
   railStateAtom,
@@ -176,6 +177,16 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
       <QuestionBody
         question={item.question}
         className="mt-s4 text-14 leading-prose text-fg/80"
+        drawingHost={{
+          inboxId: item.inboxId,
+          number: item.question.number,
+          key: item.key,
+          state: isSending(item)
+            ? 'sending'
+            : 'answeredSeq' in item.question || 'processedSeq' in item.question
+              ? 'answered'
+              : 'open',
+        }}
       />
       {answer !== undefined && answer.text !== '' && (
         <Said className="mt-s5" label={answer.label} text={answer.text} />
