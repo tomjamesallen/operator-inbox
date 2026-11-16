@@ -1,5 +1,5 @@
 import { Data, Effect, Result, Schema } from 'effect';
-import { questionRef } from './inbox-code';
+import { lettersOfNamedCode, questionRef } from './inbox-code';
 import {
   emptyMetadata,
   GROUP_KEY,
@@ -146,18 +146,34 @@ export const InboxRenamed = Schema.TaggedStruct('InboxRenamed', {
 });
 export type InboxRenamed = typeof InboxRenamed.Type;
 
-// The Inbox was given its code (`inbox-code.ts`): `ab-xyz`, which with a
-// Question's number is that Question's code, `ab-xyz#12`. Assigned once, in
-// the same append as `InboxOpened` for a new Inbox, and by serve at start-up
-// for one opened before codes. The first one folded is the Inbox's code for
-// good: a rename never changes it. The store tags it with the code, so a read
-// of a code's tag finds the Inbox holding it and an assignment conditioned on
-// that tag cannot hand one code to two Inboxes.
+// The Inbox was given its code (`inbox-code.ts`): `xyz`, which with a
+// Question's number is that Question's code, `xyz#12`. Assigned once, in the
+// same append as `InboxOpened` for a new Inbox, and by serve at start-up for
+// one opened before codes. The first one folded is the Inbox's code: a rename
+// never changes it, and only `InboxCodeChanged` moves it. The store tags it
+// with the code, so a read of a code's tag finds the Inbox holding it and an
+// assignment conditioned on that tag cannot hand one code to two Inboxes.
+// One logged before codes lost their name part holds the older form,
+// `ab-xyz`.
 export const InboxCodeAssigned = Schema.TaggedStruct('InboxCodeAssigned', {
   inboxId: InboxId,
   code: InboxCode,
 });
 export type InboxCodeAssigned = typeof InboxCodeAssigned.Type;
+
+// The Inbox's code moved from `from` to `code`. Written by serve at start-up
+// for an Inbox whose code is in the older named form (`ab-xyz`): it keeps its
+// three letters (`xyz`), or, when another Inbox already holds them, takes the
+// first free code derived from its id. The store tags it with both codes, so
+// a read of either tag sees the move: `from` is free again, `code` is held,
+// and the older code still finds its Inbox for a transcript that quotes it.
+// Folded only when `from` is the Inbox's code then.
+export const InboxCodeChanged = Schema.TaggedStruct('InboxCodeChanged', {
+  inboxId: InboxId,
+  from: InboxCode,
+  code: InboxCode,
+});
+export type InboxCodeChanged = typeof InboxCodeChanged.Type;
 
 // The agent put an Inbox away: its questions leave the All view, and the
 // Inbox moves into the sidebar's collapsed Archived section. Nothing is lost: an archived Inbox keeps its
@@ -346,6 +362,7 @@ export const InboxEvent = Schema.Union([
   InboxAdopted,
   InboxRenamed,
   InboxCodeAssigned,
+  InboxCodeChanged,
   InboxArchived,
   InboxUnarchived,
   QuestionAsked,
@@ -443,7 +460,8 @@ export interface InboxState {
   // into this Inbox from a move out of it.
   readonly inboxId?: InboxId;
   readonly label: string;
-  // Its code, from its first `InboxCodeAssigned`; absent until it has one.
+  // Its code, from its first `InboxCodeAssigned` and any `InboxCodeChanged`
+  // after it; absent until it has one.
   readonly code?: InboxCode;
   readonly metadata: Metadata;
   // True after `InboxArchived`, false again after `InboxUnarchived`.
@@ -500,6 +518,8 @@ export const evolveInbox = (
       return { ...state, label: event.label };
     case 'InboxCodeAssigned':
       return state.code === undefined ? { ...state, code: event.code } : state;
+    case 'InboxCodeChanged':
+      return state.code === event.from ? { ...state, code: event.code } : state;
     case 'InboxArchived':
       return { ...state, archived: true };
     case 'InboxUnarchived':
@@ -1059,21 +1079,60 @@ export const decideOpen = (
 
 // --- codes ---------------------------------------------------------------------------
 
+// Each Inbox's code as the events of one or more code tags show it, oldest
+// first: its first assignment, then each change. A change whose start the
+// read does not hold (an Inbox moved onto the code read for) still moves it.
+// Every assignment and change carries the tags of the codes it touches, so a
+// read of a code's tag is the whole answer for that code, with no older log
+// to consult as names have.
+const codesShown = (events: ReadonlyArray<InboxEvent>) => {
+  const current = new Map<InboxId, InboxCode>();
+  const held = new Map<InboxId, Set<InboxCode>>();
+  const hold = (inboxId: InboxId, code: InboxCode) => {
+    current.set(inboxId, code);
+    const all = held.get(inboxId) ?? new Set<InboxCode>();
+    all.add(code);
+    held.set(inboxId, all);
+  };
+  for (const event of events) {
+    if (event._tag === 'InboxCodeAssigned' && !current.has(event.inboxId))
+      hold(event.inboxId, event.code);
+    if (event._tag === 'InboxCodeChanged') {
+      const now = current.get(event.inboxId);
+      if (now === undefined || now === event.from) {
+        if (now === undefined) hold(event.inboxId, event.from);
+        hold(event.inboxId, event.code);
+      }
+    }
+  }
+  return { current, held };
+};
+
 /**
- * The Inboxes holding `code`, from the events its code tag holds (the store
- * hands back exactly those, oldest first): each Inbox whose first assignment
- * gave it that code. Every assignment carries the tag, so the read is the
- * whole answer, with no older log to consult as names have.
+ * The Inboxes holding `code` now, from the events its code tag holds (the
+ * store hands back exactly those, oldest first).
  */
 export const codeHolders = (
   code: InboxCode,
   events: ReadonlyArray<InboxEvent>,
+): ReadonlyArray<InboxId> =>
+  [...codesShown(events).current]
+    .filter(([, c]) => c === code)
+    .map(([id]) => id);
+
+/**
+ * The Inboxes that held `code` once and have moved off it since
+ * (`InboxCodeChanged`), from the events its code tag holds: how an older
+ * code a transcript quotes still finds its Inbox.
+ */
+export const formerCodeHolders = (
+  code: InboxCode,
+  events: ReadonlyArray<InboxEvent>,
 ): ReadonlyArray<InboxId> => {
-  const first = new Map<InboxId, InboxCode>();
-  for (const event of events)
-    if (event._tag === 'InboxCodeAssigned' && !first.has(event.inboxId))
-      first.set(event.inboxId, event.code);
-  return [...first].filter(([, c]) => c === code).map(([id]) => id);
+  const { current, held } = codesShown(events);
+  return [...held]
+    .filter(([id, codes]) => codes.has(code) && current.get(id) !== code)
+    .map(([id]) => id);
 };
 
 /**
@@ -1112,6 +1171,36 @@ export const decideAssignCode = (
   return Result.succeed({
     _tag: 'InboxCodeAssigned',
     inboxId: input.inboxId,
+    code: input.code,
+  });
+};
+
+/**
+ * Move an Inbox's code in the older named form (`ab-xyz`) to the current
+ * form: `code` is the first free one of the edge's candidates (its own three
+ * letters first), undefined when every one is taken. An Inbox with no code,
+ * or with one in the current form, is left alone (`unchanged`), so the move
+ * is safe to repeat.
+ */
+export const decideShortenCode = (
+  state: InboxState,
+  input: { readonly inboxId: InboxId; readonly code: InboxCode | undefined },
+): Result.Result<InboxCodeChanged, InboxRefusal> => {
+  if (!state.opened) return notFound(input.inboxId);
+  if (state.code === undefined || lettersOfNamedCode(state.code) === undefined)
+    return refuse(
+      'unchanged',
+      `inbox ${input.inboxId} has no code in the older named form to move`,
+    );
+  if (input.code === undefined)
+    return refuse(
+      'code-taken',
+      `every code tried for inbox ${input.inboxId} is taken; run it again to try more`,
+    );
+  return Result.succeed({
+    _tag: 'InboxCodeChanged',
+    inboxId: input.inboxId,
+    from: state.code,
     code: input.code,
   });
 };

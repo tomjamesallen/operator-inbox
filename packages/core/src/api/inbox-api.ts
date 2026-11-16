@@ -165,8 +165,8 @@ export const machineKeyOf = (x: {
   readonly machine?: InboxMachineRef;
 }): InboxMachineKey => x.machine?.key ?? LOCAL_MACHINE_KEY;
 
-// The Inbox's code (core's `InboxCodeAssigned`), `ab-xyz`: with a question's
-// number it is that question's code, `ab-xyz#12`, which the page shows on the
+// The Inbox's code (core's `InboxCodeAssigned`), `xyz`: with a question's
+// number it is that question's code, `xyz#12`, which the page shows on the
 // card and the agent's CLI takes. Absent for an Inbox not yet given one, and
 // from a machine whose serve predates codes.
 const code = Schema.optionalKey(InboxCode);

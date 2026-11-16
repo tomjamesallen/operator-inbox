@@ -1,9 +1,9 @@
 import { describe, expect, it } from '@effect/vitest';
 import {
-  derivedCodeSuffixes,
+  derivedCodes,
+  InboxCode,
   type InboxEvent,
   InboxId,
-  inboxCodeOf,
   inboxState,
   QuestionNumber,
   SessionId,
@@ -24,9 +24,10 @@ import { assignMissingCodes, BACKFILL_ATTEMPTS } from '../src/inbox-codes';
 import { InboxLog, InboxLogInMemory } from '../src/inbox-store';
 
 // Question codes at the store edge: a new Inbox gets its code in the same
-// append as its open, the CLI prints and takes `ab-xyz#n`, and serve's
-// start-up gives the Inboxes opened before codes theirs. Every suffix is a
-// fixed value: the draw is the command handler's, never these dispatchers'.
+// append as its open, the CLI prints and takes `xyz#n` (and the older
+// `ab-xyz#n`), and serve's start-up moves named codes to three letters and
+// gives the Inboxes opened before codes theirs. Every code is a fixed value:
+// the draw is the command handler's, never these dispatchers'.
 
 const SESSION: InboxSession = {
   sessionId: SessionId.make('session-a'),
@@ -42,7 +43,7 @@ const provide = <A, E>(effect: Effect.Effect<A, E, InboxLog>) =>
 const openCoded = (
   freshId: InboxId,
   label: string,
-  codeSuffixes: ReadonlyArray<string>,
+  codes: ReadonlyArray<string>,
   session: Option.Option<InboxSession> = Option.none(),
 ) =>
   dispatchOpen({
@@ -51,7 +52,7 @@ const openCoded = (
     label: Option.some(label),
     freshId,
     cwd: '/plain/shell',
-    codeSuffixes,
+    codes: codes.map((c) => InboxCode.make(c)),
   });
 
 const stateOf = (inboxId: InboxId) =>
@@ -80,7 +81,7 @@ describe('a new inbox', () => {
       Effect.gen(function* () {
         const out = yield* openCoded(A, 'Operator inbox', ['asv']);
         expect(out).toBe(
-          `inbox ${A} — Operator inbox [op-asv] (opened)\nhttp://127.0.0.1:7184/inbox/${A}`,
+          `inbox ${A} — Operator inbox [asv] (opened)\nhttp://127.0.0.1:7184/inbox/${A}`,
         );
         const log = yield* InboxLog;
         const { events } = yield* log.read(A);
@@ -89,9 +90,7 @@ describe('a new inbox', () => {
           'InboxCodeAssigned',
         ]);
         expect(
-          Option.getOrUndefined(
-            yield* log.findByCode(inboxCodeOf('op', 'asv')),
-          ),
+          Option.getOrUndefined(yield* log.findByCode(InboxCode.make('asv'))),
         ).toBe(A);
       }),
     ),
@@ -102,7 +101,7 @@ describe('a new inbox', () => {
       Effect.gen(function* () {
         yield* openCoded(A, 'Operator inbox', ['asv']);
         yield* openCoded(B, 'Operations', ['asv', 'bcd']);
-        expect((yield* stateOf(B)).code).toBe('op-bcd');
+        expect((yield* stateOf(B)).code).toBe('bcd');
       }),
     ),
   );
@@ -124,7 +123,7 @@ describe('a new inbox', () => {
       Effect.gen(function* () {
         yield* openCoded(A, 'Operator inbox', ['asv']);
         yield* dispatchRename({ inboxId: A, label: 'Something else' });
-        expect((yield* stateOf(A)).code).toBe('op-asv');
+        expect((yield* stateOf(A)).code).toBe('asv');
       }),
     ),
   );
@@ -153,8 +152,8 @@ describe('a new inbox', () => {
         yield* openCoded(B, 'Operations', ['asv', 'bcd']).pipe(
           Effect.provideService(InboxLog, overtaken),
         );
-        expect((yield* stateOf(A)).code).toBe('op-asv');
-        expect((yield* stateOf(B)).code).toBe('op-bcd');
+        expect((yield* stateOf(A)).code).toBe('asv');
+        expect((yield* stateOf(B)).code).toBe('bcd');
       }),
     ),
   );
@@ -166,7 +165,7 @@ describe('the CLI names questions by code', () => {
       Effect.gen(function* () {
         yield* openCoded(A, 'Operator inbox', ['asv']);
         expect(yield* dispatchAsk({ inboxId: A, title: 'One', body: '' })).toBe(
-          'op-asv#1',
+          'asv#1',
         );
         yield* appendRaw([
           {
@@ -177,17 +176,17 @@ describe('the CLI names questions by code', () => {
           },
         ]);
         expect(yield* dispatchAnswers({ inboxId: A, json: false })).toBe(
-          'op-asv#1 One\n  go',
+          'asv#1 One\n  go',
         );
         const json = JSON.parse(
           yield* dispatchAnswers({ inboxId: A, json: true }),
         );
-        expect(json[0]).toMatchObject({ number: 1, code: 'op-asv#1' });
+        expect(json[0]).toMatchObject({ number: 1, code: 'asv#1' });
         expect(yield* dispatchList()).toBe(
-          `${A}  op-asv  Operator inbox  0 awaiting you, 1 with the agent`,
+          `${A}  asv  Operator inbox  0 awaiting you, 1 with the agent`,
         );
         expect(yield* dispatchDone({ inboxId: A, numbers: [1] })).toBe(
-          'processed op-asv#1',
+          'processed asv#1',
         );
       }),
     ),
@@ -201,7 +200,7 @@ describe('the CLI names questions by code', () => {
         expect(
           yield* resolveQuestions(
             'done',
-            ['op-asv#3', 'OP-ASV#4'],
+            ['asv#3', 'ASV#4'],
             Option.none(),
             Option.none(),
           ),
@@ -210,14 +209,12 @@ describe('the CLI names questions by code', () => {
         expect(
           yield* resolveQuestions(
             'done',
-            ['bi-xyz#1'],
-            Option.some('bi-xyz'),
+            ['xyz#1'],
+            Option.some('xyz'),
             Option.none(),
           ),
         ).toStrictEqual({ inboxId: B, numbers: [1] });
-        expect(yield* resolveInbox(Option.some('op-asv'), Option.none())).toBe(
-          A,
-        );
+        expect(yield* resolveInbox(Option.some('asv'), Option.none())).toBe(A);
       }),
     ),
   );
@@ -247,17 +244,17 @@ describe('the CLI names questions by code', () => {
           given: ReadonlyArray<string>,
           inbox = Option.none<string>(),
         ) => failure(resolveQuestions('done', given, inbox, Option.none()));
-        expect(yield* refused(['op-asv#1', 'bi-xyz#2'])).toContain(
+        expect(yield* refused(['asv#1', 'xyz#2'])).toContain(
           'name the questions of one inbox at a time',
         );
-        expect(yield* refused(['op-asv#1', '2'])).toContain('not both');
-        expect(yield* refused(['zz-zzz#1'])).toContain(
-          'no inbox has the code zz-zzz',
+        expect(yield* refused(['asv#1', '2'])).toContain('not both');
+        expect(yield* refused(['zzz#1'])).toContain(
+          'no inbox has the code zzz',
         );
         expect(yield* refused(['three'])).toContain(
           'neither a question number',
         );
-        expect(yield* refused(['op-asv#1'], Option.some(B))).toContain(
+        expect(yield* refused(['asv#1'], Option.some(B))).toContain(
           `not the --inbox ${B} given`,
         );
       }),
@@ -279,13 +276,14 @@ describe('the inboxes opened before codes', () => {
         const { assigned, skipped } = yield* assignMissingCodes;
         expect(skipped).toStrictEqual([]);
         expect(assigned.map((a) => a.inboxId)).toStrictEqual([A, B, C]);
-        expect(assigned[0]?.code).toBe(`op-${derivedCodeSuffixes(A, 1)[0]}`);
-        expect(assigned[2]?.code).toMatch(/^ib-[a-z]{3}$/);
+        expect(assigned[0]?.code).toBe(derivedCodes(A, 1)[0]);
+        expect(assigned[2]?.code).toMatch(/^[a-z]{3}$/);
         // A second run finds nothing to do and writes nothing.
         const log = yield* InboxLog;
         const before = (yield* log.listAll()).length;
         expect(yield* assignMissingCodes).toStrictEqual({
           assigned: [],
+          changed: [],
           skipped: [],
         });
         expect((yield* log.listAll()).length).toBe(before);
@@ -312,14 +310,106 @@ describe('the inboxes opened before codes', () => {
   it.effect('a derived suffix another inbox holds moves on to the next', () =>
     provide(
       Effect.gen(function* () {
-        const [taken, next] = derivedCodeSuffixes(B, BACKFILL_ATTEMPTS);
+        const [taken, next] = derivedCodes(B, BACKFILL_ATTEMPTS);
         yield* openCoded(A, 'Operator inbox', [taken ?? 'aaa']);
         yield* appendRaw([
           { _tag: 'InboxOpened', inboxId: B, label: 'Operations' },
         ]);
         const { assigned } = yield* assignMissingCodes;
-        expect(assigned).toStrictEqual([{ inboxId: B, code: `op-${next}` }]);
+        expect(assigned).toStrictEqual([{ inboxId: B, code: next }]);
       }),
     ),
+  );
+});
+
+describe('the inboxes given a named code', () => {
+  // Coded the way an Inbox was before codes lost their name part.
+  const named = (inboxId: InboxId, label: string, c: string) =>
+    appendRaw([
+      { _tag: 'InboxOpened', inboxId, label },
+      { _tag: 'InboxCodeAssigned', inboxId, code: InboxCode.make(c) },
+    ]);
+
+  it.effect(
+    'keep their three letters, by a new event, and the older code still finds them',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* named(A, 'Operator inbox', 'op-toe');
+          const { changed, skipped } = yield* assignMissingCodes;
+          expect(skipped).toStrictEqual([]);
+          expect(changed).toStrictEqual([
+            { inboxId: A, from: 'op-toe', code: 'toe' },
+          ]);
+          expect((yield* stateOf(A)).code).toBe('toe');
+          const log = yield* InboxLog;
+          // History is kept: the assignment stands, the change follows it.
+          expect((yield* log.read(A)).events.map((e) => e._tag)).toStrictEqual([
+            'InboxOpened',
+            'InboxCodeAssigned',
+            'InboxCodeChanged',
+          ]);
+          expect(
+            Option.getOrUndefined(yield* log.findByCode(InboxCode.make('toe'))),
+          ).toBe(A);
+          expect(
+            yield* resolveQuestions(
+              'done',
+              ['op-toe#14', 'toe#15'],
+              Option.none(),
+              Option.none(),
+            ),
+          ).toStrictEqual({ inboxId: A, numbers: [14, 15] });
+          expect(
+            yield* resolveInbox(Option.some('op-toe'), Option.none()),
+          ).toBe(A);
+          // A second run moves nothing.
+          expect((yield* assignMissingCodes).changed).toStrictEqual([]);
+        }),
+      ),
+  );
+
+  it.effect(
+    'of two with the same three letters, the later one draws again',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* named(A, 'Operator inbox', 'op-toe');
+          yield* named(B, 'About things', 'ab-toe');
+          const { changed } = yield* assignMissingCodes;
+          const redrawn = derivedCodes(B, BACKFILL_ATTEMPTS).find(
+            (c) => c !== 'toe',
+          );
+          expect(changed).toStrictEqual([
+            { inboxId: A, from: 'op-toe', code: 'toe' },
+            { inboxId: B, from: 'ab-toe', code: redrawn },
+          ]);
+          expect(
+            yield* resolveInbox(Option.some('ab-toe'), Option.none()),
+          ).toBe(B);
+          expect(yield* dispatchList()).toContain(
+            `${B}  ${redrawn}  About things`,
+          );
+        }),
+      ),
+  );
+
+  it.effect(
+    'move before an uncoded inbox draws, so they keep their letters',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          // C has no code, and the first code derived for it is A's letters.
+          const [first] = derivedCodes(C, 1);
+          yield* appendRaw([{ _tag: 'InboxOpened', inboxId: C, label: 'Old' }]);
+          yield* named(A, 'Operator inbox', `op-${first}`);
+          const { changed, assigned } = yield* assignMissingCodes;
+          expect(changed).toStrictEqual([
+            { inboxId: A, from: `op-${first}`, code: first },
+          ]);
+          expect(assigned[0]?.inboxId).toBe(C);
+          expect(assigned[0]?.code).not.toBe(first);
+        }),
+      ),
   );
 });

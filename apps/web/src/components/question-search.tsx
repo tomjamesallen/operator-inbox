@@ -5,11 +5,14 @@ import { type RefObject, useRef } from 'react';
 import { DEFAULT_GROUP } from '../inbox';
 import { unreadNowAtom } from '../inbox-rail';
 import {
+  type InboxHit,
   openSearchEntryAtom,
+  openSearchInboxAtom,
   questionSearchOpenAtom,
   questionSearchQueryAtom,
   questionSearchResultsAtom,
   type SearchEntry,
+  type SearchHit,
   type SearchSection,
   setQuestionSearchOpenAtom,
 } from '../question-search';
@@ -17,7 +20,8 @@ import { modalField, modalPanel } from './styles';
 
 // The ⌘P / Ctrl+P question search: a field over every question the board
 // holds, the matches under Your inbox, With the agent and Processed, in that
-// order. Base UI's Autocomplete, inline in a Dialog near the top of the
+// order; an `@` query lists the Inboxes its code matches above them. Base
+// UI's Autocomplete, inline in a Dialog near the top of the
 // window, as a find palette is. Arrows move, Enter opens
 // the highlighted match, Escape closes.
 
@@ -31,13 +35,39 @@ const SearchItem = ({ entry }: { readonly entry: SearchEntry }) => {
       data-testid="search-hit"
       data-key={entry.key}
     >
-      <span className="shrink-0 text-11 text-fg/45">#{entry.number}</span>
+      <span className="shrink-0 text-11 text-fg/45" data-search-code>
+        {entry.code ?? `#${entry.number}`}
+      </span>
       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
       <span className="w-1/3 shrink-0 truncate text-right text-11 text-fg/45">
         {entry.machine === undefined ? '' : `${entry.machine} · `}
         {entry.label} ·{' '}
         {entry.group === DEFAULT_GROUP ? 'Default' : entry.group}
         {entry.archived ? ' · archived' : ''}
+      </span>
+    </Autocomplete.Item>
+  );
+};
+
+// An Inbox an `@` query matched: its code beside its name.
+const InboxItem = ({ hit }: { readonly hit: InboxHit }) => {
+  const open = useAtomSet(openSearchInboxAtom);
+  return (
+    <Autocomplete.Item
+      value={hit}
+      onClick={() => open(hit)}
+      className="flex cursor-pointer items-baseline gap-s2 px-s3 py-0.75 text-12 text-fg/80 data-highlighted:bg-fg/8 data-highlighted:text-fg"
+      data-testid="search-inbox-hit"
+      data-key={hit.key}
+    >
+      <span className="shrink-0 text-11 text-fg/45" data-search-code>
+        @{hit.code}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{hit.label}</span>
+      <span className="w-1/3 shrink-0 truncate text-right text-11 text-fg/45">
+        {hit.machine === undefined ? '' : `${hit.machine} · `}
+        Inbox
+        {hit.archived ? ' · archived' : ''}
       </span>
     </Autocomplete.Item>
   );
@@ -61,7 +91,9 @@ const SearchBody = ({
       filter={null}
       value={query}
       onValueChange={(next) => setQuery(next)}
-      itemToStringValue={(entry: SearchEntry) => entry.title}
+      itemToStringValue={(hit: SearchHit) =>
+        hit.kind === 'inbox' ? hit.label : hit.title
+      }
       autoHighlight="always"
       keepHighlight
     >
@@ -69,13 +101,14 @@ const SearchBody = ({
         ref={field}
         className={modalField}
         aria-label="Search questions"
-        placeholder="#330, or words from a title or body"
+        placeholder="#330, @abc for an inbox, or words from a title or body"
         autoComplete="off"
         data-testid="search-field"
       />
       {blank ? null : sections.length === 0 ? (
         <p className="px-s3 py-s2 text-12 text-fg/45">
-          No question matches “{query.trim()}”.
+          {query.trim().startsWith('@') ? 'Nothing' : 'No question'} matches “
+          {query.trim()}”.
         </p>
       ) : null}
       {unread.length > 0 && (
@@ -96,9 +129,13 @@ const SearchBody = ({
               {section.heading}
             </Autocomplete.GroupLabel>
             <Autocomplete.Collection>
-              {(entry: SearchEntry) => (
-                <SearchItem key={entry.key} entry={entry} />
-              )}
+              {(hit: SearchHit) =>
+                hit.kind === 'inbox' ? (
+                  <InboxItem key={hit.key} hit={hit} />
+                ) : (
+                  <SearchItem key={hit.key} entry={hit} />
+                )
+              }
             </Autocomplete.Collection>
           </Autocomplete.Group>
         )}

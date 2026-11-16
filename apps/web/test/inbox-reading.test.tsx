@@ -173,7 +173,7 @@ describe('the settled queues', () => {
 });
 
 describe('question codes', () => {
-  const coded = () => board([{ ...VIEW_A, code: 'ex-abc' }, VIEW_B]);
+  const coded = () => board([{ ...VIEW_A, code: 'toe' }, VIEW_B]);
 
   it('shows the code where the copy button was, and copies what it copied', async () => {
     serve.board = coded();
@@ -181,9 +181,9 @@ describe('question codes', () => {
     await onQueue(/Processed/);
     await waitFor(() => expect(litKey()).toBe(`${A}/5`));
     const code = within(lit()).getByRole('button', {
-      name: 'Copy ex-abc#5 for the agent session',
+      name: 'Copy toe#5 for the agent session',
     });
-    expect(code.textContent).toBe('ex-abc#5');
+    expect(code.textContent).toBe('toe#5');
     expect(code.hasAttribute('data-copy')).toBe(true);
     // The mark's slot is there before the click, so the click shifts nothing.
     const slot = () => code.querySelector('[data-copy-mark]');
@@ -196,7 +196,7 @@ describe('question codes', () => {
       ),
     );
     await waitFor(() => expect(code.getAttribute('data-mark')).toBe('ok'));
-    expect(code.textContent).toBe('ex-abc#5');
+    expect(code.textContent).toBe('toe#5');
     expect(slot()?.classList.contains('invisible')).toBe(false);
   });
 
@@ -772,5 +772,82 @@ describe('the question search', () => {
     );
     fireEvent.change(field, { target: { value: 'nothing like it' } });
     await screen.findByText('No question matches “nothing like it”.');
+  });
+
+  describe('by code', () => {
+    const coded = () =>
+      board([
+        { ...VIEW_A, code: 'toe' },
+        { ...VIEW_B, code: 'tub' },
+      ]);
+    const inboxHits = () =>
+      screen.queryAllByTestId('search-inbox-hit').map((h) => h.dataset.key);
+
+    it('shows each question’s full code', async () => {
+      serve.board = coded();
+      await mounted();
+      const field = await open();
+      fireEvent.change(field, { target: { value: '#1' } });
+      await waitFor(() => expect(hits()).toEqual([`${A}#1`, `${B}#1`]));
+      expect(
+        screen
+          .getAllByTestId('search-hit')
+          .map((h) => h.querySelector('[data-search-code]')?.textContent),
+      ).toEqual(['toe#1', 'tub#1']);
+    });
+
+    it('lists the inboxes a partial @ code matches, each code beside its name', async () => {
+      serve.board = coded();
+      await mounted();
+      const field = await open();
+      fireEvent.change(field, { target: { value: '@t' } });
+      await waitFor(() =>
+        expect(inboxHits()).toEqual([`inbox:${A}`, `inbox:${B}`]),
+      );
+      expect(hits()).toEqual([]);
+      const first = screen.getAllByTestId('search-inbox-hit')[0];
+      expect(first?.textContent).toContain('@toe');
+      expect(first?.textContent).toContain('orchard');
+      fireEvent.change(field, { target: { value: '@tu' } });
+      await waitFor(() => expect(inboxHits()).toEqual([`inbox:${B}`]));
+    });
+
+    it('filters to an inbox on @code, and opens it', async () => {
+      serve.board = coded();
+      await mounted();
+      const field = await open();
+      fireEvent.change(field, { target: { value: '@TUB' } });
+      await waitFor(() => expect(hits()).toEqual([`${B}#1`]));
+      expect(inboxHits()).toEqual([`inbox:${B}`]);
+      fireEvent.click(screen.getByTestId('search-inbox-hit'));
+      await waitFor(() =>
+        expect(screen.queryByTestId('question-search')).toBeNull(),
+      );
+      expect(location.pathname).toBe(`/inbox/${B}`);
+    });
+
+    it('filters to exactly one question on @code#n, and goes to it', async () => {
+      serve.board = coded();
+      await mounted();
+      const field = await open();
+      fireEvent.change(field, { target: { value: '@toe#3' } });
+      await waitFor(() => expect(hits()).toEqual([`${A}#3`]));
+      expect(inboxHits()).toEqual([]);
+      fireEvent.keyDown(field, { key: 'Enter' });
+      await waitFor(() =>
+        expect(screen.queryByTestId('question-search')).toBeNull(),
+      );
+      expect(location.pathname).toBe(`/inbox/${A}`);
+      expect(location.hash).toContain('q=3');
+      await waitFor(() => expect(litKey()).toBe(`${A}/3`));
+    });
+
+    it('says when no inbox has the code', async () => {
+      serve.board = coded();
+      await mounted();
+      const field = await open();
+      fireEvent.change(field, { target: { value: '@zzz' } });
+      await screen.findByText('Nothing matches “@zzz”.');
+    });
   });
 });

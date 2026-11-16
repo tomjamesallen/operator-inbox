@@ -2,8 +2,8 @@ import {
   askEvents,
   awaitingAgent,
   awaitingOperator,
-  CODE_SUFFIX_COUNT,
-  codeSuffixAt,
+  CODE_COUNT,
+  codeAt,
   decideAdopt,
   decideArchive,
   decideAsk,
@@ -25,8 +25,6 @@ import {
   InboxId,
   InboxRefusal,
   type InboxState,
-  inboxCodeOf,
-  inboxCodePrefix,
   inboxState,
   loadMetadataRules,
   type Metadata,
@@ -218,8 +216,8 @@ export const resolveInbox = Effect.fnUntraced(function* (
 });
 
 /**
- * An inbox named by `--inbox` or `--to`: its id, or its code (`ab-xyz`),
- * which is looked up.
+ * An inbox named by `--inbox` or `--to`: its id, or its code (`xyz`, or the
+ * older `ab-xyz`), which is looked up.
  */
 export const inboxOfFlag = Effect.fnUntraced(function* (given: string) {
   const code = parseInboxCode(given);
@@ -238,11 +236,12 @@ const inboxOfCode = Effect.fnUntraced(function* (code: InboxCode) {
 });
 
 /**
- * The questions a verb was given, each a number or a question code
- * (`ab-xyz#3`), and the inbox they are in. Numbers are in `--inbox`, or this
- * session's inbox; codes name their own inbox, so they need neither. One
- * verb works in one inbox, so codes from two inboxes, a code with plain
- * numbers, or a code from another inbox than `--inbox` names, are refused.
+ * The questions a verb was given, each a number or a question code (`xyz#3`,
+ * or the older `ab-xyz#3`), and the inbox they are in. Numbers are in
+ * `--inbox`, or this session's inbox; codes name their own inbox, so they
+ * need neither. One verb works in one inbox, so codes from two inboxes, a
+ * code with plain numbers, or a code from another inbox than `--inbox`
+ * names, are refused.
  */
 export const resolveQuestions = Effect.fnUntraced(function* (
   verb: string,
@@ -263,23 +262,26 @@ export const resolveQuestions = Effect.fnUntraced(function* (
     const parsed = parseQuestionCode(text);
     if (parsed === undefined)
       return yield* new InputError({
-        message: `inbox ${verb}: "${raw}" is neither a question number (3) nor a question code (ab-xyz#3)`,
+        message: `inbox ${verb}: "${raw}" is neither a question number (3) nor a question code (abc#3)`,
       });
     codes.add(parsed.code);
     numbers.push(parsed.number);
   }
-  const [code, ...others] = codes;
+  const [code] = codes;
   if (code === undefined)
     return { inboxId: yield* resolveInbox(inbox, session), numbers };
-  if (others.length > 0)
-    return yield* new InputError({
-      message: `inbox ${verb}: the codes name ${codes.size} inboxes (${[...codes].join(', ')}); name the questions of one inbox at a time`,
-    });
   if (plain)
     return yield* new InputError({
       message: `inbox ${verb}: give every question as a code (${questionCode(code, 3)}) or every one as a number, not both`,
     });
-  const inboxId = yield* inboxOfCode(code);
+  // An older code and the current one can name the same inbox.
+  const inboxes = new Set<InboxId>();
+  for (const c of codes) inboxes.add(yield* inboxOfCode(c));
+  const [inboxId, ...others] = inboxes;
+  if (inboxId === undefined || others.length > 0)
+    return yield* new InputError({
+      message: `inbox ${verb}: the codes name ${inboxes.size} inboxes (${[...codes].join(', ')}); name the questions of one inbox at a time`,
+    });
   if (Option.isSome(inbox)) {
     const named = yield* inboxOfFlag(inbox.value);
     if (named !== inboxId)
@@ -481,7 +483,7 @@ export const dispatchOpen = Effect.fnUntraced(function* (opts: {
   // Three-letter suffixes drawn at the edge, tried in order for a new
   // inbox's code (`ab-` from its name, then one of these). Left out, a new
   // inbox opens without a code, as one opened before codes did.
-  readonly codeSuffixes?: ReadonlyArray<string>;
+  readonly codes?: ReadonlyArray<InboxCode>;
 }) {
   const metadata = withSessionTitle(
     withSessionLink(
@@ -561,10 +563,7 @@ export const dispatchOpen = Effect.fnUntraced(function* (opts: {
   const sessionId = Option.getOrUndefined(
     Option.map(opts.session, (s) => s.sessionId),
   );
-  const prefix = inboxCodePrefix(label.trim());
-  const candidates = [
-    ...new Set((opts.codeSuffixes ?? []).map((s) => inboxCodeOf(prefix, s))),
-  ];
+  const candidates = [...new Set(opts.codes ?? [])];
   const coded = yield* decideNamedOrFail(
     opts.freshId,
     label,
@@ -713,7 +712,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
 // the app: `response` is then their question, not an answer to one of the
 // agent's. `deferred` marks an answer that hands the decision to the agent:
 // `response` is then the operator's optional note.
-// `code` is the question's code (`ab-xyz#3`), set once its inbox has one.
+// `code` is the question's code (`abc#3`), set once its inbox has one.
 export interface AnswerLine {
   readonly number: QuestionNumber;
   readonly code?: string;
@@ -1119,7 +1118,7 @@ export const desktopSessionOf = (
 
 const inboxOpt = Flag.String('inbox').pipe(
   Flag.withDescription(
-    'The inbox, by id or by code (ab-xyz) (default: the inbox this session opened or adopted)',
+    'The inbox, by id or by code (abc) (default: the inbox this session opened or adopted)',
   ),
   Flag.optional,
 );
@@ -1189,27 +1188,22 @@ export const printingHolder = <E, R>(effect: Effect.Effect<string, E, R>) =>
     ),
   );
 
-// How many suffixes a new inbox's code may try: enough that a clash with
-// every one is out of reach until its two letters' 17,576 are nearly used.
+// How many codes a new inbox may try: enough that a clash with every one is
+// out of reach until the 17,576 codes are nearly used.
 const CODE_DRAWS = 16;
 
-// The suffixes a new inbox's code tries, from Effect's injected `Random`, so a
+// The codes a new inbox tries, from Effect's injected `Random`, so a
 // test can seed it. The only randomness codes have, kept here at the edge.
-const drawCodeSuffixes = Effect.forEach(
-  Array.from({ length: CODE_DRAWS }),
-  () =>
-    Effect.map(
-      Random.nextIntBetween(0, CODE_SUFFIX_COUNT, { halfOpen: true }),
-      codeSuffixAt,
-    ),
+const drawCodes = Effect.forEach(Array.from({ length: CODE_DRAWS }), () =>
+  Effect.map(Random.nextIntBetween(0, CODE_COUNT, { halfOpen: true }), codeAt),
 );
 
-// A question argument: its number, or its code (`ab-xyz#3`), which also
+// A question argument: its number, or its code (`abc#3`), which also
 // names its inbox.
 const questionArg = (description: string) =>
   Argument.String('n').pipe(
     Argument.withDescription(
-      `${description}: each a number, or a question code such as ab-xyz#3, which names its inbox too`,
+      `${description}: each a number, or a question code such as abc#3, which names its inbox too`,
     ),
   );
 
@@ -1247,7 +1241,7 @@ const openCommand = Command.make(
           inbox,
           label,
           freshId: InboxId.make(newId()),
-          codeSuffixes: yield* drawCodeSuffixes,
+          codes: yield* drawCodes,
           cwd,
           ...(metadata === undefined ? {} : { metadata }),
           ...(desktopSession === undefined ? {} : { desktopSession }),
@@ -1355,7 +1349,7 @@ const askCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    'Ask the operator a question; prints its code (ab-xyz#n), or #n for an inbox that has no code yet',
+    'Ask the operator a question; prints its code (abc#n), or #n for an inbox that has no code yet',
   ),
 );
 
@@ -1607,7 +1601,7 @@ const metaCommand = Command.make(
   {
     number: Argument.String('n').pipe(
       Argument.withDescription(
-        "A question, by number or by code (ab-xyz#3): its metadata instead of the inbox's",
+        "A question, by number or by code (abc#3): its metadata instead of the inbox's",
       ),
       Argument.optional,
     ),
@@ -1709,7 +1703,7 @@ const moveCommand = Command.make(
     numbers: questionArg('The questions to move').pipe(Argument.atLeast(1)),
     to: Flag.String('to').pipe(
       Flag.withDescription(
-        'The inbox to move them to: its id, or its code (ab-xyz)',
+        'The inbox to move them to: its id, or its code (abc)',
       ),
     ),
     inbox: inboxOpt,

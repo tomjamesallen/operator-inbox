@@ -13,6 +13,7 @@ import {
   describeInboxDatabase,
   type EventStamp,
   firstFreeCode,
+  formerCodeHolders,
   type InboxCode,
   InboxEvent,
   type InboxId,
@@ -83,7 +84,9 @@ import {
 //   both;
 // - `InboxCodeAssigned` carries `inbox-code:<code>`, so a read of a code's
 //   tag finds who holds it (`findByCode`), and an assignment conditioned on
-//   it means two Inboxes racing for one code cannot both win.
+//   it means two Inboxes racing for one code cannot both win;
+// - `InboxCodeChanged` carries the tags of both codes it touches, so a read of
+//   either sees the move, and the older code still finds its Inbox.
 
 const inboxTag = (inboxId: InboxId) => Tag.make(`inbox:${inboxId}`);
 const sessionTag = (sessionId: SessionId) => Tag.make(`session:${sessionId}`);
@@ -176,7 +179,10 @@ export class InboxLog extends Context.Service<
       label: string | undefined,
       codes?: ReadonlyArray<InboxCode>,
     ) => Effect.Effect<NamedRead, InputError>;
-    /** The inbox holding `code`, if any. */
+    /**
+     * The inbox holding `code`, if any; else the inbox that held it before
+     * its code moved (an older `ab-xyz` a transcript quotes).
+     */
     readonly findByCode: (
       code: InboxCode,
     ) => Effect.Effect<Option.Option<InboxId>, InputError>;
@@ -236,6 +242,8 @@ const tagsFor = (event: InboxEvent) => {
   }
   if (event._tag === 'QuestionMoved') tags.push(inboxTag(event.toInboxId));
   if (event._tag === 'InboxCodeAssigned') tags.push(codeTag(event.code));
+  if (event._tag === 'InboxCodeChanged')
+    tags.push(codeTag(event.from), codeTag(event.code));
   if (event._tag === 'InboxRenamed') {
     tags.push(labelTag(event.label));
     if (event.previousLabel !== undefined) {
@@ -322,7 +330,9 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
       ),
     findByCode: (code) =>
       Effect.map(collect(query.tags([codeTag(code)])), ({ events }) =>
-        Option.fromNullishOr(codeHolders(code, events)[0]),
+        Option.fromNullishOr(
+          codeHolders(code, events)[0] ?? formerCodeHolders(code, events)[0],
+        ),
       ),
     readPair: (a, b) =>
       Effect.map(

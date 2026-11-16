@@ -38,7 +38,7 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
   ];
 };
 
-// A question's code, `ab-xyz#12` (`#12` while its Inbox has none), and the
+// A question's code, `xyz#12` (`#12` while its Inbox has none), and the
 // control that copies its text for discussing it with the agent's session:
 // the code underlined, and ✓ or ✗ beside it for a moment once clicked, in a
 // slot kept empty until then, so the click shifts nothing.

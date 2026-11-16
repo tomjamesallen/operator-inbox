@@ -205,6 +205,26 @@ describe('the list', () => {
     ).toBe(`orchard · ${A}\nLast seen 3h ago`);
   });
 
+  it('shows an Inbox’s code in its row’s tooltip', async () => {
+    serve.board = board([{ ...VIEW_A, code: 'toe' }, VIEW_B]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(items().length).toBeGreaterThan(0));
+    await openRail();
+    expect(
+      document
+        .querySelector(`[data-rail-inbox="${A}"]`)
+        ?.getAttribute('title')
+        ?.split('\n')[0],
+    ).toBe(`orchard · toe · ${A}`);
+    // An Inbox with no code yet shows none.
+    expect(
+      document
+        .querySelector(`[data-rail-inbox="${B}"]`)
+        ?.getAttribute('title')
+        ?.split('\n')[0],
+    ).toBe(`quarry · ${B}`);
+  });
+
   it('marks the inbox and group holding a highlighted question', async () => {
     const store = {
       ...asked(1, 'First', 2),
@@ -513,15 +533,34 @@ describe('pins', () => {
     expect(markedPinned(rowLink(A))).toBe(false);
     expect(markedPinned(rowLink(A, 'ui'))).toBe(true);
     expect(nav().querySelectorAll('[data-pinned-mark]')).toHaveLength(2);
-    // No pin button on any row: it is in the menu.
-    expect(
-      rail().queryByRole('button', { name: /^(Un)?[Pp]in the/ }),
-    ).toBeNull();
+    // Nothing on a row pins: that is in the menu. A pinned row's pin unpins.
+    expect(rail().queryByRole('button', { name: /^Pin/ })).toBeNull();
     const menu = await rowMenu(rowLink(B));
     expect(
       within(menu).getByRole('menuitem', { name: 'Unpin the inbox quarry' }),
     ).toBeTruthy();
     expect(rowLink(A, '').closest('[data-row-menu-area]')).toBeNull();
+  });
+
+  it('unpins an inbox, or a group, from the pin on its row, without picking the row', async () => {
+    serve.post = () => json(PINNED.views[0]);
+    await open(`/inbox/${A}`);
+    fireEvent.click(rail().getByRole('button', { name: 'Unpin quarry' }));
+    await waitFor(() =>
+      expect(serve.posts).toEqual([
+        { path: `/api/inbox/${B}/pin`, body: { pinned: false } },
+      ]),
+    );
+    // The row was not picked: the page stays on orchard.
+    expect(location.pathname).toBe(`/inbox/${A}`);
+    fireEvent.click(rail().getByRole('button', { name: 'Unpin the group ui' }));
+    await waitFor(() =>
+      expect(serve.posts).toEqual([
+        { path: `/api/inbox/${B}/pin`, body: { pinned: false } },
+        { path: `/api/inbox/${A}/pin`, body: { pinned: false, group: 'ui' } },
+      ]),
+    );
+    expect(location.hash).not.toContain('group=ui');
   });
 
   it('filters to what is pinned, by the search box’s rules', async () => {
