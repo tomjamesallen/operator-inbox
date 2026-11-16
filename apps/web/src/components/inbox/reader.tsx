@@ -1,6 +1,7 @@
 import { useAtomValue } from '@effect/atom-react';
 import { useRef } from 'react';
 import { askingAtom } from '../../inbox-reader';
+import { ChaseToasts } from './chase';
 import { AskPicker, AskPlace, Composer } from './composer';
 import { Minimap } from './minimap';
 import { QuestionFlow } from './question-flow';
@@ -32,8 +33,11 @@ export const InboxReader = () => {
       <div className="relative h-full">
         <QuestionFlow header={header} foot={foot} />
         {asking ? <Asking /> : <Minimap />}
-        <div ref={foot} className="absolute inset-x-0 bottom-0">
+        {/* `@container`: the chase toasts, inside it, place themselves by the
+            column's width (`@chase-beside:`). */}
+        <div ref={foot} className="@container absolute inset-x-0 bottom-0">
           <Composer />
+          <ChaseToasts />
         </div>
       </div>
     </main>

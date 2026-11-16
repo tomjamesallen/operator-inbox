@@ -2,6 +2,7 @@ import {
   type InboxAgentQuestionDto,
   type InboxViewDto,
   machineKeyOf,
+  questionRef,
 } from '@operator-inbox/core/api';
 import { DateTime, Option, Schema } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
@@ -61,6 +62,9 @@ export interface ChaseToast {
   readonly id: string;
   readonly inboxId: string;
   readonly label: string;
+  // The Inbox's code, when it has one: with a number it makes the question's
+  // code (`ab-xyz#12`), as the card shows it.
+  readonly inboxCode?: string;
   readonly numbers: ReadonlyArray<number>;
   // The keys a dismissal records, one per question.
   readonly keys: ReadonlyArray<string>;
@@ -95,6 +99,7 @@ export const chaseToastsOf = (
         id: `chase:${machineKeyOf(view)}:${view.inboxId}`,
         inboxId: view.inboxId,
         label: view.label,
+        ...(view.code === undefined ? {} : { inboxCode: view.code }),
         numbers: stale.map((q) => q.number),
         keys: stale.map((q) => keyOf(view.inboxId, q.number)),
         waited: relAge(Math.max(0, nowMs - oldest) / 86_400_000),
@@ -103,12 +108,16 @@ export const chaseToastsOf = (
     ];
   });
 
-/** A toast's line: what has waited, and for how long. */
+/**
+ * A toast's line: what has waited, and for how long. Each question goes by its
+ * code (`ab-xyz#12`), or by `#12` while its Inbox has none.
+ */
 export const chaseLine = (toast: ChaseToast): string => {
+  const refs = toast.numbers.map((n) => questionRef(toast.inboxCode, n));
   const which =
-    toast.numbers.length === 1
-      ? `#${toast.numbers[0]}`
-      : `${toast.numbers.length} questions (${toast.numbers.map((n) => `#${n}`).join(', ')})`;
+    refs.length === 1
+      ? refs.join('')
+      : `${refs.length} questions (${refs.join(', ')})`;
   return `${which} in ${toast.label} ${toast.numbers.length === 1 ? 'has' : 'have'} sat with the agent for ${toast.waited}.`;
 };
 
