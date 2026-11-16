@@ -1,3 +1,5 @@
+import { ContextMenu } from '@base-ui/react/context-menu';
+import { Menu } from '@base-ui/react/menu';
 import {
   useAtom,
   useAtomSet,
@@ -18,6 +20,7 @@ import {
   scopeLine,
   screenStateAtom,
   selectedInboxAtom,
+  selectSidebarAtom,
   sidebarPinnedOnlyAtom,
 } from '../../inbox';
 import type { InboxItem } from '../../inbox-queues';
@@ -58,7 +61,7 @@ import {
   MacroMenuList,
   useMacroMenu,
 } from './macro-cards';
-import { InboxMenuButton } from './row-menu';
+import { InboxMenuButton, MENU_ITEM, POPUP } from './row-menu';
 
 // The box at the foot. It belongs to the lit question, and the machine says how
 // (`composerOf`): an answer, a follow-up, a question for the agent, or nothing
@@ -554,6 +557,37 @@ const useScope = (): string | undefined => {
   return onlyPinned ? `${scope}, pinned` : scope;
 };
 
+// What the page is narrowed to. A right-click (a long press on a touch screen)
+// opens its menu, which goes back to All as the `all_inboxes` key does.
+const ScopeLabel = ({ scope }: { readonly scope: string }) => {
+  const selected = useAtomValue(selectedInboxAtom);
+  const { inboxes } = useAtomValue(screenStateAtom);
+  const select = useAtomSet(selectSidebarAtom);
+  const keys = useAtomValue(keyHintAtom('all_inboxes'));
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger data-zen-scope className="min-w-0 truncate">
+        {scope}
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner className="z-40">
+          <ContextMenu.Popup finalFocus={false} className={POPUP}>
+            <Menu.Item
+              className={MENU_ITEM}
+              disabled={selected === undefined && inboxes.length === 0}
+              data-all-inboxes
+              onClick={() => select({ inboxId: undefined, groups: [] })}
+            >
+              All inboxes
+              <span className="text-fg/30">{keys.first}</span>
+            </Menu.Item>
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+};
+
 const TitleLine = () => {
   const queue = useAtomValue(activeQueueAtom);
   const items = useAtomValue(shownQueuesAtom)[queue];
@@ -567,9 +601,7 @@ const TitleLine = () => {
   if (item === undefined)
     return scope === undefined ? null : (
       <div className="mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40">
-        <span className="min-w-0 truncate" data-zen-scope>
-          {scope}
-        </span>
+        <ScopeLabel scope={scope} />
         {selected !== undefined && <InboxActions inboxId={selected} />}
         {selected !== undefined && <InboxMenuButton inboxId={selected} />}
       </div>
@@ -577,11 +609,7 @@ const TitleLine = () => {
   return (
     // The lit question is plain on the page, so its title is not repeated here.
     <div className="mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40">
-      {scope !== undefined && (
-        <span className="min-w-0 truncate" data-zen-scope>
-          {scope}
-        </span>
-      )}
+      {scope !== undefined && <ScopeLabel scope={scope} />}
       <LitActions inboxId={item.inboxId} />
       <InboxMenuButton inboxId={item.inboxId} lit />
       <span className="shrink-0 tabular-nums">
