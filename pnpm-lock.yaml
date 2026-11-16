@@ -158,6 +158,12 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.2
+      happy-dom:
+        specifier: 'catalog:'
+        version: 21.0.4
+      mermaid:
+        specifier: 'catalog:'
+        version: 12.3.0
     devDependencies:
       '@effect/language-service':
         specifier: 'catalog:'

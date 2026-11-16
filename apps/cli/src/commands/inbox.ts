@@ -90,6 +90,7 @@ import {
   type NamedDecision,
 } from '../inbox-store';
 import { runInboxWatch, watcherAlive } from '../inbox-watch';
+import { checkMermaid, mermaidRefusal } from '../mermaid-check';
 import {
   desktopSessionsDir,
   findDesktopSession,
@@ -1459,6 +1460,20 @@ const readBody = (verb: string, bodyFile: Option.Option<string>) =>
       }),
   });
 
+// Refuse a body whose ```mermaid fences Mermaid cannot parse, so the agent
+// fixes it now rather than the operator meeting an error in its place. A
+// fence that could not be checked is said on stderr and does not refuse.
+export const refuseInvalidMermaid = Effect.fnUntraced(function* (
+  verb: string,
+  body: string,
+) {
+  const { invalid, unchecked } = yield* checkMermaid(body);
+  if (invalid.length > 0)
+    return yield* new InputError({ message: mermaidRefusal(verb, invalid) });
+  for (const reason of unchecked)
+    yield* Console.error(`inbox ${verb}: a diagram was not checked: ${reason}`);
+});
+
 const askCommand = Command.make(
   'ask',
   {
@@ -1485,6 +1500,7 @@ const askCommand = Command.make(
       Effect.gen(function* () {
         const inboxId = yield* resolved(inbox);
         const body = yield* readBody('ask', bodyFile);
+        yield* refuseInvalidMermaid('ask', body);
         const drawings = yield* drawingsOf('ask', drawing);
         const rules = yield* readMetadataRules;
         const metadata = yield* metadataOf(meta, metaJson, rules);
@@ -1723,6 +1739,7 @@ const editCommand = Command.make(
         const read = yield* readBody('edit', bodyFile);
         const body =
           Option.isNone(bodyFile) && read.length === 0 ? undefined : read;
+        if (body !== undefined) yield* refuseInvalidMermaid('edit', body);
         const drawings = yield* drawingsOf('edit', drawing);
         return yield* dispatchEdit({
           inboxId,

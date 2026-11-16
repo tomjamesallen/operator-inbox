@@ -22,7 +22,9 @@
     "@effect/sql-sqlite-node": "catalog:",
     "@kairos-es/core": "catalog:",
     "@kairos-es/store-sqlite": "catalog:",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "happy-dom": "catalog:",
+    "mermaid": "catalog:"
   },
   "devDependencies": {
     "@operator-inbox/typescript-config": "workspace:*",
