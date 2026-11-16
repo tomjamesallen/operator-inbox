@@ -12,6 +12,7 @@ import {
 import { Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
+import { readCommentSelection } from './comments';
 import { failureText } from './failure';
 import {
   archiveAtom,
@@ -47,6 +48,7 @@ import {
   activeQueueAtom,
   askingAtom,
   colophonOpenAtom,
+  commentHereAtom,
   composerAtom,
   flowStepAskedAtom,
   highlightPlaceOf,
@@ -503,6 +505,22 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (dialogOpen(get) || card === undefined) return false;
     const open = get.once(macroInfoOpenAtom);
     get.set(macroInfoOpenAtom, toggledIn(open, card, !open.includes(card)));
+    return true;
+  },
+  // `c` with nothing held is a letter, so any field keeps it; ⌘⌥M is a chord,
+  // so the answer box and the cards let it through, as Send's does. The
+  // selection is read at the press, not from the last `selectionchange`.
+  comment_selection: (get, e, binding) => {
+    const chord = e.metaKey || e.ctrlKey || e.altKey;
+    if (
+      dialogOpen(get) ||
+      (isTextEntry(e.target) && !chord) ||
+      otherFieldKeeps(binding, e)
+    )
+      return false;
+    const selection = readCommentSelection();
+    if (selection === undefined) return false;
+    get.set(commentHereAtom, selection);
     return true;
   },
   copy_question: (get) => {

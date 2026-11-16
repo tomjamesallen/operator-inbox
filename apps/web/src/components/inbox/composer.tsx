@@ -9,6 +9,7 @@ import {
 import type { InboxId } from '@operator-inbox/core/api';
 import { AsyncResult } from 'effect/reactivity';
 import { type KeyboardEvent, type ReactNode, useCallback, useRef } from 'react';
+import { commentsAtom, commentsInOrderAtom, isCommented } from '../../comments';
 import { failureText, refusalText } from '../../failure';
 import {
   askDraftAtom,
@@ -31,11 +32,13 @@ import {
   askChoicesAtom,
   askPlaceOf,
   askProgressAtom,
+  askSteppedAtom,
   boxFocusAskedAtom,
   composerAtom,
   type FootTone,
   followUpPlaceOf,
   footNoteOf,
+  forgetAskStepAtom,
   highlightReplyAtom,
   litKeyAtom,
   pickAskInboxAtom,
@@ -54,6 +57,7 @@ import {
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { InboxActions, LitActions } from './colophon';
+import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
 import {
   firstCardStop,
@@ -255,6 +259,10 @@ const AnswerBox = ({
 }) => {
   const [draft, setDraft] = useAtom(responseDraftAtom(item.key));
   const cards = useAtomValue(macroCardsAtom(item.key));
+  // The comments' cards head the stack Tab goes into, and a written comment
+  // can be the whole answer.
+  const comments = useAtomValue(commentsInOrderAtom(item.key));
+  const commented = isCommented(useAtomValue(commentsAtom(item.key)));
   const askFocus = useAtomSet(askMacroFocusAtom);
   const self = useRef<HTMLTextAreaElement | null>(null);
   // A drawing waiting on the operator's choice holds both sends.
@@ -292,7 +300,7 @@ const AnswerBox = ({
           onKeyDown={(e) => {
             if (menu.onKeyDown(e)) return;
             // Tab goes from the text into the cards, while there are any.
-            const first = firstCardStop(cards);
+            const first = firstCardStop(cards, comments);
             if (
               e.key === 'Tab' &&
               !e.shiftKey &&
@@ -308,7 +316,11 @@ const AnswerBox = ({
         />
         <Actions
           label="Send"
-          ready={!held && free && (draft.trim() !== '' || cards.length > 0)}
+          ready={
+            !held &&
+            free &&
+            (draft.trim() !== '' || cards.length > 0 || commented)
+          }
           deferrable={!held}
           deferReady={free}
         />
@@ -443,13 +455,27 @@ export const AskPicker = () => {
   const send = useAtomSet(inboxReaderAtoms.send);
   const pick = useAtomSet(pickAskInboxAtom);
   const { choices, cursor } = useAtomValue(askChoicesAtom);
+  const forgetStep = useAtomSet(forgetAskStepAtom);
   const machined = (board?.machines?.length ?? 0) > 1;
+  // The list scrolls once longer than the body, so the row a key moves to is
+  // brought into sight once it is drawn lit. Only a key's step does it: a row
+  // lit by the pointer is already in sight, and scrolling it would light the
+  // next row under the pointer, and so on.
+  useAtomSubscribe(askSteppedAtom, ({ inboxId }) => {
+    if (inboxId === undefined) return;
+    requestAnimationFrame(() =>
+      document
+        .getElementById(pickChoiceId(inboxId))
+        ?.scrollIntoView({ block: 'nearest' }),
+    );
+  });
   return (
     <div
       id={PICK_LIST_ID}
       role="listbox"
       aria-label="Inboxes to ask in"
-      className="mt-s4 flex max-h-body flex-col gap-s1 overflow-y-auto font-reading text-14"
+      ref={fadeEdges}
+      className={`mt-s4 flex max-h-body flex-col gap-s1 overflow-y-auto font-reading text-14 ${edgeFade}`}
     >
       {choices.length === 0 && <p className="text-fg/30">No inbox matches.</p>}
       {choices.map((c) => (
@@ -463,11 +489,15 @@ export const AskPicker = () => {
           data-zen-choice={c.inboxId === cursor?.inboxId || undefined}
           // A press keeps the caret in the box.
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => pick(c.inboxId)}
-          onMouseEnter={() =>
-            send({ type: 'AskCursorSet', inboxId: c.inboxId })
-          }
-          className={`flex cursor-pointer items-baseline gap-s2 text-left ${c.inboxId === cursor?.inboxId ? 'text-fg' : 'text-fg/35 hover:text-fg/70'}`}
+          onClick={() => {
+            forgetStep();
+            pick(c.inboxId);
+          }}
+          onMouseEnter={() => {
+            forgetStep();
+            send({ type: 'AskCursorSet', inboxId: c.inboxId });
+          }}
+          className={`flex scroll-my-fade cursor-pointer items-baseline gap-s2 text-left ${c.inboxId === cursor?.inboxId ? 'text-fg' : 'text-fg/35 hover:text-fg/70'}`}
         >
           <span className="min-w-0 truncate">{c.label}</span>
           {machined && c.machine !== 'Local' && (

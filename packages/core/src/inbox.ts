@@ -1,4 +1,11 @@
 import { Data, Effect, Result, Schema } from 'effect';
+import {
+  commentProblem,
+  commentsInBodyOrder,
+  MAX_COMMENTS_PER_ANSWER,
+  type QuestionComment,
+  QuestionComments,
+} from './comments';
 import { checkDrawings } from './drawing';
 import { lettersOfNamedCode, questionRef } from './inbox-code';
 import {
@@ -126,6 +133,9 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // `macros` holds the macros the operator invoked, in the order they stacked
 // them, each with its instruction copied in (`macros.ts`). With macros,
 // `response` may be ''. Optional for the same reason.
+// `comments` holds the operator's comments on the Question's text, in the
+// order their spans sit in the body (`comments.ts`). With comments,
+// `response` may be ''. Optional for the same reason.
 export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   inboxId: InboxId,
   number: QuestionNumber,
@@ -134,6 +144,7 @@ export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
   drawings: Schema.optionalKey(Drawings),
   macros: Schema.optionalKey(MacrosInvoked),
+  comments: Schema.optionalKey(QuestionComments),
 });
 export type QuestionAnswered = typeof QuestionAnswered.Type;
 
@@ -324,6 +335,7 @@ export const MovedQuestion = Schema.Struct({
   drawings: Schema.optionalKey(Schema.Record(Schema.String, QuestionDrawing)),
   sentDrawings: Schema.optionalKey(Drawings),
   macros: Schema.optionalKey(MacrosInvoked),
+  comments: Schema.optionalKey(QuestionComments),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -517,6 +529,8 @@ export interface InboxQuestion {
   readonly sentDrawings?: Drawings;
   // The macros the operator invoked with their answer, in order.
   readonly macros?: MacrosInvoked;
+  // The operator's comments on its text, sent with their answer, in body order.
+  readonly comments?: QuestionComments;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -684,6 +698,7 @@ export const evolveInbox = (
           ? {}
           : { sentDrawings: event.drawings }),
         ...(event.macros === undefined ? {} : { macros: event.macros }),
+        ...(event.comments === undefined ? {} : { comments: event.comments }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
       }));
     case 'AnswerProcessed':
@@ -787,6 +802,7 @@ export const evolveInbox = (
                 ? {}
                 : { sentDrawings: q.sentDrawings }),
               ...(q.macros === undefined ? {} : { macros: q.macros }),
+              ...(q.comments === undefined ? {} : { comments: q.comments }),
             },
           ],
         };
@@ -1069,6 +1085,7 @@ export type InboxRefusalReason =
   | 'code-taken'
   | 'bad-drawing'
   | 'bad-macro'
+  | 'bad-comment'
   | 'unknown-group';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
@@ -1615,6 +1632,10 @@ export const decideAnswer = (
     // The macros the operator invoked, in order. With one, the response may
     // be empty: a macro is a complete answer on its own.
     readonly macros?: ReadonlyArray<MacroInvoked>;
+    // The operator's comments on the Question's text. With one, the response
+    // may be empty too: a comment says something on its own. Sent in body
+    // order, whatever order they come in.
+    readonly comments?: ReadonlyArray<QuestionComment>;
   },
 ): Result.Result<QuestionAnswered, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1641,12 +1662,21 @@ export const decideAnswer = (
       `${questionRef(state.code, input.number)} changed after you opened it; read it again before answering`,
     );
   const macros = input.macros ?? [];
+  const comments = commentsInBodyOrder(input.comments ?? []);
   if (
     input.deferred !== true &&
     macros.length === 0 &&
+    comments.length === 0 &&
     input.response.trim().length === 0
   )
     return refuse('empty', 'an answer cannot be empty');
+  if (comments.length > MAX_COMMENTS_PER_ANSWER)
+    return refuse(
+      'bad-comment',
+      `an answer carries at most ${MAX_COMMENTS_PER_ANSWER} comments, not ${comments.length}`,
+    );
+  const badComment = comments.map(commentProblem).find((p) => p !== undefined);
+  if (badComment !== undefined) return refuse('bad-comment', badComment);
   if (macros.length > MAX_MACROS_PER_ANSWER)
     return refuse(
       'bad-macro',
@@ -1676,11 +1706,16 @@ export const decideAnswer = (
       ? {}
       : { drawings }),
     ...(isNonEmptyMacros(macros) ? { macros } : {}),
+    ...(isNonEmptyComments(comments) ? { comments } : {}),
   }));
 };
 
 /** The most macros one answer may carry. */
 export const MAX_MACROS_PER_ANSWER = 20;
+
+const isNonEmptyComments = (
+  comments: ReadonlyArray<QuestionComment>,
+): comments is QuestionComments => comments.length > 0;
 
 const isNonEmptyMacros = (
   macros: ReadonlyArray<MacroInvoked>,
@@ -1965,6 +2000,7 @@ const movedQuestionOf = (
     ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
+    ...(q.comments === undefined ? {} : { comments: q.comments }),
   };
 };
 

@@ -8,12 +8,19 @@ import {
   type InboxMetadataRules,
   type InboxViewDto,
   type MacroInvoked,
+  type QuestionComment,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
 import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
 import { clockAtom, nowMillis } from './clock';
+import {
+  type Anchor,
+  commentsAtom,
+  commentsToSend,
+  startCommentAtom,
+} from './comments';
 import {
   drawingConflicts,
   drawingDraftAtom,
@@ -505,16 +512,19 @@ export interface Answer {
   readonly text: string;
   // The macros the operator invoked with it, in order.
   readonly macros: ReadonlyArray<MacroInvoked>;
+  // The operator's comments on the Question's text, in body order.
+  readonly comments: ReadonlyArray<QuestionComment>;
 }
 
 /** What was said to a question, under its body. */
 export const answerOf = (item: ReaderItem): Answer | undefined => {
   if (isSending(item)) {
-    const { deferred, response, macros } = item.sending;
+    const { deferred, response, macros, comments } = item.sending;
     return {
       label: answerLabel(false, false, deferred),
-      text: macroText(deferred, response, macros),
+      text: macroText(deferred, response, [...macros, ...comments]),
       macros,
+      comments,
     };
   }
   const q = item.question;
@@ -524,25 +534,28 @@ export const answerOf = (item: ReaderItem): Answer | undefined => {
       label: answerLabel(true, false),
       text: withdrawalReason(q.reason),
       macros: [],
+      comments: [],
     };
   if (!('response' in q) || q.response === undefined) return undefined;
   const deferred = q.deferred === true;
   const macros = 'macros' in q ? (q.macros ?? []) : [];
+  const comments = 'comments' in q ? (q.comments ?? []) : [];
   return {
     label: answerLabel(false, false, deferred),
-    text: macroText(deferred, q.response, macros),
+    text: macroText(deferred, q.response, [...macros, ...comments]),
     macros,
+    comments,
   };
 };
 
-// An answer of macros alone has no text to show, and a deferral's "no note"
-// line is not wanted when its macros say what to do.
+// An answer of macros or comments alone has no text to show, and a
+// deferral's "no note" line is not wanted when they say what to do.
 const macroText = (
   deferred: boolean,
   response: string,
-  macros: ReadonlyArray<MacroInvoked>,
+  carried: ReadonlyArray<unknown>,
 ): string =>
-  deferred && !(macros.length > 0 && response.trim() === '')
+  deferred && !(carried.length > 0 && response.trim() === '')
     ? deferralText(response)
     : response;
 
@@ -701,6 +714,8 @@ interface AnswerWrite {
   readonly drawings: Readonly<Record<string, string>> | undefined;
   // The macros the operator invoked, in order.
   readonly macros: ReadonlyArray<MacroInvoked>;
+  // The operator's written comments, in body order.
+  readonly comments: ReadonlyArray<QuestionComment>;
 }
 
 // --- highlight your reply ---------------------------------------------------------
@@ -785,6 +800,7 @@ const answerWriteAtom = Atom.family((key: string) =>
                   ? {}
                   : { drawings: req.drawings }),
                 ...(isNonEmpty(req.macros) ? { macros: req.macros } : {}),
+                ...(isNonEmpty(req.comments) ? { comments: req.comments } : {}),
               },
             }),
             () => {
@@ -804,6 +820,8 @@ const answerWriteAtom = Atom.family((key: string) =>
                 cards: [],
               });
               registry.set(macroHeldAtom(key), undefined);
+              // And the comments; a failed send keeps them too.
+              registry.set(commentsAtom(key), []);
               const { target } = registry.get(linkTargetAtom);
               if (
                 target?.inboxId === inboxId &&
@@ -982,8 +1000,14 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       const response = ctx.get(responseDraftAtom(item.key));
       const drawings = ctx.get(questionDrawingDraftsAtom(item.key));
       const cards = ctx.get(macroCardsAtom(item.key));
+      // A written comment can be the whole answer; one never written is not
+      // sent. A deferral carries them too.
+      const comments = commentsToSend(ctx.get(commentsAtom(item.key)));
       if (
-        (response.trim() === '' && cards.length === 0 && !deferred) ||
+        (response.trim() === '' &&
+          cards.length === 0 &&
+          comments.length === 0 &&
+          !deferred) ||
         ctx.get(write).waiting ||
         // A drawing the agent changed since the operator's edit waits on
         // their choice (`answerDrawingConflictsAtom`).
@@ -1013,6 +1037,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         response,
         deferred,
         macros,
+        comments,
       });
       ctx.set(write, {
         item,
@@ -1021,6 +1046,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         highlightReply: ctx.get(highlightReplyAtom(answerPlaceOf(item.key))),
         drawings: drawingsToSend(drawings, item.question),
         macros,
+        comments,
       });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;
@@ -1083,23 +1109,47 @@ export const pickAskInboxAtom = Atom.writable<void, InboxId>(
   },
 );
 
+const askCursorIn = <C extends { readonly inboxId: InboxId }>(
+  choices: ReadonlyArray<C>,
+  context: ReaderSnapshot['context'] | undefined,
+): C | undefined =>
+  // An archived Inbox can be asked in but is not listed, so no row lights.
+  context?.askTo === undefined
+    ? askCursorOf(choices, context?.askCursor)
+    : choices.find((c) => c.inboxId === context.askTo);
+
 /** The Inboxes on offer, and the row lit: where the ask is going, once it has an Inbox. */
 export const askChoicesAtom = Atom.make((get) => {
   const board = get(drawnBoardAtom);
-  const context = get(readerSnapshotAtom)?.context;
   const choices =
     board === undefined
       ? []
       : askMatches(askableInboxesOf(board), get(askQueryAtom));
   return {
     choices,
-    // An archived Inbox can be asked in but is not listed, so no row lights.
-    cursor:
-      context?.askTo === undefined
-        ? askCursorOf(choices, context?.askCursor)
-        : choices.find((c) => c.inboxId === context.askTo),
+    cursor: askCursorIn(choices, get(readerSnapshotAtom)?.context),
   };
 });
+
+/** The row a key last stepped the ask list to, for the list to bring into sight. */
+export const askSteppedAtom = Atom.make<{
+  readonly seq: number;
+  readonly inboxId: InboxId | undefined;
+}>({ seq: 0, inboxId: undefined }).pipe(Atom.keepAlive);
+
+/**
+ * The last step through the ask list, from where to where, until the machine
+ * has moved off the row it left. The pointer lighting or picking a row
+ * forgets it (`forgetAskStepAtom`).
+ */
+const askStepAtom = Atom.make<
+  { readonly from: InboxId | undefined; readonly to: InboxId } | undefined
+>(undefined).pipe(Atom.keepAlive);
+
+export const forgetAskStepAtom = Atom.writable<void, void>(
+  () => undefined,
+  (ctx) => ctx.set(askStepAtom, undefined),
+);
 
 /**
  * One row up or down the list, stopping at its ends. While the box holds the
@@ -1110,9 +1160,24 @@ export const stepAskAtom = Atom.writable<void, 1 | -1>(
   () => undefined,
   (ctx, by) => {
     const { choices, cursor } = ctx.get(askChoicesAtom);
-    const at = choices.findIndex((c) => c.inboxId === cursor?.inboxId);
+    // A key held down sends its repeats faster than the machine moves the
+    // row, so while it still shows the row the last step left, this one goes
+    // on from where that step went.
+    const last = ctx.get(askStepAtom);
+    const from =
+      last !== undefined &&
+      last.from === cursor?.inboxId &&
+      choices.some((c) => c.inboxId === last.to)
+        ? last.to
+        : cursor?.inboxId;
+    const at = choices.findIndex((c) => c.inboxId === from);
     const next = choices[at === -1 ? 0 : at + by];
     if (next === undefined) return;
+    ctx.set(askStepAtom, { from: cursor?.inboxId, to: next.inboxId });
+    ctx.set(askSteppedAtom, {
+      seq: ctx.get(askSteppedAtom).seq + 1,
+      inboxId: next.inboxId,
+    });
     if (ctx.get(readerSnapshotAtom)?.context.askTo === undefined)
       ctx.set(inboxReaderAtoms.send, {
         type: 'AskCursorSet',
@@ -1128,6 +1193,7 @@ export const toggleAskAtom = Atom.writable<void, void>(
   (ctx) => {
     const snapshot = ctx.get(readerSnapshotAtom);
     ctx.set(askQueryAtom, '');
+    ctx.set(askStepAtom, undefined);
     ctx.set(inboxReaderAtoms.send, {
       type: 'AskToggled',
       inboxId: askStartOf(
@@ -1136,5 +1202,25 @@ export const toggleAskAtom = Atom.writable<void, void>(
         ctx.get(selectedInboxAtom),
       ),
     });
+  },
+);
+
+/**
+ * A comment on a span of the body of a Question waiting on the operator, by
+ * `c`, ⌘⌥M, the floating button or the context menu. Only a Question in Your
+ * inbox has a commentable body, so `key` is one the operator can answer. One
+ * not lit yet is lit, so its answer box opens; the comment's card takes the
+ * focus as it is drawn, whenever that is (`commentFocusAskedAtom`), and the
+ * box, opening first, leaves the focus to it.
+ */
+export const commentHereAtom = Atom.writable(
+  () => undefined,
+  (ctx, req: { readonly key: string; readonly anchor: Anchor }): void => {
+    const snapshot = ctx.get(readerSnapshotAtom);
+    if (snapshot === undefined || snapshot.matches({ composer: 'asking' }))
+      return;
+    if (litOf(snapshot)?.key !== req.key)
+      ctx.set(inboxReaderAtoms.send, { type: 'MovedTo', key: req.key });
+    ctx.set(startCommentAtom, req);
   },
 );

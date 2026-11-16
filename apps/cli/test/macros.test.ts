@@ -9,6 +9,7 @@ import {
   InboxId,
   MACROS_FILE,
   type MacroInvoked,
+  type QuestionComment,
   QuestionNumber,
   SessionId,
 } from '@operator-inbox/core';
@@ -335,6 +336,101 @@ describe('answers with macros', () => {
         expect(
           JSON.parse(yield* dispatchAnswers({ inboxId: ID, json: true }))[0],
         ).not.toHaveProperty('macros');
+      }),
+    ),
+  );
+});
+
+describe('answers with comments', () => {
+  const NOBODY: QuestionComment = {
+    quote: 'nobody could predict',
+    prefix: 'scripts ',
+    suffix: '.',
+    at: { part: 0, start: 12, end: 32 },
+    text: 'Say which scripts break.\nThe nightly export is one.',
+  };
+  const CHECKLIST: QuestionComment = {
+    quote: 'checklist',
+    prefix: 'The ',
+    suffix: ' is drafted.',
+    at: { part: 0, start: 4, end: 13 },
+    text: 'Add the rota to it.',
+  };
+  const commented = (
+    response: string,
+    comments: ReadonlyArray<QuestionComment>,
+    macros: ReadonlyArray<MacroInvoked> = [],
+  ) =>
+    decideAndAppend(ID, (state) =>
+      Result.map(
+        decideAnswer(state, {
+          inboxId: ID,
+          number: QuestionNumber.make(1),
+          response,
+          comments,
+          macros,
+        }),
+        (event) => ({ events: [event], result: undefined }),
+      ),
+    );
+
+  it.effect(
+    'prints a numbered block after the response, in body order, before the macros',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* opened;
+          yield* commented('Ship it.', [NOBODY, CHECKLIST], [PARK]);
+          expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+            [
+              '#1 What next?',
+              '  Ship it.',
+              '  COMMENTS on the question (2):',
+              '  1. On “checklist”: Add the rota to it.',
+              '  2. On “nobody could predict”: Say which scripts break.',
+              '     The nightly export is one.',
+              '  MACRO 1 of 1: /park',
+              '    instruction: Stop work on this thread until asked.',
+              '    (no parameters)',
+            ].join('\n'),
+          );
+          const json = JSON.parse(
+            yield* dispatchAnswers({ inboxId: ID, json: true }),
+          );
+          expect(json[0].comments).toStrictEqual([CHECKLIST, NOBODY]);
+        }),
+      ),
+  );
+
+  it.effect(
+    'an answer of comments alone prints no empty line for its text',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* opened;
+          yield* commented('', [CHECKLIST]);
+          expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+            [
+              '#1 What next?',
+              '  COMMENTS on the question (1):',
+              '  1. On “checklist”: Add the rota to it.',
+            ].join('\n'),
+          );
+        }),
+      ),
+  );
+
+  it.effect('an answer with no comments has no block and no key', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* commented('Yes.', []);
+        expect(
+          yield* dispatchAnswers({ inboxId: ID, json: false }),
+        ).not.toContain('COMMENTS');
+        expect(
+          JSON.parse(yield* dispatchAnswers({ inboxId: ID, json: true }))[0],
+        ).not.toHaveProperty('comments');
       }),
     ),
   );

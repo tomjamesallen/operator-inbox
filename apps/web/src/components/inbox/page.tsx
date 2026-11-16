@@ -1,4 +1,5 @@
 import { useAtomMount, useAtomSet, useAtomValue } from '@effect/atom-react';
+import { commentSelectionWatchAtom } from '../../comments';
 import { inboxVisibleRefreshAtom } from '../../inbox';
 import {
   elsewhereClearWatchAtom,
@@ -85,6 +86,7 @@ export const InboxPage = () => {
   useAtomMount(inboxTabTitleAtom);
   useAtomMount(inboxVisibleRefreshAtom);
   useAtomMount(keymapKeyAtom);
+  useAtomMount(commentSelectionWatchAtom);
   useAtomMount(readerSwipeAtom);
   useAtomMount(elsewhereClearWatchAtom);
   useAtomMount(yourInboxLandingWatchAtom);

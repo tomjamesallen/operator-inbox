@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { json } from './fixture';
 import {
   A,
@@ -294,6 +294,51 @@ describe('asking the agent', () => {
       fireEvent.keyDown(box(), { key: 'ArrowUp' });
       await settle();
       expect(screen.queryByText(/In orchard/)).toBeNull();
+    });
+
+    // A key held down sends its repeats faster than the page draws: each
+    // must step on from where the last went, not from the row drawn lit.
+    it('moves a row per press while a key is held, before anything is drawn', async () => {
+      serve.board = board([
+        VIEW_A,
+        VIEW_B,
+        empty('inbox-d', 'dell'),
+        empty('inbox-e', 'esker'),
+      ]);
+      await mounted('/inbox');
+      press({ key: 'a', code: 'KeyA', ctrlKey: true });
+      await screen.findByText(/In orchard/);
+      await waitFor(() => expect(document.activeElement).toBe(box()));
+      const held = box();
+      act(() => {
+        for (let i = 0; i < 3; i++)
+          fireEvent.keyDown(held, { key: 'ArrowDown', repeat: i > 0 });
+      });
+      await screen.findByText(/In esker/);
+      expect(cursor()).toBe('esker');
+    });
+
+    it('brings the row a key moves to into sight, and not one the pointer lights', async () => {
+      await mounted('/inbox');
+      press({ key: 'a', code: 'KeyA', ctrlKey: true });
+      await screen.findByText(/In orchard/);
+      const scrolled = vi.mocked(Element.prototype.scrollIntoView);
+      scrolled.mockClear();
+      fireEvent.keyDown(box(), { key: 'ArrowDown' });
+      await waitFor(() =>
+        expect(
+          scrolled.mock.contexts.some(
+            (el) => (el as Element).textContent === 'quarry',
+          ),
+        ).toBe(true),
+      );
+      await settle();
+      scrolled.mockClear();
+      fireEvent.mouseEnter(screen.getByRole('option', { name: 'orchard' }));
+      await settle();
+      expect(
+        scrolled.mock.contexts.map((el) => (el as Element).textContent),
+      ).toEqual([]);
     });
 
     it('leaves another field its ⌘↑', async () => {

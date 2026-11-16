@@ -49,7 +49,7 @@ The server can also show the Inboxes of other machines (`inboxMachines` in `conf
 
 ## The web app
 
-A Vite single-page app in React, styled with Tailwind v4 and built on Base UI components. State lives in Effect Atom atoms and XState machines, not in hand-wired hooks. The page polls the API for the board, keeps a draft per Question, and answers through the API. Its key bindings are a keymap: the defaults, with the user's `keybindings` file applied in order. Its macros come from `macros.json`, which serve hands over as text (`GET /api/macros`) and the page decodes with core's `decodeMacrosFile`, as the CLI's `operator-inbox macros` does; an answer carries each macro invoked, its instruction copied in (`macros.ts` in core).
+A Vite single-page app in React, styled with Tailwind v4 and built on Base UI components. State lives in Effect Atom atoms and XState machines, not in hand-wired hooks. The page polls the API for the board, keeps a draft per Question, and answers through the API. Its key bindings are a keymap: the defaults, with the user's `keybindings` file applied in order. Its macros come from `macros.json`, which serve hands over as text (`GET /api/macros`) and the page decodes with core's `decodeMacrosFile`, as the CLI's `operator-inbox macros` does; an answer carries each macro invoked, its instruction copied in (`macros.ts` in core). An answer may also carry the operator's comments on spans of the Question's body (`comments.ts` in core); the page draws each span as boxes behind the text, from the selection's `Range`, and never changes the body's HTML.
 
 ## Hooks, inbox mode and the watcher
 
