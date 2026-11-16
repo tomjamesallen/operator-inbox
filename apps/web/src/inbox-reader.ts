@@ -398,9 +398,13 @@ export const flowStepAskedAtom = Atom.make<{
   readonly by: 1 | -1;
 }>({ id: 0, by: 1 }).pipe(Atom.keepAlive);
 
-/** The room at each end of the list, as last measured. */
+/**
+ * The room at each end of the list, as last measured, and the foot's height,
+ * which an empty queue keeps its stand-in clear of.
+ */
 export const flowEndsAtom = Atom.make<
-  { readonly lead: number; readonly trail: number } | undefined
+  | { readonly lead: number; readonly trail: number; readonly foot: number }
+  | undefined
 >(undefined);
 
 /** Whether the metadata card is up, over the lit question. */
