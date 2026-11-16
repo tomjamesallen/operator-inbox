@@ -382,6 +382,38 @@ export interface Drawn {
 }
 
 /** Each comment's span as boxes, from the body's top left. Reads the page. */
+// The boxes between a range's ends and the body that scroll or clip
+// sideways: a wide table's and a code block's. A line drawn inside one is cut
+// to it, so a tint never shows past the box or over what it has scrolled away.
+const sidewaysClips = (
+  wrapper: Element,
+  range: Range,
+): ReadonlyArray<DOMRect> => {
+  const view = wrapper.ownerDocument.defaultView;
+  const clips = new Set<Element>();
+  for (const end of [range.startContainer, range.endContainer]) {
+    let a = end instanceof Element ? end : end.parentElement;
+    for (; a !== null && a !== wrapper; a = a.parentElement)
+      if (view?.getComputedStyle(a).overflowX !== 'visible') clips.add(a);
+  }
+  return [...clips].map((a) => a.getBoundingClientRect());
+};
+
+const clipAcross = (
+  r: DOMRect,
+  clips: ReadonlyArray<DOMRect>,
+): { readonly left: number; readonly right: number } => {
+  let left = r.left;
+  let right = r.right;
+  const middle = r.top + r.height / 2;
+  for (const c of clips) {
+    if (middle < c.top || middle > c.bottom) continue;
+    left = Math.max(left, c.left);
+    right = Math.min(right, c.right);
+  }
+  return { left, right };
+};
+
 export const drawComments = (
   wrapper: Element,
   comments: ReadonlyArray<Anchor & { readonly id: number }>,
@@ -390,12 +422,20 @@ export const drawComments = (
   return comments.flatMap((c) => {
     const range = rangeIn(wrapper, c);
     if (range === undefined) return [];
-    const boxes = visibleRects(range).map((r) => ({
-      top: r.top - origin.top,
-      left: r.left - origin.left,
-      width: r.width,
-      height: r.height,
-    }));
+    const clips = sidewaysClips(wrapper, range);
+    const boxes = visibleRects(range).flatMap((r) => {
+      const { left, right } = clipAcross(r, clips);
+      return right - left > 0.5
+        ? [
+            {
+              top: r.top - origin.top,
+              left: left - origin.left,
+              width: right - left,
+              height: r.height,
+            },
+          ]
+        : [];
+    });
     return boxes.length === 0 ? [] : [{ id: c.id, boxes }];
   });
 };

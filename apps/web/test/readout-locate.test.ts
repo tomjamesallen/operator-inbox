@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { followBy } from '../src/readout/follow';
 import {
   cursorAt,
+  drawnBoxOf,
   jumpFrom,
   locate,
   rangeOf,
@@ -91,6 +92,52 @@ describe('a segment on the page', () => {
     const from = para.text.indexOf('download');
     const range = rangeOf(p.unit, from, from + 'download now'.length);
     expect(range?.toString()).toBe('downloadNow()');
+  });
+});
+
+describe('a described block’s box', () => {
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({
+      left,
+      top,
+      right: left + width,
+      bottom: top + height,
+      width,
+      height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  const at = (el: Element, r: DOMRect) => {
+    el.getBoundingClientRect = () => r;
+  };
+
+  // A wide table scrolls sideways in core's `data-table-scroll` div: its band
+  // spans what shows, never the part scrolled out past the screen's edge.
+  const wide = (overflow: string) => {
+    const origin = document.createElement('div');
+    origin.innerHTML = `<div data-table-scroll style="overflow-x: ${overflow}"><table><tbody><tr><td>x</td></tr></tbody></table></div>`;
+    const table = origin.querySelector('table') as Element;
+    at(origin, rect(0, 0, 375, 800));
+    at(origin.firstElementChild as Element, rect(40, 100, 300, 200));
+    at(table, rect(-100, 100, 700, 200));
+    // On the page, where a computed style is read.
+    document.body.append(origin);
+    try {
+      return drawnBoxOf(table, origin);
+    } finally {
+      origin.remove();
+    }
+  };
+
+  it('cuts a table wider than its scroll box to the box', () => {
+    expect(wide('auto')).toEqual([
+      { top: 100, left: 40, width: 300, height: 200 },
+    ]);
+    // With no clipping box between, it is as wide as itself, as before.
+    expect(wide('visible')).toEqual([
+      { top: 100, left: -100, width: 700, height: 200 },
+    ]);
   });
 });
 

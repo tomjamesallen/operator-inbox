@@ -62,9 +62,19 @@ const useBodyRef = (key: string) => {
           registry.set(commentSelectionAtom, readCommentSelection());
       });
       sizes.observe(el);
+      // A wide table or code block scrolled sideways moves the text under
+      // its tints, so they and the button are measured again. A scroll does
+      // not bubble; it is caught on its way down.
+      const scrolled = () => {
+        bump();
+        if (registry.get(commentSelectionAtom)?.key === key)
+          registry.set(commentSelectionAtom, readCommentSelection());
+      };
+      el.addEventListener('scroll', scrolled, { capture: true, passive: true });
       bump();
       return () => {
         sizes.disconnect();
+        el.removeEventListener('scroll', scrolled, { capture: true });
         registry.set(body, { el: undefined, n: registry.get(body).n + 1 });
       };
     },
