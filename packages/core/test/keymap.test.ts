@@ -308,6 +308,29 @@ describe('the keys that Shift or the syntax get in the way of', () => {
   });
 });
 
+describe('the highlight-reply and inbox-picker keys', () => {
+  it('binds h to highlight the reply, b to the sidebar, and i and s to the picker', () => {
+    expect(triggersOf(undefined, 'toggle_highlight_reply')).toEqual([
+      'ctrl+space>h',
+    ]);
+    expect(triggersOf(undefined, 'focus_sidebar')).toEqual(['ctrl+space>b']);
+    expect(triggersOf(undefined, 'focus_inbox_column')).toEqual([
+      'ctrl+space>j',
+    ]);
+    expect(triggersOf(undefined, 'go_to_session')).toEqual([
+      'ctrl+space>i',
+      'ctrl+space>s',
+    ]);
+  });
+
+  it('binds no trigger twice among the defaults', () => {
+    const seen = resolveKeymap(undefined).bindings.map((b) =>
+      sequenceText(b.sequence),
+    );
+    expect(seen.filter((t, i) => seen.indexOf(t) !== i)).toEqual([]);
+  });
+});
+
 describe('the keybindings file', () => {
   it('gives every action in the defaults a known name', () => {
     const ids = new Set(KEYMAP_ACTIONS.map((a) => a.id));

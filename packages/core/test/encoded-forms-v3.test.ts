@@ -10,6 +10,7 @@ import {
   AnswerRefused,
   ArchivePayload,
   ArchiveRefused,
+  AskPayload,
   AskRefused,
   HighlightRefused,
   HttpApiDecodeError,
@@ -329,6 +330,67 @@ describe('InboxCodeChanged as stored in the log', () => {
   });
 });
 
+// `highlightReply`, which came after the goldens above were pinned, so it has
+// its own and they stay as they were: on an answer, on an operator's question,
+// and carried by a move.
+const HIGHLIGHT_REPLY_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(1),
+    response: 'Yes, go ahead.',
+    highlightReply: true,
+  },
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(2),
+    title: 'Can you check X?',
+    body: 'Can you check X?',
+    operatorQuestion: true,
+    highlightReply: true,
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Moved question',
+      body: '',
+      revision: rev(1),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: 'Yes, go ahead.',
+      withdrawn: false,
+      highlightReply: true,
+    },
+  },
+];
+
+describe('highlightReply as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = HIGHLIGHT_REPLY_EVENTS.map((e) => `${encodeEvent(e)}\n`).join(
+      '',
+    );
+    expectGolden('inbox-highlight-reply-events.jsonl', lines);
+    const read = golden('inbox-highlight-reply-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(
+      HIGHLIGHT_REPLY_EVENTS,
+    );
+  });
+
+  it('reads an answer logged before it with no flag', () => {
+    const decoded = decodeEvent(
+      `{"_tag":"QuestionAnswered","inboxId":"${INBOX_A}","number":1,"response":"Yes"}`,
+    );
+    expect(decoded).not.toHaveProperty('highlightReply');
+  });
+});
+
 // ================================================================================
 // Frontmatter — what the `plan*` builders hand `serialiseFrontmatter`, the
 // production write path of every `new-*` command, and what `parseFrontmatter`
@@ -496,6 +558,15 @@ const DTOS = [
   dtoCase('dto-payload-answer.json', AnswerPayload, {
     response: 'An answer.',
     seenRevision: rev(2),
+  }),
+  dtoCase('dto-payload-answer-highlight-reply.json', AnswerPayload, {
+    response: 'An answer.',
+    seenRevision: rev(2),
+    highlightReply: true,
+  }),
+  dtoCase('dto-payload-ask-highlight-reply.json', AskPayload, {
+    text: 'Can you check X?',
+    highlightReply: true,
   }),
   dtoCase('dto-payload-pin-group.json', PinPayload, {
     pinned: true,

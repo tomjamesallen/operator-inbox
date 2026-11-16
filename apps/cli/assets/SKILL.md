@@ -87,7 +87,7 @@ operator-inbox meta asv#3 --json                      # print asv#3's as JSON
 
 `--meta` on `open` sets the keys on an Inbox that already exists too. A change works on an archived Inbox and on a Question in any state; `answers` shows each Question's metadata as `meta key=value` lines.
 
-**Metadata rules.** The rules say which keys an Inbox and its Questions carry. By default they are `repo`, `branch` and `pr`, each expected, plus the built-ins `session` and `sessionLink`, expected on every Inbox. `open` also fills `sessionTitle` beside `sessionLink`. A project or an operator may declare more keys, or change these, in `~/.config/operator-inbox/metadata.json`. Run `operator-inbox keys` to see the rules this machine expects: each key's type, its presence, its level, and what it is for (`--json` for the rules whole). Set each key wherever it applies, using exactly that name. If you do not, the operator cannot filter or find the work by it. A key that does not apply is left out: do not invent a value to fill it.
+**Metadata rules.** The rules say which keys an Inbox and its Questions carry. By default they are `repo`, `branch` and `pr`, each expected, plus the built-ins `session`, `sessionLink` and `sessionTitle`, expected on every Inbox. The app shows `sessionTitle` under the Inbox's name in its lists, so the operator can find an Inbox by its session. A project or an operator may declare more keys, or change these, in `~/.config/operator-inbox/metadata.json`. Run `operator-inbox keys` to see the rules this machine expects: each key's type, its presence, its level, and what it is for (`--json` for the rules whole). Set each key wherever it applies, using exactly that name. If you do not, the operator cannot filter or find the work by it. A key that does not apply is left out: do not invent a value to fill it.
 
 - `required` keys refuse: `open` for a new Inbox and `ask` fail, writing nothing, until the key is set. `expected` keys warn on stderr. `optional` keys say nothing. Read the warning, set the keys that apply with `operator-inbox meta --meta key=value` (or `meta <n>` for a Question), and leave out the ones that do not.
 - A key's level says where its presence counts: `inbox`, `question` or `both`. An `inbox` key neither refuses nor warns on `ask`, and a `question` key neither refuses nor warns on `open`.
@@ -96,7 +96,7 @@ operator-inbox meta asv#3 --json                      # print asv#3's as JSON
 - Use the name as written. `prs` is not `pr`, and nothing renames or fills in a near miss for you. A key the rules do not name is an extra: kept unless the rules' `extras` is `refuse`, and listed after the rules' keys.
 - Set what you know when you open the Inbox, and put on each Question whatever is specific to it. A key on the Inbox counts as set for its Questions, so set `repo` and `branch` once on the Inbox and `pr` on the Question it concerns.
 - `session` is set on `open` and is not a Question key: session metadata belongs to the Inbox. Do not put it on `ask` or `meta <n>`. When you adopt an Inbox, set it to your own session id on that `open`.
-- **The session link.** `sessionLink` and `sessionTitle` fill themselves: inside a Claude desktop session, `open` adds the `claude://` link that takes the operator to this session and the session's title, read from the desktop app's session files, and replaces them on an Inbox you adopt. Leave them alone. After `open`, run `operator-inbox meta` and check they are there. A terminal session has neither, so `open` warns that `sessionLink` is missing: that is expected. It still passes `session`.
+- **The session link.** `sessionLink` and `sessionTitle` fill themselves: inside a Claude desktop session, `open` adds the `claude://` link that takes the operator to this session and the session's title, read from the desktop app's session files, and replaces them on an Inbox you adopt. Leave them alone. After `open`, run `operator-inbox meta` and check they are there. A terminal session has neither, so `open` warns that `sessionLink` and `sessionTitle` are missing: that is expected. It still passes `session`.
 - `group` stays a string: it is the page's filter.
 - Nothing is read from your working directory: the values come from you, `sessionLink` and `sessionTitle` aside.
 
@@ -133,7 +133,7 @@ operator-inbox unhighlight asv#2                                  # remove its h
 operator-inbox unhighlight                                           # remove every highlight in the Inbox
 ```
 
-Add `--inbox <id>` to highlight in another session's Inbox. Remove highlights that no longer help, so the yellow dots stay meaningful.
+`ask --highlight` highlights a new Question as it is asked. Add `--inbox <id>` to highlight in another session's Inbox. Remove highlights that no longer help, so the yellow dots stay meaningful.
 
 ### Moving a Question to another Inbox
 
@@ -194,6 +194,16 @@ The operator can answer **Defer to agent** instead of choosing. `answers` opens 
 4. Run `operator-inbox done <code>`, as for any answer.
 
 The Processed queue shows it as "You deferred to the agent:", so deferrals can be found and counted later.
+
+### An answer that asks for your reply highlighted
+
+The operator can mark an answer, or a Question they ask you, **Highlight reply**. `answers` then opens it with `HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight` (`"highlightReply": true` under `--json`). It means the operator will look for your reply among many: **the Question you ask in response must be highlighted.** Ask it with `--highlight`, which highlights it as it is asked:
+
+```sh
+operator-inbox ask --title "<the follow-up>" --body-file <path> --highlight
+```
+
+If you have already asked it, highlight it now: `operator-inbox highlight asv#7`. If the answer needs no Question back, there is nothing to highlight: act on it and run `done` as usual.
 
 ### Withdrawing a Question
 

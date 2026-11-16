@@ -23,6 +23,7 @@ import {
 import type { InboxItem } from '../../inbox-queues';
 import {
   activeQueueAtom,
+  answerPlaceOf,
   askChoicesAtom,
   askPlaceOf,
   askProgressAtom,
@@ -31,6 +32,7 @@ import {
   type FootTone,
   followUpPlaceOf,
   footNoteOf,
+  highlightReplyAtom,
   litKeyAtom,
   pickAskInboxAtom,
   railStateAtom,
@@ -185,11 +187,29 @@ const Actions = ({
   );
 };
 
-const Frame = ({ children }: { readonly children: ReactNode }) => (
-  <div className="flex items-end gap-s2 border border-fg/12 p-s2 focus-within:border-fg/25">
-    {children}
-  </div>
-);
+// The box's border: the highlight's yellow while the reply is to be
+// highlighted, as a highlighted question's outline is. The border is the
+// switch's only sign: it is a key's alone (`toggle_highlight_reply`).
+const Frame = ({
+  children,
+  place,
+}: {
+  readonly children: ReactNode;
+  // The box's "Highlight reply" switch, for a box that sends to an agent.
+  readonly place?: string;
+}) => {
+  const on = useAtomValue(highlightReplyAtom(place ?? ''));
+  const lit = place !== undefined && on;
+  return (
+    <div
+      data-zen-frame
+      data-highlight-reply={lit || undefined}
+      className={`flex items-end gap-s2 border p-s2 ${lit ? 'border-yellow' : 'border-fg/12 focus-within:border-fg/25'}`}
+    >
+      {children}
+    </div>
+  );
+};
 
 const AnswerBox = ({
   item,
@@ -200,7 +220,7 @@ const AnswerBox = ({
 }) => {
   const [draft, setDraft] = useAtom(responseDraftAtom(item.key));
   return (
-    <Frame>
+    <Frame place={answerPlaceOf(item.key)}>
       <Box
         value={draft}
         placeholder="Write your answer"
@@ -257,7 +277,7 @@ const FollowUpBox = ({
   return (
     <>
       <AskFailure place={place} inboxId={inboxId} />
-      <Frame>
+      <Frame place={place}>
         <Box value={draft} placeholder="Add a follow-up" onChange={setDraft} />
         <Actions
           label="Send"
@@ -277,7 +297,7 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
   return (
     <>
       <AskFailure place={place} inboxId={inboxId} />
-      <Frame>
+      <Frame place={place}>
         <Box
           value={draft}
           placeholder="What do you want to ask?"

@@ -82,6 +82,11 @@ const operatorQuestion = Schema.optionalKey(Schema.Literal(true));
 // optional key, for the same older machines.
 const deferred = Schema.optionalKey(Schema.Literal(true));
 
+// Set on an answer or an operator's question that asks the agent to highlight
+// the Question it asks in reply (core's `highlightReply`). An optional key, so
+// a machine on an older build, which never sends it, still decodes.
+const highlightReply = Schema.optionalKey(Schema.Literal(true));
+
 // A question with the operator's answer that the agent has not yet processed.
 // `body` is the raw markdown, for the copy button; `bodyHtml` is rendered as
 // for a waiting question, for the card's details dialog, which also shows
@@ -475,12 +480,15 @@ export const AnswerPayload = Schema.Struct({
   seenRevision: QuestionRevision,
   // "Defer to agent": the agent decides, and `response` is an optional note.
   deferred,
+  // "Highlight reply": the agent highlights the Question it asks in reply.
+  highlightReply,
 });
 export type AnswerPayload = typeof AnswerPayload.Type;
 
 // The operator's question to the agent, as they typed it.
 export const AskPayload = Schema.Struct({
   text: Schema.String,
+  highlightReply,
 });
 export type AskPayload = typeof AskPayload.Type;
 

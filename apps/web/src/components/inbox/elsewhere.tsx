@@ -114,7 +114,14 @@ const InboxLine = ({
       onMouseEnter={() => setCursor(line.key)}
       className={`${LINE} text-fg/70 hover:text-fg group-focus/list:data-lit:text-fg`}
     >
-      <span className="min-w-0 flex-1 truncate">{row.label}</span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{row.label}</span>
+        {row.session !== undefined && (
+          <span className="truncate text-10 text-fg/40" data-elsewhere-session>
+            {row.session}
+          </span>
+        )}
+      </span>
       {needsAttention(row) && (
         <span
           data-attention
@@ -196,9 +203,9 @@ export const Elsewhere = () => {
   // takes it too.
   const attach = useCallback(
     (el: HTMLDivElement | null) => {
-      if (el === null || !asked) return;
+      if (el === null || asked === false) return;
       setAsked(false);
-      if (focusIsFree()) el.focus({ preventScroll: true });
+      if (asked === 'moved' || focusIsFree()) el.focus({ preventScroll: true });
     },
     [asked, setAsked],
   );
@@ -206,7 +213,8 @@ export const Elsewhere = () => {
     if (e.altKey || e.shiftKey) return;
     const chord = e.ctrlKey || e.metaKey;
     if (e.key === 'Enter' && chord) {
-      // The keymap's open_session, for the line lit rather than the selection.
+      // The lit line's session; the keymap's open_session keeps to the
+      // selected Inbox's.
       if (cursor?._tag === 'Inbox') openSession(cursor.row.inboxId);
     } else if (chord) return;
     else if (e.key === 'ArrowDown') step(1);

@@ -327,7 +327,7 @@ describe('the keymap on the inbox page', () => {
     );
     press({ key: 'Escape' });
     await waitFor(() => expect(rail()).toBeUndefined());
-    prefix('h');
+    prefix('b');
     await waitFor(() =>
       expect(document.activeElement?.getAttribute('aria-current')).toBe('page'),
     );
@@ -394,7 +394,7 @@ describe('the keymap on the inbox page', () => {
     await mount();
     prefix('/');
     await waitFor(() => expect(rail()).toBe('drawer'));
-    prefix('i');
+    prefix('j');
     await waitFor(() => expect(document.activeElement).toBe(box()));
     await waitFor(() => expect(rail()).toBeUndefined());
   });

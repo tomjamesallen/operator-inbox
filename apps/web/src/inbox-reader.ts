@@ -602,7 +602,51 @@ interface AnswerWrite {
   readonly item: InboxItem;
   readonly response: string;
   readonly deferred: boolean;
+  readonly highlightReply: boolean;
 }
+
+// --- highlight your reply ---------------------------------------------------------
+
+/** The box's place for its "Highlight reply" switch: one per box that sends to an agent. */
+export const highlightPlaceOf = (composer: Composer): string | undefined => {
+  switch (composer._tag) {
+    case 'Answer':
+    case 'Held':
+      return answerPlaceOf(composer.item.key);
+    case 'Asking':
+      return askPlaceOf(composer.inboxId);
+    case 'FollowUp':
+      return followUpPlaceOf(composer.item.key);
+    default:
+      return undefined;
+  }
+};
+
+export const answerPlaceOf = (key: string): string => `answer:${key}`;
+
+/**
+ * Whether the box at `place` asks the agent to highlight the Question it asks
+ * in reply. Kept in memory only, by box, as a draft is: moving to another
+ * question leaves this one's switch as it was. One-shot: a send that lands
+ * turns it off, and a send that fails leaves it on for the retry.
+ */
+export const highlightReplyAtom = Atom.family((_place: string) =>
+  Atom.make(false).pipe(Atom.keepAlive),
+);
+
+/** Flip the switch of the box on screen; false when no box sends to an agent. */
+export const toggleHighlightReplyAtom = Atom.writable<void, void>(
+  () => undefined,
+  (ctx) => {
+    const snapshot = ctx.get(readerSnapshotAtom);
+    const place =
+      snapshot === undefined
+        ? undefined
+        : highlightPlaceOf(composerOf(snapshot));
+    if (place === undefined) return;
+    ctx.set(highlightReplyAtom(place), !ctx.get(highlightReplyAtom(place)));
+  },
+);
 
 // One per question, and kept alive: the answer's place leaves the page the
 // moment it is sent, and a write whose Atom drops is filed a stray
@@ -633,6 +677,9 @@ const answerWriteAtom = Atom.family((key: string) =>
                 response: req.response,
                 seenRevision: question.revision,
                 ...(req.deferred ? { deferred: true as const } : {}),
+                ...(req.highlightReply
+                  ? { highlightReply: true as const }
+                  : {}),
               },
             }),
             () => {
@@ -641,6 +688,7 @@ const answerWriteAtom = Atom.family((key: string) =>
                 number: question.number,
                 text: '',
               });
+              registry.set(highlightReplyAtom(answerPlaceOf(key)), false);
               const { target } = registry.get(linkTargetAtom);
               if (
                 target?.inboxId === inboxId &&
@@ -697,6 +745,8 @@ interface AskWrite {
   readonly draft: string;
   // The question it follows up, by key, else a plain ask.
   readonly followUp?: string;
+  // The agent is to highlight the Question it asks in reply.
+  readonly highlightReply: boolean;
 }
 
 /** The question just asked in `view`: the agent's newest of the operator's. */
@@ -758,9 +808,13 @@ export const readerAskAtom = Atom.family((place: string) =>
           client.inbox.ask({
             query: {},
             params: { inboxId },
-            payload: { text: req.text },
+            payload: {
+              text: req.text,
+              ...(req.highlightReply ? { highlightReply: true as const } : {}),
+            },
           }),
           () => {
+            registry.set(highlightReplyAtom(place), false);
             const box =
               followUp === undefined
                 ? askDraftAtom(inboxId)
@@ -819,13 +873,23 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         response,
         deferred,
       });
-      ctx.set(write, { item, response, deferred });
+      ctx.set(write, {
+        item,
+        response,
+        deferred,
+        highlightReply: ctx.get(highlightReplyAtom(answerPlaceOf(item.key))),
+      });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;
       const write = readerAskAtom(askPlaceOf(inboxId));
       const text = ctx.get(askDraftAtom(inboxId));
       if (text.trim() === '' || ctx.get(write).waiting) return;
-      ctx.set(write, { inboxId, text, draft: text });
+      ctx.set(write, {
+        inboxId,
+        text,
+        draft: text,
+        highlightReply: ctx.get(highlightReplyAtom(askPlaceOf(inboxId))),
+      });
     } else if (composer._tag === 'FollowUp' && !composer.held && !deferred) {
       const { key, inboxId, question } = composer.item;
       const write = readerAskAtom(followUpPlaceOf(key));
@@ -835,6 +899,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         inboxId,
         followUp: key,
         draft,
+        highlightReply: ctx.get(highlightReplyAtom(followUpPlaceOf(key))),
         text: followUpText(
           draft,
           question.number,

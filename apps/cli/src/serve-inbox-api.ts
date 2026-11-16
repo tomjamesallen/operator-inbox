@@ -234,6 +234,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
   response: string,
   seenRevision: QuestionRevision,
   deferred?: true,
+  highlightReply?: true,
 ) {
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
@@ -243,6 +244,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
         response,
         seenRevision,
         ...(deferred === undefined ? {} : { deferred }),
+        ...(highlightReply === undefined ? {} : { highlightReply }),
       }),
       (event) => ({
         events: [event],
@@ -274,12 +276,20 @@ export const answerQuestion = Effect.fnUntraced(function* (
 export const askQuestion = Effect.fnUntraced(function* (
   inboxId: InboxId,
   text: string,
+  highlightReply?: true,
 ) {
   const decided = yield* decideAndAppend(inboxId, (state) =>
-    Result.map(decideOperatorAsk(state, { inboxId, text }), (event) => ({
-      events: askEvents(state, event),
-      result: undefined,
-    })),
+    Result.map(
+      decideOperatorAsk(state, {
+        inboxId,
+        text,
+        ...(highlightReply === undefined ? {} : { highlightReply }),
+      }),
+      (event) => ({
+        events: askEvents(state, event),
+        result: undefined,
+      }),
+    ),
   ).pipe(
     Effect.catchTag('AppendConditionFailed', () =>
       Effect.fail(
@@ -920,13 +930,14 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.response,
             payload.seenRevision,
             payload.deferred,
+            payload.highlightReply,
           ),
         ),
       )
       .handle(
         'ask',
         owned('ask', ({ params, payload }) =>
-          askQuestion(params.inboxId, payload.text),
+          askQuestion(params.inboxId, payload.text, payload.highlightReply),
         ),
       )
       .handle(

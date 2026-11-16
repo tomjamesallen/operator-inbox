@@ -49,6 +49,7 @@ const row = (over: Partial<ElsewhereRow>): ElsewhereRow => ({
   fresh: undefined,
   lastAt: 0,
   target: undefined,
+  session: undefined,
   ...over,
 });
 
@@ -326,6 +327,40 @@ describe('the empty state', () => {
   });
 });
 
+describe('the session under an Inbox’s name', () => {
+  it('shows the session’s title, quietly, under the name', async () => {
+    serve.board = board([
+      empty(VIEW_A),
+      { ...VIEW_B, metadata: { sessionTitle: 'Survey the quarry floor' } },
+    ]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    const sub = document.querySelector<HTMLElement>('[data-elsewhere-session]');
+    expect(sub?.textContent).toBe('Survey the quarry floor');
+    expect(sub?.className).toContain('truncate');
+  });
+
+  it('leaves it out where there is none, or it repeats the name', () => {
+    const rows = (title: string | undefined) =>
+      elsewhereRowsOf(
+        drawn([
+          empty(VIEW_A),
+          {
+            ...VIEW_B,
+            metadata: title === undefined ? {} : { sessionTitle: title },
+          },
+        ]),
+        A as InboxId,
+        0,
+        Number.POSITIVE_INFINITY,
+        [],
+      );
+    expect(rows(undefined)[0]?.session).toBeUndefined();
+    expect(rows(' Quarry ')[0]?.session).toBeUndefined();
+    expect(rows('Dig')[0]?.session).toBe('Dig');
+  });
+});
+
 describe('the list’s keys', () => {
   const three = () =>
     board([
@@ -537,6 +572,55 @@ describe('clearing the last question', () => {
     await waitFor(() => expect(list()).not.toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(list()));
     expect(lit()?.textContent).toContain('quarry');
+  });
+
+  // Nothing waits on the operator in orchard; its answers are with the agent.
+  const QUIET_A = { ...VIEW_A, awaitingOperator: [] };
+  const toAgent = async () => {
+    press({ key: '>', code: 'Period', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(list()).toBeNull());
+  };
+
+  it('puts the focus on the list when a queue switch lands on Your inbox', async () => {
+    serve.board = board([QUIET_A, VIEW_B]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    await toAgent();
+    press({ key: '<', code: 'Comma', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(list()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+    expect(lit()?.textContent).toContain('quarry');
+  });
+
+  it('puts the focus on the list on Ctrl+Space j', async () => {
+    serve.board = board([QUIET_A, VIEW_B]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    await toAgent();
+    press({ key: ' ', code: 'Space', ctrlKey: true });
+    press({ key: 'j', code: 'KeyJ' });
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+  });
+
+  it('puts the focus on the list when the inbox picker picks an empty Inbox', async () => {
+    serve.board = board([VIEW_B, empty(VIEW_A)]);
+    mount(`/inbox/${B}`);
+    await waitFor(() => expect(items()).toEqual([`${B}/1`]));
+    press({ key: ' ', code: 'Space', ctrlKey: true });
+    press({ key: 'i', code: 'KeyI' });
+    const field = await screen.findByTestId('inbox-picker-field');
+    fireEvent.change(field, { target: { value: 'orchard' } });
+    await waitFor(() =>
+      expect(
+        document
+          .querySelector('[data-testid="inbox-picker-row"][data-highlighted]')
+          ?.getAttribute('data-key'),
+      ).toBe(A),
+    );
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(location.pathname).toBe(`/inbox/${A}`));
+    await waitFor(() => expect(list()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(list()));
   });
 
   it('takes no focus going to an Inbox that is already empty', async () => {

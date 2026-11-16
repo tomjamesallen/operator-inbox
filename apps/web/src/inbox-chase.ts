@@ -1,20 +1,11 @@
-import {
-  type InboxAgentQuestionDto,
-  type InboxViewDto,
-  machineKeyOf,
-  questionRef,
+import type {
+  InboxAgentQuestionDto,
+  InboxViewDto,
 } from '@operator-inbox/core/api';
-import { DateTime, Option, Schema } from 'effect';
-import { KeyValueStore } from 'effect/persistence';
+import { DateTime, Option } from 'effect';
 import { Atom } from 'effect/reactivity';
 import { clockAtom, nowMillis } from './clock';
-import {
-  type DrawnBoard,
-  drawnBoardAtom,
-  relAge,
-  type SessionTarget,
-  sessionTargetOf,
-} from './inbox';
+import { type DrawnBoard, drawnBoardAtom } from './inbox';
 import { chaseAfterMsAtom } from './inbox-reader';
 import { tickEvery } from './poll';
 
@@ -22,10 +13,11 @@ import { tickEvery } from './poll';
 // in With the agent past config.json's `chaseAfterMinutes` (ten by default)
 // probably needs the session nudged: chiefly a session that is stuck, or has
 // dropped its Inbox. Its card highlights when it was answered and gives a
-// Chase link to the session, and a toast for its Inbox stays up until the
-// operator dismisses it.
+// Chase link to the session, and a warning button in the bottom right counts
+// the Inboxes that hold one and opens the inbox picker, which lists them
+// first.
 
-// The card's time and the toasts are read off the clock, so they move on
+// The card's time and the button are read off the clock, so they move on
 // without a new board: twice a minute is enough for minutes.
 export const CHASE_TICK_MS = 30_000;
 
@@ -54,72 +46,33 @@ export const isStale = (
   return since !== undefined && nowMs - since >= afterMs;
 };
 
-/** A question's key in the dismissed list: `<inbox>/<number>`, as `answerKey`. */
-const keyOf = (inboxId: string, number: number) => `${inboxId}/${number}`;
-
-/** One Inbox's toast: its stale questions the operator has not dismissed. */
-export interface ChaseToast {
-  readonly id: string;
+/** One Inbox holding questions stale with the agent. */
+export interface Chase {
   readonly inboxId: string;
   readonly label: string;
-  // The Inbox's code, when it has one: with a number it makes the question's
-  // code (`xyz#12`), as the card shows it.
-  readonly inboxCode?: string;
   readonly numbers: ReadonlyArray<number>;
-  // The keys a dismissal records, one per question.
-  readonly keys: ReadonlyArray<string>;
-  // "6m": how long the longest-waiting of them has been with the agent.
-  readonly waited: string;
-  readonly target: SessionTarget | undefined;
 }
 
 const chasedIn = (view: InboxViewDto) => !view.archived && view.muted !== true;
 
 /**
- * The toasts to show: one per Inbox holding a stale question the operator has
- * not dismissed, in sidebar order. An archived or muted Inbox raises none.
+ * The Inboxes that probably need chasing: each holding a stale question, in
+ * sidebar order. An archived or muted Inbox needs none.
  */
-export const chaseToastsOf = (
+export const chasesOf = (
   board: DrawnBoard | undefined,
   nowMs: number,
   afterMs: number,
-  dismissed: ReadonlySet<string>,
-): ReadonlyArray<ChaseToast> =>
+): ReadonlyArray<Chase> =>
   (board?.views ?? []).filter(chasedIn).flatMap((view) => {
     const stale = view.awaitingAgent
       .filter((q) => isStale(q, nowMs, afterMs))
-      .filter((q) => !dismissed.has(keyOf(view.inboxId, q.number)))
-      .sort((a, b) => a.number - b.number);
-    if (stale.length === 0) return [];
-    const oldest = Math.min(
-      ...stale.map((q) => withAgentSince(q) ?? Number.POSITIVE_INFINITY),
-    );
-    return [
-      {
-        id: `chase:${machineKeyOf(view)}:${view.inboxId}`,
-        inboxId: view.inboxId,
-        label: view.label,
-        ...(view.code === undefined ? {} : { inboxCode: view.code }),
-        numbers: stale.map((q) => q.number),
-        keys: stale.map((q) => keyOf(view.inboxId, q.number)),
-        waited: relAge(Math.max(0, nowMs - oldest) / 86_400_000),
-        target: sessionTargetOf(board, view.inboxId),
-      },
-    ];
+      .map((q) => q.number)
+      .sort((a, b) => a - b);
+    return stale.length === 0
+      ? []
+      : [{ inboxId: view.inboxId, label: view.label, numbers: stale }];
   });
-
-/**
- * A toast's line: what has waited, and for how long. Each question goes by its
- * code (`xyz#12`), or by `#12` while its Inbox has none.
- */
-export const chaseLine = (toast: ChaseToast): string => {
-  const refs = toast.numbers.map((n) => questionRef(toast.inboxCode, n));
-  const which =
-    refs.length === 1
-      ? refs.join('')
-      : `${refs.length} questions (${refs.join(', ')})`;
-  return `${which} in ${toast.label} ${toast.numbers.length === 1 ? 'has' : 'have'} sat with the agent for ${toast.waited}.`;
-};
 
 // --- the atoms -------------------------------------------------------------------
 
@@ -131,42 +84,7 @@ export const chaseNowAtom = Atom.make((get) => {
   return nowMillis(get(clockAtom));
 });
 
-const browserStorage = Atom.runtime(
-  KeyValueStore.layerStorage(() => localStorage),
-);
-
-// The questions whose toast the operator dismissed, kept in this browser's
-// localStorage as the sidebar's width is, so a reload or another tab does not
-// raise them again. A question that leaves With the agent drops out of it on
-// the next dismissal, so the list holds only questions still there.
-export const chaseDismissedAtom = Atom.kvs({
-  runtime: browserStorage,
-  key: 'operator-inbox:chase-dismissed',
-  schema: Schema.Array(Schema.String),
-  defaultValue: (): ReadonlyArray<string> => [],
-}).pipe(Atom.keepAlive);
-
-/** The toasts the page shows now. */
-export const chaseToastsAtom = Atom.make((get) =>
-  chaseToastsOf(
-    get(drawnBoardAtom),
-    get(chaseNowAtom),
-    get(chaseAfterMsAtom),
-    new Set(get(chaseDismissedAtom)),
-  ),
-);
-
-/** Dismiss a toast: its questions stay dismissed while they are with the agent. */
-export const dismissChaseAtom = Atom.writable<void, ChaseToast>(
-  () => undefined,
-  (ctx, toast) => {
-    const board = ctx.get(drawnBoardAtom);
-    const still = new Set(
-      (board?.views ?? []).flatMap((v) =>
-        v.awaitingAgent.map((q) => keyOf(v.inboxId, q.number)),
-      ),
-    );
-    const kept = ctx.get(chaseDismissedAtom).filter((k) => still.has(k));
-    ctx.set(chaseDismissedAtom, [...new Set([...kept, ...toast.keys])]);
-  },
+/** The Inboxes the chase button counts now. */
+export const chasesAtom = Atom.make((get) =>
+  chasesOf(get(drawnBoardAtom), get(chaseNowAtom), get(chaseAfterMsAtom)),
 );

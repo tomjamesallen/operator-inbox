@@ -39,7 +39,14 @@ const SESSION: InboxSession = {
   cwd: '/work/my-app',
 };
 const ID = InboxId.make('01PRIORAAAAAAAAAAAAAAAAAAA');
-const EXPECTED = ['repo', 'branch', 'pr', 'session', 'sessionLink'];
+const EXPECTED = [
+  'repo',
+  'branch',
+  'pr',
+  'session',
+  'sessionLink',
+  'sessionTitle',
+];
 
 const RULES: InboxMetadataRules = {
   extras: 'allow',
@@ -124,6 +131,7 @@ describe('inbox open', () => {
             pr: '1',
             session: 's',
             sessionLink: 'claude://claude.ai/epitaxy/local_a',
+            sessionTitle: 'Port the store',
           },
         });
         yield* open();
@@ -382,6 +390,7 @@ describe('this machine’s own metadata.json decides the rules', () => {
         '  chapter  string  required  Chapter id',
         'session  string  expected  inbox  The Claude session id',
         'sessionLink  string  expected  inbox  The link that opens the session working this Inbox; the CLI fills it in a desktop session',
+        'sessionTitle  string  expected  inbox  The title of the desktop session working this Inbox; the CLI fills it in a desktop session',
         'extras: allow',
       ]);
       expect(
