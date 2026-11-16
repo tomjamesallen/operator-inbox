@@ -15,12 +15,17 @@ import {
   entriesOf,
   makeReadout,
   nextToMake,
+  paceOf,
   type ReadoutState,
   readoutHash,
   wantScripts,
 } from '../src/readout';
 import { launcherCandidates, pythonFromLauncher } from '../src/readout-kokoro';
-import { ReadoutVoice, ReadoutVoiceError } from '../src/readout-voice';
+import {
+  type ReadoutPace,
+  ReadoutVoice,
+  ReadoutVoiceError,
+} from '../src/readout-voice';
 
 // Listen mode's queue and cache: the pure decisions over the state, and the
 // service over a temp folder with an in-memory voice whose every `speak`
@@ -35,6 +40,7 @@ type Outcome = 'ok' | 'fail';
 
 const makeFakeVoice = Effect.gen(function* () {
   const calls = yield* Ref.make<ReadonlyArray<string>>([]);
+  const paces = yield* Ref.make<ReadonlyArray<ReadoutPace>>([]);
   const outcomes = yield* Queue.unbounded<Outcome>();
   const missing = yield* Ref.make(false);
   const voice = {
@@ -48,10 +54,15 @@ const makeFakeVoice = Effect.gen(function* () {
         });
       }
     }),
-    speak: (segments: ReadonlyArray<ReadoutSegment>, to: string) =>
+    speak: (
+      segments: ReadonlyArray<ReadoutSegment>,
+      to: string,
+      pace: ReadoutPace,
+    ) =>
       Effect.gen(function* () {
         const label = segments[0]?.text ?? '';
         yield* Ref.update(calls, (c) => [...c, label]);
+        yield* Ref.update(paces, (p) => [...p, pace]);
         const outcome = yield* Queue.take(outcomes);
         if (outcome === 'fail') {
           return yield* new ReadoutVoiceError({
@@ -73,7 +84,7 @@ const makeFakeVoice = Effect.gen(function* () {
         };
       }),
   };
-  return { voice, calls, outcomes, missing };
+  return { voice, calls, paces, outcomes, missing };
 });
 
 const tempDir = () =>
@@ -149,6 +160,13 @@ describe('readout: the pure decisions', () => {
         1_000,
       ),
     ).toBeUndefined();
+  });
+
+  it('makes the Question the operator is on now, and the lookahead in the background', () => {
+    const s = state({ wanted: ['a', 'b', 'c'] });
+    expect(paceOf(s, 'a')).toBe('now');
+    expect(paceOf(s, 'b')).toBe('background');
+    expect(paceOf(s, 'c')).toBe('background');
   });
 
   it('counts the one being made in each queued position', () => {
@@ -283,6 +301,11 @@ describe('readout: the service', () => {
           s.entries.every((e) => e._tag === 'Ready'),
         );
         expect(yield* Ref.get(fake.calls)).toEqual(['A', 'B', 'C']);
+        expect(yield* Ref.get(fake.paces)).toEqual([
+          'now',
+          'background',
+          'background',
+        ]);
         expect(done.voice).toBe('fake');
         const a = done.entries[0];
         expect(a?._tag).toBe('Ready');

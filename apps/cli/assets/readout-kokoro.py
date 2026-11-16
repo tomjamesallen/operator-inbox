@@ -7,7 +7,8 @@
 # The protocol is JSON lines, one request at a time: serve writes one line to
 # stdin, this answers one line on stdout.
 #
-#   -> {"segments": [{"id", "text", "pauseAfter"}], "out": "<path>"}
+#   -> {"segments": [{"id", "text", "pauseAfter"}], "out": "<path>",
+#       "pace": "now" | "background"}
 #   <- {"type": "done", "duration": s, "segments": [{"id", "start", "end",
 #       "words": [{"from", "to", "start", "end"}]}]}
 #   <- {"type": "error", "message": "..."}
@@ -15,6 +16,14 @@
 # Before the first request it loads the model, warms it up and says
 # {"type": "ready"}; when mlx-audio cannot be imported it says
 # {"type": "fatal", "reason": "unavailable", "message": "..."} and exits.
+#
+# The model runs on the GPU, and a long run at full speed starves the window
+# server, so the whole machine stutters. So the pace: "now" (the Question the
+# operator is waiting on) runs at full speed, a short burst; "background" (the
+# lookahead, which nobody waits on) runs as a background process to macOS
+# (efficiency cores, low I/O and GPU priority) and rests between segments for
+# half as long as each took, so the GPU is never held for long. MLX's cache of
+# freed buffers is capped and emptied after each request.
 #
 # Each segment is spoken on its own, with British phonemes; the segments are
 # joined with `pauseAfter` seconds of silence and written to `out` as a
@@ -45,6 +54,10 @@ RATE = 24000
 # soundfile's MP3 quality, 0 (highest bitrate) to 1 (lowest); 0.5 is about
 # 80 kbit/s, plenty for speech.
 MP3_COMPRESSION = 0.5
+# A background request rests this many times as long as each segment took.
+REST = 0.5
+# MLX keeps freed GPU buffers for reuse; this caps what it keeps.
+CACHE_LIMIT = 64 * 1024 * 1024
 VOICE = sys.argv[1] if len(sys.argv) > 1 else "bm_george"
 WORD = re.compile(r"\w", re.UNICODE)
 
@@ -52,6 +65,18 @@ WORD = re.compile(r"\w", re.UNICODE)
 def say(message):
     protocol.write(json.dumps(message) + "\n")
     protocol.flush()
+
+
+def set_pace(pace):
+    """macOS's background band for "background", the normal one otherwise."""
+    try:
+        os.setpriority(
+            os.PRIO_DARWIN_PROCESS,
+            0,
+            os.PRIO_DARWIN_BG if pace == "background" else 0,
+        )
+    except (AttributeError, OSError):
+        pass  # not macOS, or not allowed: the pace is a courtesy
 
 
 def watch_parent():
@@ -67,12 +92,14 @@ threading.Thread(target=watch_parent, daemon=True).start()
 try:
     import numpy as np
     import soundfile as sf
+    import mlx.core as mx
     from mlx_audio.tts.utils import load_model
 except Exception as e:  # noqa: BLE001
     say({"type": "fatal", "reason": "unavailable", "message": f"mlx-audio could not be loaded: {e}"})
     sys.exit(3)
 
 try:
+    mx.set_cache_limit(CACHE_LIMIT)
     model = load_model(MODEL)
     # British English phonemes, to match the British voices.
     pipeline = model._get_pipeline("b")
@@ -112,12 +139,16 @@ def speak(text):
     return samples, words
 
 
-def generate(segments, out):
+def generate(segments, out, pace):
+    set_pace(pace)
     parts = []
     timed = []
     t = 0.0
     for seg in segments:
+        began = time.monotonic()
         samples, words = speak(seg["text"])
+        if pace == "background":
+            time.sleep((time.monotonic() - began) * REST)
         start = t
         t += len(samples) / RATE
         timed.append(
@@ -155,6 +186,7 @@ def generate(segments, out):
 
 # Warm the pipeline so the first real request is not the slow one.
 speak("Ready.")
+mx.clear_cache()
 say({"type": "ready"})
 
 for line in sys.stdin:
@@ -163,6 +195,7 @@ for line in sys.stdin:
         continue
     try:
         request = json.loads(line)
-        say(generate(request["segments"], request["out"]))
+        say(generate(request["segments"], request["out"], request.get("pace", "now")))
+        mx.clear_cache()
     except Exception as e:  # noqa: BLE001
         say({"type": "error", "message": str(e) or type(e).__name__})

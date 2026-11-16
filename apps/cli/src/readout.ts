@@ -29,6 +29,7 @@ import type { ChildProcessSpawner } from 'effect/process';
 import { readHome } from './home-dir';
 import { makeKokoroVoice } from './readout-kokoro';
 import {
+  type ReadoutPace,
   ReadoutVoice,
   ReadoutVoiceError,
   type SpokenScript,
@@ -142,6 +143,14 @@ export const nextToMake = (
   coolingOff(state.unavailable, now, coolOffMs)
     ? undefined
     : state.wanted.find((hash) => isPending(state, hash, now, coolOffMs));
+
+/**
+ * The pace to make `hash` at: the first script wanted is the Question the
+ * operator is on, so it is made `now`; the rest are the lookahead, made in the
+ * `background`. Pure.
+ */
+export const paceOf = (state: ReadoutState, hash: string): ReadoutPace =>
+  state.wanted[0] === hash ? 'now' : 'background';
 
 /** Where each wanted script stands, in the order wanted. Pure. */
 export const entriesOf = (
@@ -386,7 +395,11 @@ export const makeReadout = (options: ReadoutOptions) =>
 
     // Make one script: speak it into a temporary file, write its timings
     // beside it, then rename both, the timings last.
-    const make = (hash: string, segments: ReadonlyArray<ReadoutSegment>) =>
+    const make = (
+      hash: string,
+      segments: ReadonlyArray<ReadoutSegment>,
+      pace: ReadoutPace,
+    ) =>
       Effect.gen(function* () {
         yield* fs
           .makeDirectory(dir, { recursive: true })
@@ -395,7 +408,7 @@ export const makeReadout = (options: ReadoutOptions) =>
         const mp3Part = `${fileOf(hash, 'mp3')}.${n}.part`;
         const jsonPart = `${fileOf(hash, 'json')}.${n}.part`;
         return yield* Effect.gen(function* () {
-          const spoken = yield* voice.speak(segments, mp3Part);
+          const spoken = yield* voice.speak(segments, mp3Part, pace);
           const stored = {
             duration: spoken.duration,
             segments: spoken.segments,
@@ -429,12 +442,14 @@ export const makeReadout = (options: ReadoutOptions) =>
           const segments = hash === undefined ? undefined : s.scripts.get(hash);
           if (hash === undefined || segments === undefined) return undefined;
           yield* Ref.set(state, { ...s, making: hash });
-          return { hash, segments };
+          return { hash, segments, pace: paceOf(s, hash) };
         }),
       );
       if (picked === undefined) return false;
       const started = yield* Clock.currentTimeMillis;
-      const result = yield* Effect.result(make(picked.hash, picked.segments));
+      const result = yield* Effect.result(
+        make(picked.hash, picked.segments, picked.pace),
+      );
       const now = yield* Clock.currentTimeMillis;
       yield* update((s) => {
         const made = new Map(s.made);
