@@ -10,6 +10,7 @@ import {
   drawnBoardAtom,
   groupOf,
   groupsInForce,
+  priorityInboxOf,
   refusedInboxesOf,
   type SessionTarget,
   screenStateAtom,
@@ -56,6 +57,8 @@ export interface ElsewhereRow {
   readonly target: SessionTarget | undefined;
   /** The session's title, shown under the name: see `sessionSubtextOf`. */
   readonly session: string | undefined;
+  /** It is the priority Inbox (`priorityInboxOf`): it leads the list. */
+  readonly priority: boolean;
 }
 
 /**
@@ -90,12 +93,14 @@ const millisOf = (at: string | undefined): number | undefined =>
 export const needsAttention = (row: ElsewhereRow): boolean => row.stuck > 0;
 
 /**
- * The list's order. Rows that need attention come first, since a stuck session
- * waits on nobody but the operator. Then, within each part alike, the fewest
- * questions first, because emptying an Inbox is the point, and the most recent
- * activity breaks a tie.
+ * The list's order. The priority Inbox leads, as the operator said it does.
+ * Then rows that need attention, since a stuck session waits on nobody but
+ * the operator. Then, within each part alike, the fewest questions first,
+ * because emptying an Inbox is the point, and the most recent activity breaks
+ * a tie.
  */
 export const elsewhereOrder = (a: ElsewhereRow, b: ElsewhereRow): number =>
+  Number(b.priority) - Number(a.priority) ||
   Number(needsAttention(b)) - Number(needsAttention(a)) ||
   a.count - b.count ||
   (b.lastAt ?? Number.NEGATIVE_INFINITY) -
@@ -143,6 +148,7 @@ export const elsewhereRowsOf = (
 ): ReadonlyArray<ElsewhereRow> => {
   if (board === undefined) return [];
   const refused = refusedInboxesOf(board);
+  const priority = priorityInboxOf(board)?.inboxId;
   const outside = outsideGroupsOf(
     board.views.find((v) => v.inboxId === selected),
     groups,
@@ -175,6 +181,7 @@ export const elsewhereRowsOf = (
         lastAt: millisOf(r.lastActivityAt),
         target: sessionTargetOf(board, r.inboxId),
         session: sessionSubtextOf(board, r.inboxId, r.label),
+        priority: r.inboxId === priority,
       };
     })
     .filter((row) => row.count > 0 || row.stuck > 0)

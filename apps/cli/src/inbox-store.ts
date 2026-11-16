@@ -23,6 +23,7 @@ import {
   inboxStateStamped,
   nameHolder,
   normaliseInboxLabel,
+  priorityHolderOf,
   type ResolvedInboxDatabase,
   type SessionId,
   type SessionInboxMode,
@@ -86,13 +87,18 @@ import {
 //   tag finds who holds it (`findByCode`), and an assignment conditioned on
 //   it means two Inboxes racing for one code cannot both win;
 // - `InboxCodeChanged` carries the tags of both codes it touches, so a read of
-//   either sees the move, and the older code still finds its Inbox.
+//   either sees the move, and the older code still finds its Inbox;
+// - `InboxPriorityMarked` and `InboxPriorityCleared` carry `inbox-priority:mark`,
+//   one tag for the whole log, so a read of it folds which Inbox holds the
+//   mark (core's `priorityHolderOf`), and a mark conditioned on it means two
+//   marks racing cannot both win: the log never holds two priority Inboxes.
 
 const inboxTag = (inboxId: InboxId) => Tag.make(`inbox:${inboxId}`);
 const sessionTag = (sessionId: SessionId) => Tag.make(`session:${sessionId}`);
 const labelTag = (label: string) =>
   Tag.make(`inbox-label:${normaliseInboxLabel(label)}`);
 const codeTag = (code: InboxCode) => Tag.make(`inbox-code:${code}`);
+const priorityTag = Tag.make('inbox-priority:mark');
 
 const EventJson = Schema.fromJsonString(InboxEvent);
 const encodeEvent = Schema.encodeSync(EventJson);
@@ -123,6 +129,18 @@ export interface NamedRead {
   readonly label: ReadonlyArray<InboxEvent>;
   // Every event the codes' tags hold, oldest first; none with no codes.
   readonly codes: ReadonlyArray<InboxEvent>;
+  readonly head: Position;
+}
+
+/**
+ * One inbox's events and every event of the log's priority tag, read together
+ * so one head conditions the append on both (`readPriority`).
+ */
+export interface PriorityRead {
+  // The inbox's own events, oldest first.
+  readonly inbox: ReadonlyArray<InboxEvent>;
+  // Every mark and clearing of the priority, oldest first.
+  readonly priority: ReadonlyArray<InboxEvent>;
   readonly head: Position;
 }
 
@@ -157,6 +175,10 @@ const stampOf = (position: Position, occurredAt: DateTime.Utc): EventStamp => ({
  * name, nor, when `codes` are, any tagged with one of them. With `session`, the condition is that session's tag alone, the query
  * `readSession` reads: a decision taken from the session's events is
  * conditioned on what it read, and nothing else (`decideSessionAndAppend`).
+ * With `priority`, likewise, it is that inbox and the priority tag, the query
+ * `readPriority` reads (`decidePriorityAndAppend`): the clearing of the Inbox
+ * that held the mark is conditioned on the mark, not on that Inbox's
+ * questions.
  */
 export type InboxGuard =
   | {
@@ -164,7 +186,8 @@ export type InboxGuard =
       readonly label?: string;
       readonly codes?: ReadonlyArray<InboxCode>;
     }
-  | { readonly after: Position; readonly session: SessionId };
+  | { readonly after: Position; readonly session: SessionId }
+  | { readonly after: Position; readonly priority: InboxId };
 
 export class InboxLog extends Context.Service<
   InboxLog,
@@ -186,6 +209,10 @@ export class InboxLog extends Context.Service<
     readonly findByCode: (
       code: InboxCode,
     ) => Effect.Effect<Option.Option<InboxId>, InputError>;
+    /** One inbox and the log's priority tag, in one read with one head. */
+    readonly readPriority: (
+      inboxId: InboxId,
+    ) => Effect.Effect<PriorityRead, InputError>;
     /** Two inboxes in one read with one head, for a move between them. */
     readonly readPair: (
       a: InboxId,
@@ -244,6 +271,11 @@ const tagsFor = (event: InboxEvent) => {
   if (event._tag === 'InboxCodeAssigned') tags.push(codeTag(event.code));
   if (event._tag === 'InboxCodeChanged')
     tags.push(codeTag(event.from), codeTag(event.code));
+  if (
+    event._tag === 'InboxPriorityMarked' ||
+    event._tag === 'InboxPriorityCleared'
+  )
+    tags.push(priorityTag);
   if (event._tag === 'InboxRenamed') {
     tags.push(labelTag(event.label));
     if (event.previousLabel !== undefined) {
@@ -281,14 +313,26 @@ const boundary = (
   return head === undefined ? query.all() : query.or([head, ...tail]);
 };
 
+/** What a priority decision reads and is conditioned on: one inbox and the mark. */
+const priorityBoundary = (inboxId: InboxId) =>
+  query.or([
+    query.item({ tags: [inboxTag(inboxId)] }),
+    query.item({ tags: [priorityTag] }),
+  ]);
+
 /** Every inbox an event belongs to: its own, and a move's destination. */
 const inboxesOf = (event: InboxEvent): ReadonlyArray<InboxId> =>
   event._tag === 'QuestionMoved'
     ? [event.inboxId, event.toInboxId]
     : [event.inboxId];
 
-const isModeEvent = (event: InboxEvent) =>
-  event._tag === 'InboxModeOn' || event._tag === 'InboxModeOff';
+// A mode switch is the session's, and a priority mark the operator's own
+// arrangement, as a pin is; neither is news in the Inbox.
+const isQuietEvent = (event: InboxEvent) =>
+  event._tag === 'InboxModeOn' ||
+  event._tag === 'InboxModeOff' ||
+  event._tag === 'InboxPriorityMarked' ||
+  event._tag === 'InboxPriorityCleared';
 
 /** `InboxLog` over whatever `DcbEventStore` is provided. */
 export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
@@ -334,6 +378,21 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
           codeHolders(code, events)[0] ?? formerCodeHolders(code, events)[0],
         ),
       ),
+    readPriority: (inboxId) =>
+      Effect.map(
+        collectSequenced(priorityBoundary(inboxId)),
+        ({ sequenced, head }): PriorityRead => {
+          const own = inboxTag(inboxId);
+          const inbox: Array<InboxEvent> = [];
+          const priority: Array<InboxEvent> = [];
+          for (const s of sequenced) {
+            const event = decodeEvent(textDecoder.decode(s.event.data));
+            if (s.event.tags.includes(own)) inbox.push(event);
+            if (s.event.tags.includes(priorityTag)) priority.push(event);
+          }
+          return { inbox, priority, head };
+        },
+      ),
     readPair: (a, b) =>
       Effect.map(
         collectSequenced(boundary([a, b], undefined)),
@@ -368,10 +427,10 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
             byInbox.set(inboxId, list);
           }
         return [...byInbox].flatMap(([inboxId, list]): Array<ListedInbox> => {
-          // A mode switch is the session's, not news in the Inbox, so it
+          // A mode switch or a priority mark is not news in the Inbox, so it
           // does not move the Inbox up the operator's list.
           const last =
-            list.filter((e) => !isModeEvent(e.event)).at(-1) ?? list.at(-1);
+            list.filter((e) => !isQuietEvent(e.event)).at(-1) ?? list.at(-1);
           if (last === undefined) return [];
           return [
             {
@@ -405,11 +464,13 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
         const failIfEventsMatch =
           'session' in guard
             ? query.tags([sessionTag(guard.session)])
-            : boundary(
-                [...new Set(events.flatMap(inboxesOf))],
-                guard.label,
-                guard.codes,
-              );
+            : 'priority' in guard
+              ? priorityBoundary(guard.priority)
+              : boundary(
+                  [...new Set(events.flatMap(inboxesOf))],
+                  guard.label,
+                  guard.codes,
+                );
         yield* store.append([first, ...rest], {
           failIfEventsMatch,
           after: guard.after,
@@ -592,6 +653,46 @@ export const decideMoveAndAppend = <A>(
         const [first, ...rest] = decided.success.events;
         if (first !== undefined)
           yield* log.append([first, ...rest], { after: read.head });
+        return Result.succeed(decided.success.result);
+      }),
+      Schedule.recurs(1),
+    ),
+  );
+
+/**
+ * The cycle for the priority mark: one read of the inbox and of the log's
+ * priority tag, a decision handed the Inbox that holds the mark now (core's
+ * `priorityHolderOf`), and an append conditioned on that read alone, retried
+ * once on a conflict. So a mark replaces the one before it in one append, and
+ * of two marks racing, the second's re-read finds the first and replaces it.
+ */
+export type PriorityDecision<A> = (
+  state: InboxState,
+  holder: InboxId | undefined,
+) => Result.Result<
+  { readonly events: ReadonlyArray<InboxEvent>; readonly result: A },
+  InboxRefusal
+>;
+
+export const decidePriorityAndAppend = <A>(
+  inboxId: InboxId,
+  decide: PriorityDecision<A>,
+) =>
+  Effect.flatMap(InboxLog, (log) =>
+    retryOnConflict(
+      Effect.gen(function* () {
+        const read = yield* log.readPriority(inboxId);
+        const decided = decide(
+          inboxState(read.inbox),
+          priorityHolderOf(read.priority),
+        );
+        if (Result.isFailure(decided)) return Result.fail(decided.failure);
+        const [first, ...rest] = decided.success.events;
+        if (first !== undefined)
+          yield* log.append([first, ...rest], {
+            after: read.head,
+            priority: inboxId,
+          });
         return Result.succeed(decided.success.result);
       }),
       Schedule.recurs(1),
@@ -914,6 +1015,7 @@ export const makeInboxLogLazy = <R>(
         readNamed: (inboxId, label, codes) =>
           bounded((log) => log.readNamed(inboxId, label, codes)),
         findByCode: (code) => bounded((log) => log.findByCode(code)),
+        readPriority: (inboxId) => bounded((log) => log.readPriority(inboxId)),
         readPair: (a, b) => bounded((log) => log.readPair(a, b)),
         findBySession: (sessionId) =>
           bounded((log) => log.findBySession(sessionId)),

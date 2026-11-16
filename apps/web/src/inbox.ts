@@ -1745,6 +1745,22 @@ export const refusedInboxesOf = (board: DrawnBoard): ReadonlySet<InboxId> =>
   );
 
 /**
+ * The priority Inbox: the one the board marks `priority`, unless two machines
+ * claim it. Each machine's log holds one at most; were two machines' logs to
+ * hold one each (a mark on one whose clearing of the other did not land), the
+ * first in the board's order is the one, and the other keeps only its flag.
+ */
+export const priorityInboxOf = (
+  board: DrawnBoard | undefined,
+): InboxRow | undefined => {
+  if (board === undefined) return undefined;
+  const refused = refusedInboxesOf(board);
+  return board.inboxes.find(
+    (i) => i.priority === true && !refused.has(i.inboxId),
+  );
+};
+
+/**
  * The open Inboxes the sidebar lists, in its order: machine section by
  * section, pinned first and muted last within each. Archived Inboxes are
  * left out, and so is an Inbox two machines claim and the board refuses, since

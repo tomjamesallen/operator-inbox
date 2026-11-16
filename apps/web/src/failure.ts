@@ -9,6 +9,7 @@ import {
   inboxClashSentence,
   MuteRefused,
   PinRefused,
+  PriorityRefused,
   RenameRefused,
 } from '@operator-inbox/core/api';
 import { Cause, Data, Predicate, Schema } from 'effect';
@@ -238,6 +239,7 @@ const WriteRefusals = Schema.Union([
   PinRefused,
   ArchiveRefused,
   MuteRefused,
+  PriorityRefused,
   RenameRefused,
 ]).pipe(Schema.toTaggedUnion('_tag'));
 export type WriteRefusedTag = (typeof WriteRefusals.Type)['_tag'];

@@ -13,6 +13,7 @@
     "MuteRefused": 409,
     "OpenSessionRefused": 409,
     "PinRefused": 409,
+    "PriorityRefused": 409,
     "RenameRefused": 409
   },
   "endpoints": [
@@ -215,6 +216,28 @@
         ],
         "409": [
           "MuteRefused"
+        ],
+        "503": [
+          "InboxUnavailable"
+        ]
+      }
+    },
+    {
+      "endpoint": "inbox.priority",
+      "method": "POST",
+      "path": "/api/inbox/:inboxId/priority",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ],
+        "404": [
+          "InboxNotFound"
+        ],
+        "409": [
+          "PriorityRefused"
         ],
         "503": [
           "InboxUnavailable"

@@ -33,6 +33,7 @@ import {
   InboxLogInMemory,
   makeInboxLogLazy,
 } from '../src/inbox-store';
+import { priorityInbox } from '../src/serve-inbox-api';
 import { makeServeLayer } from '../src/serve-server';
 
 // The inbox group of `operator-inbox serve`, in process on a real listener on port
@@ -244,6 +245,85 @@ describe('operator-inbox serve — the inbox group', () => {
         payload: { pinned: false, group: 'store' },
       });
       expect(off.pinnedGroups).toEqual([]);
+    }).pipe(Effect.provide(serving(InboxLogInMemory))),
+  );
+
+  it.effect('marks the priority inbox, and a mark on another replaces it', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      yield* seedMore;
+      const { api } = yield* client;
+      const mark = (inboxId: InboxId, priority: boolean) =>
+        api.inbox.priority({
+          query: {},
+          params: { inboxId },
+          payload: { priority },
+        });
+      const holders = Effect.map(api.inbox.index({ query: {} }), (index) =>
+        index.inboxes.filter((i) => i.priority === true).map((i) => i.inboxId),
+      );
+      yield* mark(ID, true);
+      expect(yield* holders).toEqual([ID]);
+      // Another Inbox takes the mark: one append clears ID and marks ID3.
+      yield* mark(ID3, true);
+      expect(yield* holders).toEqual([ID3]);
+      const log = yield* InboxLog;
+      const { priority } = yield* log.readPriority(ID3);
+      expect(priority.map((e) => [e._tag, e.inboxId])).toEqual([
+        ['InboxPriorityMarked', ID],
+        ['InboxPriorityCleared', ID],
+        ['InboxPriorityMarked', ID3],
+      ]);
+      const again = yield* Effect.flip(mark(ID3, true));
+      expect(again._tag).toBe('PriorityRefused');
+      const notHeld = yield* Effect.flip(mark(ID, false));
+      expect(notHeld._tag).toBe('PriorityRefused');
+      yield* mark(ID3, false);
+      expect(yield* holders).toEqual([]);
+      // A mark is not news in the Inbox: the board keeps its order.
+      const order = (yield* api.inbox.index({ query: {} })).inboxes.map(
+        (i) => i.inboxId,
+      );
+      yield* mark(ID2, true);
+      expect(
+        (yield* api.inbox.index({ query: {} })).inboxes.map((i) => i.inboxId),
+      ).toEqual(order);
+    }).pipe(Effect.provide(serving(InboxLogInMemory))),
+  );
+
+  it.effect('two marks racing: the second replaces the first, never both', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      yield* seedMore;
+      // A log whose FIRST priority read is overtaken by a mark on ID2 just
+      // after it, so the append made on it fails the priority tag's
+      // condition, and the re-read clears ID2 as it marks ID3.
+      const base = yield* InboxLog;
+      let first = true;
+      const overtaken = InboxLog.of({
+        ...base,
+        readPriority: (inboxId) =>
+          Effect.gen(function* () {
+            const read = yield* base.readPriority(inboxId);
+            if (first) {
+              first = false;
+              yield* priorityInbox(ID2, true).pipe(
+                Effect.provideService(InboxLog, base),
+                Effect.orDie,
+              );
+            }
+            return read;
+          }),
+      });
+      yield* priorityInbox(ID3, true).pipe(
+        Effect.provideService(InboxLog, overtaken),
+      );
+      const { priority } = yield* base.readPriority(ID3);
+      expect(priority.map((e) => [e._tag, e.inboxId])).toEqual([
+        ['InboxPriorityMarked', ID2],
+        ['InboxPriorityCleared', ID2],
+        ['InboxPriorityMarked', ID3],
+      ]);
     }).pipe(Effect.provide(serving(InboxLogInMemory))),
   );
 

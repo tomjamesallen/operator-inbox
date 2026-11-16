@@ -18,6 +18,7 @@ import {
 import { modalField, modalPanel } from '../styles';
 import { ICON_EXTERNAL, Icon } from './icon';
 import { freshMark, MarkStack } from './marks';
+import { PriorityFlag } from './priority';
 
 // The inbox picker: the ⌘P question search's modal, field and list, over every
 // Inbox and its session. Base UI's Autocomplete inline in a Dialog, as the
@@ -54,8 +55,11 @@ const InboxRow = ({
         {row.code === undefined ? '' : `@${row.code}`}
       </span>
       <span className="flex min-w-1/3 flex-1 flex-col">
-        <span className="truncate" data-picker-label>
-          {inbox.label}
+        <span className="flex min-w-0 items-center gap-s1">
+          <span className="truncate" data-picker-label>
+            {inbox.label}
+          </span>
+          {inbox.priority && <PriorityFlag inboxId={inbox.inboxId} />}
         </span>
         {(inbox.session !== undefined || tags.length > 0) && (
           <span className="truncate text-10 text-fg/45">

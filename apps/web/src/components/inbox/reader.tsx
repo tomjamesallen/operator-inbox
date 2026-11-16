@@ -1,9 +1,10 @@
 import { useAtomValue } from '@effect/atom-react';
 import { useRef } from 'react';
 import { askingAtom } from '../../inbox-reader';
-import { ChaseButton } from './chase';
+import { ChaseButton, FootAlerts } from './chase';
 import { AskPicker, AskPlace, Composer } from './composer';
 import { Minimap } from './minimap';
+import { PriorityButton, PriorityCard, PriorityTripPill } from './priority';
 import { QuestionFlow } from './question-flow';
 import { QueueTabs } from './queue-tabs';
 
@@ -40,8 +41,15 @@ export const InboxReader = () => {
             column's width (`@chase-beside:`). */}
         <div ref={foot} className="@container absolute inset-x-0 bottom-0">
           <Composer />
-          <ChaseButton />
+          <FootAlerts>
+            <PriorityButton />
+            <ChaseButton />
+          </FootAlerts>
         </div>
+        {/* Over the list and the box: the interjection card; under the
+            header: the boomerang's pill. */}
+        <PriorityCard />
+        <PriorityTripPill />
       </div>
     </main>
   );

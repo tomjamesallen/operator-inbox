@@ -36,6 +36,12 @@
   --color-red: #b32134;
   /* A highlighted question in the inbox: its outline and bar. */
   --color-yellow: #9a7400;
+  /* The priority Inbox: its flag, its card, its pill, its count, its rows in
+     the lists of Inboxes. Every priority colour goes through this one token,
+     so it changes in one place. Green, well apart from the new Question's
+     pink (`--color-hot`); a reference to the theme's green, as `--color-rail`
+     is to the ground, so it follows the dark scheme's `--color-green`. */
+  --color-priority: var(--color-green);
 
   /* The app's face. Not `--font-mono`: Tailwind's preflight gives `code` and
      `pre` that one, and the design leaves them on Tailwind's stack. */

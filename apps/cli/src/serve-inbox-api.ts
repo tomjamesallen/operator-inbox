@@ -11,6 +11,7 @@ import {
   decideMute,
   decideOperatorAsk,
   decidePin,
+  decidePriority,
   decideRename,
   decideUnarchive,
   heldClaims,
@@ -63,6 +64,7 @@ import {
   OpenSessionRefused,
   type OperatorInboxApi,
   PinRefused,
+  PriorityRefused,
   RenameRefused,
 } from '@operator-inbox/core/api';
 import { Effect, Predicate, Result, SubscriptionRef } from 'effect';
@@ -80,6 +82,7 @@ import {
 import {
   decideAndAppend,
   decideNamedAndAppend,
+  decidePriorityAndAppend,
   InboxLog,
   type ListedInbox,
 } from './inbox-store';
@@ -99,8 +102,9 @@ import { openSessionLink } from './session-edge';
 // serves the page, and these handlers answer
 // `InboxUnavailable` until the store can be opened.
 //
-// The server's six writes (answering a question, dismissing a highlight,
-// pinning, archiving, muting, and renaming an Inbox) go to
+// The server's writes (answering a question, dismissing a highlight,
+// pinning, archiving, muting, marking the priority Inbox, and renaming an
+// Inbox) go to
 // the inbox log: Local's own, or the Inbox machine's that owns the Inbox,
 // through `routeByOwner` below.
 
@@ -358,6 +362,7 @@ const toIndex = (
     archived: s.archived,
     pinned: s.listed.state.pinned,
     muted: s.listed.state.muted,
+    ...(s.listed.state.priority ? { priority: true as const } : {}),
     awaitingOperator: s.awaitingOperator,
     awaitingAgent: s.awaitingAgent,
     processed: s.processed,
@@ -899,6 +904,42 @@ export const muteInbox = Effect.fnUntraced(function* (
   return yield* readBack(inboxId);
 });
 
+// POST /api/inbox/:inboxId/priority. The operator marks an Inbox as the
+// priority Inbox, or clears its mark, from the sidebar. Read the Inbox and the
+// log's priority tag, decide, append: a mark that replaces another clears that
+// one in the same append (`decidePriorityAndAppend`).
+export const priorityInbox = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  priority: boolean,
+) {
+  const decided = yield* decidePriorityAndAppend(inboxId, (state, holder) =>
+    Result.map(
+      decidePriority(state, holder, { inboxId, priority }),
+      (events) => ({
+        events,
+        result: undefined,
+      }),
+    ),
+  ).pipe(
+    Effect.catchTag('AppendConditionFailed', () =>
+      Effect.fail(
+        new PriorityRefused({
+          message:
+            'the priority inbox changed twice while marking it; try again',
+        }),
+      ),
+    ),
+    Effect.catchTag('InputError', (e) => unavailable(Effect.fail(e))),
+  );
+  if (Result.isFailure(decided)) {
+    const refusal = decided.failure;
+    return yield* refusal.reason === 'not-found'
+      ? Effect.fail(notFound(inboxId))
+      : Effect.fail(new PriorityRefused({ message: refusal.message }));
+  }
+  return yield* readBack(inboxId);
+});
+
 // The endpoints keyed by an Inbox id, each a `read` or a `write`
 // (`routeByOwner`).
 type OwnedEndpoint = Exclude<
@@ -914,6 +955,7 @@ const OWNED_KIND: Record<OwnedEndpoint, MachineCallKind> = {
   archive: 'write',
   archiveGroup: 'write',
   mute: 'write',
+  priority: 'write',
   rename: 'write',
 };
 
@@ -1026,6 +1068,12 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
         'mute',
         owned('mute', ({ params, payload }) =>
           muteInbox(params.inboxId, payload.muted),
+        ),
+      )
+      .handle(
+        'priority',
+        owned('priority', ({ params, payload }) =>
+          priorityInbox(params.inboxId, payload.priority),
         ),
       )
       .handle(

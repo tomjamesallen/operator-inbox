@@ -254,6 +254,23 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
     description:
       'Archive the selected inbox, or its one group, or bring it back; in All, the question’s inbox',
   },
+  {
+    id: 'toggle_priority',
+    section: 'Inbox',
+    description:
+      'Mark or unmark the selected inbox as the priority inbox, replacing any other; in All, the question’s inbox',
+  },
+  {
+    id: 'goto_priority',
+    section: 'Navigate',
+    description: 'Go to the priority inbox’s oldest waiting question',
+  },
+  {
+    id: 'priority_back',
+    section: 'Navigate',
+    description:
+      'On a boomerang to the priority inbox: back to where you were now',
+  },
   { id: 'show_help', section: 'Help', description: 'Show these key bindings' },
 ];
 
@@ -340,6 +357,11 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   'prefix>m=toggle_pin',
   'prefix>,=rename_inbox',
   'prefix>&=toggle_archive',
+  // ! for priority; g to go there; ; back, as tmux's `;` goes to the pane
+  // you were in.
+  'prefix>!=toggle_priority',
+  'prefix>g=goto_priority',
+  'prefix>;=priority_back',
   'prefix>?=show_help',
 ];
 
@@ -366,6 +388,11 @@ export const WIDGET_KEYS: ReadonlyArray<{
     what: 'Move through them and open one / open its session',
   },
   { keys: 'Esc', where: 'Any dialog', what: 'Close it' },
+  {
+    keys: '↩ / Esc',
+    where: 'Priority card',
+    what: 'Go to the priority inbox / carry on here until your next answer',
+  },
   {
     keys: '↩ / Esc',
     where: 'Sidebar search',

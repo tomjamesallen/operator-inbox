@@ -11,7 +11,11 @@ import {
   SchemaTransformation,
 } from 'effect';
 import { LOCAL_MACHINE } from './api/inbox-api';
-import { ChaseAfterMinutes, DiagramSize } from './api/inbox-config-api';
+import {
+  ChaseAfterMinutes,
+  DiagramSize,
+  PriorityPull,
+} from './api/inbox-config-api';
 import { SERVE_DEFAULT_PORT } from './api/serve-port';
 import {
   DEFAULT_INBOX_METADATA,
@@ -309,6 +313,10 @@ export const AppConfig = Schema.Struct({
   // How a picture in a question's body is sized: `box` or `area`
   // (`DiagramSize`). Unset: `DEFAULT_DIAGRAM_SIZE`, `box`.
   diagramSize: Schema.optional(DiagramSize),
+  // How the page pulls the operator back to the priority Inbox:
+  // `interjection` or `boomerang` (`PriorityPull`). Unset:
+  // `DEFAULT_PRIORITY_PULL`, `interjection`.
+  priorityPull: Schema.optional(PriorityPull),
   // Listen mode, where serve reads the Questions aloud (`readout-api.ts`).
   // `voice` is the voice the audio is made in. Unset:
   // `DEFAULT_READOUT_VOICE`.

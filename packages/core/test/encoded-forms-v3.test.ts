@@ -27,6 +27,8 @@ import {
   OperatorInboxApi,
   PinPayload,
   PinRefused,
+  PriorityPayload,
+  PriorityRefused,
   RenamePayload,
   RenameRefused,
 } from '../src/api';
@@ -230,7 +232,8 @@ describe('InboxEvent as stored in the log', () => {
     // after this golden was pinned, so they have their own
     // (`inbox-code-events.jsonl` and `inbox-code-change-events.jsonl`, below)
     // and this one stays byte for byte as it was; so do `GroupArchived` and
-    // `GroupUnarchived` (`inbox-group-archive-events.jsonl`).
+    // `GroupUnarchived` (`inbox-group-archive-events.jsonl`), and the priority
+    // marks (`inbox-priority-events.jsonl`).
     const every: Record<
       Exclude<
         InboxEventTag,
@@ -242,6 +245,8 @@ describe('InboxEvent as stored in the log', () => {
         | 'InboxCodeChanged'
         | 'GroupArchived'
         | 'GroupUnarchived'
+        | 'InboxPriorityMarked'
+        | 'InboxPriorityCleared'
       >,
       true
     > = {
@@ -558,6 +563,27 @@ describe('group archives as stored in the log', () => {
   });
 });
 
+// The priority marks, which came after the event goldens above were pinned
+// and so have their own file: a mark, a mark replacing it (the holder's
+// clearing first, as one append writes them), and a clearing.
+const PRIORITY_EVENTS: ReadonlyArray<InboxEvent> = [
+  { _tag: 'InboxPriorityMarked', inboxId: INBOX_A },
+  { _tag: 'InboxPriorityCleared', inboxId: INBOX_A },
+  { _tag: 'InboxPriorityMarked', inboxId: INBOX_B },
+  { _tag: 'InboxPriorityCleared', inboxId: INBOX_B },
+];
+
+describe('priority marks as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = PRIORITY_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-priority-events.jsonl', lines);
+    const read = golden('inbox-priority-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(PRIORITY_EVENTS);
+  });
+});
+
 // ================================================================================
 // Frontmatter — what the `plan*` builders hand `serialiseFrontmatter`, the
 // production write path of every `new-*` command, and what `parseFrontmatter`
@@ -721,6 +747,25 @@ const INBOX_BOARD_ARCHIVED_GROUPS: InboxBoardDto = {
   ],
 };
 
+// The board read with the priority Inbox on its row, in a golden of its own,
+// so the ones above stay as they were pinned.
+const INBOX_BOARD_PRIORITY: InboxBoardDto = {
+  inboxes: [{ ...SUMMARY_B, priority: true }],
+  totalAwaitingOperator: 0,
+  views: [
+    {
+      inboxId: INBOX_B,
+      label: 'Bare inbox',
+      metadata: {},
+      archived: true,
+      pinnedGroups: [],
+      awaitingOperator: [],
+      awaitingAgent: [],
+      processed: [],
+    },
+  ],
+};
+
 const INBOX_INDEX: InboxIndexDto = {
   inboxes: [SUMMARY_A, SUMMARY_B],
   totalAwaitingOperator: 1,
@@ -747,6 +792,7 @@ const DTOS = [
     InboxBoardDto,
     INBOX_BOARD_ARCHIVED_GROUPS,
   ),
+  dtoCase('dto-inbox-board-priority.json', InboxBoardDto, INBOX_BOARD_PRIORITY),
   dtoCase('dto-payload-answer.json', AnswerPayload, {
     response: 'An answer.',
     seenRevision: rev(2),
@@ -781,6 +827,7 @@ const DTOS = [
     archived: true,
   }),
   dtoCase('dto-payload-rename.json', RenamePayload, { label: 'New name' }),
+  dtoCase('dto-payload-priority.json', PriorityPayload, { priority: true }),
 ];
 
 describe('HTTP DTOs', () => {
@@ -838,6 +885,12 @@ const ERRORS = [
   errorCase(
     MuteRefused,
     new MuteRefused({ message: 'The Inbox is already muted.' }),
+  ),
+  errorCase(
+    PriorityRefused,
+    new PriorityRefused({
+      message: 'The Inbox is already the priority inbox.',
+    }),
   ),
   errorCase(
     OpenSessionRefused,

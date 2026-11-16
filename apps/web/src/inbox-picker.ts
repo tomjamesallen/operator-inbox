@@ -6,6 +6,7 @@ import {
   drawnBoardAtom,
   machineSectionsOf,
   openInboxSessionAtom,
+  priorityInboxOf,
   refusedInboxesOf,
   sessionTargetOf,
 } from './inbox';
@@ -66,7 +67,8 @@ const sessionTitleOf = (
 };
 
 /**
- * Every Inbox in the picker's order: first the awake owl's rows, in its order
+ * Every Inbox in the picker's order: the priority Inbox first, wherever it
+ * would sit; then the awake owl's rows, in its order
  * (something stuck with the agent first, then the fewest waiting, then the
  * most recent activity), with the Inbox on screen among them; then the other
  * active Inboxes, then the muted ones, then the archived ones, each most
@@ -79,6 +81,7 @@ export const pickerInboxesOf = (
   fresh: ReadonlyArray<FreshMark>,
 ): ReadonlyArray<PickerRow> => {
   const refused = refusedInboxesOf(board);
+  const priority = priorityInboxOf(board)?.inboxId;
   const owl = elsewhereRowsOf(board, undefined, nowMs, afterMs, fresh);
   const listed = new Set<InboxId>(owl.map((r) => r.inboxId));
   const rest = board.inboxes
@@ -94,6 +97,7 @@ export const pickerInboxesOf = (
         lastAt: millisOf(r.lastActivityAt),
         target: sessionTargetOf(board, r.inboxId),
         session: sessionSubtextOf(board, r.inboxId, r.label),
+        priority: r.inboxId === priority,
       }),
     );
   const summary = new Map(board.inboxes.map((r) => [r.inboxId, r]));
@@ -111,11 +115,17 @@ export const pickerInboxesOf = (
       ? sections.find((s) => s.inboxes.some((i) => i.inboxId === inboxId))
           ?.label
       : undefined;
-  return [
+  const ordered = [
     ...owl,
     ...part((r) => !isArchived(r) && !isMuted(r)),
     ...part((r) => !isArchived(r) && isMuted(r)),
     ...part(isArchived),
+  ];
+  // The priority Inbox on top, wherever it would sit, then the rest as they
+  // were: those needing attention lead them already.
+  return [
+    ...ordered.filter((r) => r.priority),
+    ...ordered.filter((r) => !r.priority),
   ].map((row) => ({
     _tag: 'Inbox',
     key: row.inboxId,

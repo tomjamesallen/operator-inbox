@@ -2,12 +2,14 @@ import {
   DEFAULT_CHASE_AFTER_MINUTES,
   DEFAULT_DIAGRAM_SIZE,
   DEFAULT_INBOX_METADATA,
+  DEFAULT_PRIORITY_PULL,
   DiagramSize,
   type InboxId,
   type InboxMachineKey,
   type InboxMetadataRules,
   type InboxViewDto,
   type MacroInvoked,
+  type PriorityPull,
   type QuestionComment,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
@@ -411,6 +413,19 @@ export const chaseAfterMsAtom = Atom.make(
       onSome: (config) =>
         config.chaseAfterMinutes ?? DEFAULT_CHASE_AFTER_MINUTES,
     }) * 60_000,
+);
+
+/**
+ * How the page pulls the operator back to the priority Inbox: config.json's
+ * `priorityPull`, or the default (`interjection`) until the config is read,
+ * or when it cannot be.
+ */
+export const priorityPullAtom = Atom.make(
+  (get): PriorityPull =>
+    Option.match(AsyncResult.value(get(inboxConfigAtom)), {
+      onNone: () => DEFAULT_PRIORITY_PULL,
+      onSome: (config) => config.priorityPull ?? DEFAULT_PRIORITY_PULL,
+    }),
 );
 
 // The diagram size last read, kept in this browser's localStorage, so a

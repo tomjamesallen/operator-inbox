@@ -5,6 +5,7 @@ import {
   elsewhereClearWatchAtom,
   yourInboxLandingWatchAtom,
 } from '../../inbox-elsewhere';
+import { priorityWatchAtom } from '../../inbox-priority';
 import {
   greyedLineAtom,
   inboxTabTitleAtom,
@@ -100,6 +101,7 @@ export const InboxPage = () => {
   useAtomMount(readoutAudioAtom);
   useAtomMount(followWatchAtom);
   useAtomMount(stuckWatchAtom);
+  useAtomMount(priorityWatchAtom);
   return (
     <div className="flex h-dvh overflow-hidden bg-bg font-zen text-fg">
       <Masthead />

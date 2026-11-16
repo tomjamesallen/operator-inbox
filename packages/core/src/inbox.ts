@@ -412,6 +412,24 @@ export const InboxUnmuted = Schema.TaggedStruct('InboxUnmuted', {
 });
 export type InboxUnmuted = typeof InboxUnmuted.Type;
 
+// The operator marked an Inbox as the priority Inbox, or cleared that mark, in
+// the app's sidebar. One Inbox at most in a log is the priority Inbox: a mark
+// on another Inbox is appended together with the clearing of the one that
+// held it, in one append conditioned on the log's priority tag, so the log
+// never holds two (`decidePriority`; the tag is apps/cli's `inbox-store.ts`).
+// The page pulls the operator back to it after each answer elsewhere. While
+// it is archived or muted the mark stays, and it does not pull.
+export const InboxPriorityMarked = Schema.TaggedStruct('InboxPriorityMarked', {
+  inboxId: InboxId,
+});
+export type InboxPriorityMarked = typeof InboxPriorityMarked.Type;
+
+export const InboxPriorityCleared = Schema.TaggedStruct(
+  'InboxPriorityCleared',
+  { inboxId: InboxId },
+);
+export type InboxPriorityCleared = typeof InboxPriorityCleared.Type;
+
 // Inbox mode: while it is on for a
 // session, hooks route every question for the operator to that session's
 // Inbox. Both events carry the session as well as the Inbox, because the mode
@@ -460,6 +478,8 @@ export const InboxEvent = Schema.Union([
   GroupUnarchived,
   InboxMuted,
   InboxUnmuted,
+  InboxPriorityMarked,
+  InboxPriorityCleared,
   InboxModeOn,
   InboxModeOff,
 ]);
@@ -564,6 +584,8 @@ export interface InboxState {
   readonly archivedGroups: ReadonlyArray<string>;
   // True after `InboxMuted`, false again after `InboxUnmuted`.
   readonly muted: boolean;
+  // True after `InboxPriorityMarked`, false again after `InboxPriorityCleared`.
+  readonly priority: boolean;
   readonly questions: ReadonlyArray<InboxQuestion>;
   // How many questions have been processed or withdrawn so far.
   readonly processedCount: number;
@@ -578,6 +600,7 @@ export const emptyInboxState: InboxState = {
   pinnedGroups: [],
   archivedGroups: [],
   muted: false,
+  priority: false,
   questions: [],
   processedCount: 0,
 };
@@ -828,6 +851,10 @@ export const evolveInbox = (
       return { ...state, muted: true };
     case 'InboxUnmuted':
       return { ...state, muted: false };
+    case 'InboxPriorityMarked':
+      return { ...state, priority: true };
+    case 'InboxPriorityCleared':
+      return { ...state, priority: false };
     case 'GroupUnpinned':
       return {
         ...state,
@@ -2111,4 +2138,57 @@ export const decideMute = (
   return Result.succeed(
     muted ? { _tag: 'InboxMuted', inboxId } : { _tag: 'InboxUnmuted', inboxId },
   );
+};
+
+// --- the priority Inbox ------------------------------------------------------------
+
+/**
+ * The Inbox holding the priority mark, folded from the events of the log's
+ * priority tag (every `InboxPriorityMarked` and `InboxPriorityCleared`),
+ * oldest first; undefined when none does.
+ */
+export const priorityHolderOf = (
+  events: ReadonlyArray<InboxEvent>,
+): InboxId | undefined =>
+  events.reduce<InboxId | undefined>((holder, event) => {
+    if (event._tag === 'InboxPriorityMarked') return event.inboxId;
+    if (event._tag === 'InboxPriorityCleared' && event.inboxId === holder)
+      return undefined;
+    return holder;
+  }, undefined);
+
+/**
+ * Mark an Inbox as the priority Inbox (`priority: true`), or clear its mark.
+ * `holder` is the Inbox holding the mark now (`priorityHolderOf`). A mark on
+ * an Inbox while another holds it clears that one first, in the same events,
+ * so one append replaces the mark and the log never holds two. One that
+ * changes nothing is refused (`unchanged`), so the log never carries one.
+ * Allowed in an archived or a muted Inbox: the mark stays and waits there,
+ * as a pin does.
+ */
+export const decidePriority = (
+  state: InboxState,
+  holder: InboxId | undefined,
+  input: { readonly inboxId: InboxId; readonly priority: boolean },
+): Result.Result<
+  ReadonlyArray<InboxPriorityMarked | InboxPriorityCleared>,
+  InboxRefusal
+> => {
+  if (!state.opened) return notFound(input.inboxId);
+  const { inboxId, priority } = input;
+  if ((holder === inboxId) === priority)
+    return refuse(
+      'unchanged',
+      priority
+        ? 'the inbox is already the priority inbox'
+        : 'the inbox is not the priority inbox',
+    );
+  if (!priority)
+    return Result.succeed([{ _tag: 'InboxPriorityCleared', inboxId }]);
+  return Result.succeed([
+    ...(holder === undefined
+      ? []
+      : [{ _tag: 'InboxPriorityCleared' as const, inboxId: holder }]),
+    { _tag: 'InboxPriorityMarked', inboxId },
+  ]);
 };

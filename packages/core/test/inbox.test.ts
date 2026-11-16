@@ -18,6 +18,7 @@ import {
   decideOpen,
   decideOperatorAsk,
   decidePin,
+  decidePriority,
   decideProcess,
   decideQuestionMetadata,
   decideRename,
@@ -35,6 +36,7 @@ import {
   operatorQuestionTitle,
   orderInboxes,
   PROCESSED_VIEW_CAP,
+  priorityHolderOf,
   QuestionNumber,
   QuestionRevision,
   recentlyProcessed,
@@ -1801,5 +1803,104 @@ describe('mutes', () => {
     expect(
       totalAwaitingOperator([at('muted', 4, true), at('loud', 2, false)]),
     ).toBe(2);
+  });
+});
+
+describe('the priority inbox', () => {
+  const OTHER = InboxId.make('01INBOX0000000000000000001');
+  const marked = (inboxId: InboxId): InboxEvent => ({
+    _tag: 'InboxPriorityMarked',
+    inboxId,
+  });
+  const cleared = (inboxId: InboxId): InboxEvent => ({
+    _tag: 'InboxPriorityCleared',
+    inboxId,
+  });
+
+  it('folds the mark on and off in the inbox', () => {
+    expect(inboxState([opened]).priority).toBe(false);
+    expect(inboxState([opened, marked(ID)]).priority).toBe(true);
+    expect(inboxState([opened, marked(ID), cleared(ID)]).priority).toBe(false);
+  });
+
+  it('folds the holder from the log’s marks: the latest mark not cleared since', () => {
+    expect(priorityHolderOf([])).toBeUndefined();
+    expect(priorityHolderOf([marked(ID)])).toBe(ID);
+    expect(priorityHolderOf([marked(ID), cleared(ID), marked(OTHER)])).toBe(
+      OTHER,
+    );
+    expect(priorityHolderOf([marked(ID), cleared(ID)])).toBeUndefined();
+    // A clearing of an Inbox that does not hold it changes nothing.
+    expect(priorityHolderOf([marked(OTHER), cleared(ID)])).toBe(OTHER);
+  });
+
+  it('marks an inbox when none holds the mark', () => {
+    expect(
+      decidePriority(inboxState([opened]), undefined, {
+        inboxId: ID,
+        priority: true,
+      }),
+    ).toEqual(Result.succeed([marked(ID)]));
+  });
+
+  it('replaces the mark: the holder is cleared in the same events, first', () => {
+    const decided = decidePriority(inboxState([opened]), OTHER, {
+      inboxId: ID,
+      priority: true,
+    });
+    expect(decided).toEqual(Result.succeed([cleared(OTHER), marked(ID)]));
+    // Folded after the log's earlier mark, the events leave one holder, and
+    // each Inbox's own fold agrees with it.
+    const log = [marked(OTHER), ...Result.getOrThrow(decided)];
+    expect(priorityHolderOf(log)).toBe(ID);
+    const ofInbox = (id: InboxId) =>
+      inboxState([
+        { _tag: 'InboxOpened', inboxId: id, label: id },
+        ...log.filter((e) => e.inboxId === id),
+      ]).priority;
+    expect([ofInbox(ID), ofInbox(OTHER)]).toEqual([true, false]);
+  });
+
+  it('clears the mark on the inbox that holds it', () => {
+    expect(
+      decidePriority(inboxState([opened, marked(ID)]), ID, {
+        inboxId: ID,
+        priority: false,
+      }),
+    ).toEqual(Result.succeed([cleared(ID)]));
+  });
+
+  it('refuses a mark that changes nothing, and an inbox nobody opened', () => {
+    const state = inboxState([opened]);
+    expect(
+      refusalOf(decidePriority(state, ID, { inboxId: ID, priority: true })),
+    ).toBe('unchanged');
+    expect(
+      refusalOf(decidePriority(state, OTHER, { inboxId: ID, priority: false })),
+    ).toBe('unchanged');
+    expect(
+      refusalOf(
+        decidePriority(state, undefined, { inboxId: ID, priority: false }),
+      ),
+    ).toBe('unchanged');
+    expect(
+      refusalOf(
+        decidePriority(inboxState([]), undefined, {
+          inboxId: ID,
+          priority: true,
+        }),
+      ),
+    ).toBe('not-found');
+  });
+
+  it('marks an archived or a muted inbox: the mark waits there', () => {
+    const archived = inboxState([
+      opened,
+      { _tag: 'InboxArchived', inboxId: ID },
+      { _tag: 'InboxMuted', inboxId: ID },
+    ]);
+    expect(
+      decidePriority(archived, undefined, { inboxId: ID, priority: true }),
+    ).toEqual(Result.succeed([marked(ID)]));
   });
 });

@@ -40,6 +40,13 @@ import {
 import { focusYourInboxAtom } from './inbox-elsewhere';
 import { inboxPickerOpenAtom, setInboxPickerOpenAtom } from './inbox-picker';
 import {
+  goToPriorityAtom,
+  priorityBackAtom,
+  priorityInfoAtom,
+  priorityTripAtom,
+  togglePriorityAtom,
+} from './inbox-priority';
+import {
   openRenameAtom,
   type RailFocus,
   railFocusAskedAtom,
@@ -655,6 +662,25 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   toggle_archive: (get) => toggleArchive(get),
   show_help: (get) => {
     get.set(keymapHelpOpenAtom, !get.once(keymapHelpOpenAtom));
+    return true;
+  },
+  // The Inbox in hand, as pinning's key takes it.
+  toggle_priority: (get) => {
+    const view = viewInHand(get);
+    if (view === undefined) return false;
+    get.set(togglePriorityAtom, view.inboxId);
+    return true;
+  },
+  goto_priority: (get) => {
+    const info = get.once(priorityInfoAtom);
+    if (dialogOpen(get) || info === undefined || info.waiting.length === 0)
+      return false;
+    get.set(goToPriorityAtom, {});
+    return true;
+  },
+  priority_back: (get) => {
+    if (get.once(priorityTripAtom) === null) return false;
+    get.set(priorityBackAtom, undefined);
     return true;
   },
 };
