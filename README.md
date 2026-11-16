@@ -1,77 +1,58 @@
 # Operator Inbox
 
-A local inbox for the questions your agent sessions ask you. Each session posts its questions to an Inbox, you answer them in a local web app, and the session picks the answers up.
+A local inbox for the questions your agent sessions ask you. Each session posts its questions to an Inbox, you answer them in a local web app, and the session picks the answers up and carries on.
+
+Questions that scroll away in a long agent session get lost, and several sessions asking at once are hard to keep up with. Operator Inbox holds them all in one place, outside the transcripts, with enough context to answer each one cold: markdown, tables, diagrams, drawings and attached files.
 
 It runs on your machine only: a CLI, an event log on one SQLite file, and a web app on http://127.0.0.1:7184. It is built for Claude Code sessions, and works from any agent that can run a command.
+
+![A Question in Operator Inbox: a title, a body with a table and a flowchart, and the answer box below](docs/images/question.png)
 
 Work in progress.
 
 ## How it works
 
-An agent session opens an Inbox (`operator-inbox open`) and asks each question there (`operator-inbox ask`), with enough context to answer cold. You answer in the app at http://127.0.0.1:7184. The session runs `operator-inbox watch` once, which wakes it when an answer lands. It acts on the answer, then marks the Question done (`operator-inbox done`). Turn on inbox mode (`operator-inbox mode on`) and the app's Claude Code hooks keep every question for you in the Inbox, not the chat.
+An agent session opens an Inbox (`operator-inbox open`) and asks each question there (`operator-inbox ask`). You answer in the app at http://127.0.0.1:7184. The session runs `operator-inbox watch` once, which wakes it when an answer lands. It acts on the answer, then marks the Question done (`operator-inbox done`). Turn on inbox mode (`operator-inbox mode on`) and the app's Claude Code hooks keep every question for you in the Inbox, not the chat.
 
-`operator-inbox skill` prints the full instructions an agent follows. Point your agent at them, or install them as a skill. `operator-inbox --help` lists every command.
+`operator-inbox skill` prints the full instructions an agent follows. `operator-inbox --help` lists every command. `docs/architecture.md` describes how it is built.
 
-`docs/architecture.md` describes how it is built: an event log on one SQLite file, a CLI that is also the server, and a web app.
+## Quick start
 
-## Set up
-
-You need macOS, Node 22.16 or later, and pnpm. From the checkout, run:
+You need Node 22.16 or later and pnpm 9 or later. The launch agent that keeps the server running, and the optional desktop window, are macOS only; elsewhere you run `operator-inbox serve` yourself.
 
 ```sh
+git clone https://github.com/tomjamesallen/operator-inbox.git
+cd operator-inbox
 bash scripts/setup.sh
 ```
 
-(or `pnpm run setup`; bare `pnpm setup` is pnpm's own command, not this one). It works from any folder and is safe to re-run. It:
-
-1. installs the dependencies (`pnpm install --frozen-lockfile`) and builds (`pnpm build`);
-2. links the `operator-inbox` bin globally (`pnpm link --global`), so your agent sessions can run it;
-3. writes a launch agent, `~/Library/LaunchAgents/com.operator-inbox.serve.plist`, that runs `operator-inbox serve` on http://127.0.0.1:7184 at login and keeps it running, and loads it. The plist is rendered for this machine (the absolute paths of your `node` and the built CLI) and is rewritten and reloaded only when it changes; otherwise the running server is restarted onto the new build. The server logs to `~/.local/state/operator-inbox/serve.log` (under `$XDG_STATE_HOME` when that is set);
-4. merges the app's Claude Code hooks into `~/.claude/settings.json` (`operator-inbox install-claude-hooks`, which backs the file up first);
-5. checks the server answers at http://127.0.0.1:7184/api/inboxes, and prints a summary, which also says whether the optional desktop window (below) is installed and current.
-
-Options:
-
-- `bash scripts/setup.sh rebuild` installs and builds, then, only if the server's launch agent is already loaded, restarts it onto the new build and checks it answers, exiting non-zero and naming the log the installed plist writes when it does not. It keeps the installed plist as it is, so the agent goes on running the checkout, store and environment it was set up with, whichever shell or checkout runs `rebuild` (run from a checkout the agent does not run, it says so). The one change it makes: when the `node` the plist names no longer exists (an upgrade moved it), it replaces that path with the `node` on this shell's PATH, keeps every other byte, and reloads the agent. If the agent then fails to load, it says the `launchctl bootstrap` command that loads it and exits non-zero. It never installs the hooks and never starts an agent that is not loaded, so it is the one to run after a `git pull`, by hand or from an external sync job.
-- `--no-hooks` leaves `~/.claude/settings.json` alone.
-- `--dry-run` prints every action, and the plist it would write, and changes nothing.
-
-Anywhere but macOS the launch agent step is skipped: run `operator-inbox serve` yourself.
-
-## The desktop window
-
-Optionally, the app can have a window of its own: `~/Applications/Operator Inbox.app`, a [Pake](https://github.com/tw93/Pake) build onto http://127.0.0.1:7184. It needs Rust (`brew install rust`) and pake 3.17.4 or later (`npm install -g pake-cli`), and a build is a Rust compile of a few minutes, so `setup.sh` never builds it. Build it, or rebuild it, with:
+That installs and builds, links the `operator-inbox` bin, writes and loads a launch agent that serves http://127.0.0.1:7184, and merges the app's hooks into `~/.claude/settings.json` (backing it up first; `--no-hooks` skips that). Then install the skill for Claude Code:
 
 ```sh
-bash scripts/desktop-app.sh build
+mkdir -p ~/.claude/skills/operator-inbox
+operator-inbox skill > ~/.claude/skills/operator-inbox/SKILL.md
 ```
 
-It replaces an earlier build of the window, never another app at that name, and never launches it. If the window is open, quit it with ⌘Q (closing its window only hides it) and reopen it to load the new build. `--dry-run` prints the pake command and changes nothing.
+and type `/operator-inbox` in a Claude Code session. It opens an Inbox, and its questions arrive in the app.
 
-The window has no find bar of WebKit's own, so the build turns on Pake's: ⌘F opens a find-in-page bar at the top right (Enter and ⇧Enter step through the matches, Esc closes it), and ⌘G and ⇧⌘G step from anywhere. They are in the window's Edit menu. In a browser tab ⌘F stays the browser's own find. The app's own search is ⌘P, which searches Questions across Inboxes rather than the text on the page.
+[`docs/install.md`](docs/install.md) is the full guide: requirements, what `setup.sh` does step by step, the desktop window, listen mode (Questions read aloud by a local voice), updating, where your data lives, and uninstalling.
 
-`bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's `icon-any-512.png` (the "Oi" mark, written by `node scripts/web-icons/make.mjs`) with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
-
-## Listen mode
-
-Listen mode reads the Questions aloud, with a local voice: Kokoro-82M, run on this Mac through [mlx-audio](https://github.com/Blaizzy/mlx-audio). It needs Apple silicon and mlx-audio, installed with:
+## Updating
 
 ```sh
-uv tool install mlx-audio
+git pull
+bash scripts/setup.sh rebuild
 ```
 
-`setup.sh` runs that for you when [uv](https://docs.astral.sh/uv/) is installed. The model (about 330 MB) downloads the first time a Question is read. The voice is `readout.voice` in `config.json` (default `bm_george`, a British voice). The audio is cached under `~/.local/state/operator-inbox/readout/`, swept to the last 30 days and 256 MiB. If serve cannot find mlx-audio's Python, set `OPERATOR_INBOX_READOUT_PYTHON` to it.
+`rebuild` builds and restarts the running server onto the new build, and changes nothing else. Reinstall the skill afterwards, with the `operator-inbox skill` line above.
 
-## Stopping the server
-
-To stop the server and remove the launch agent:
+## Troubleshooting
 
 ```sh
-launchctl bootout gui/$(id -u)/com.operator-inbox.serve
-rm ~/Library/LaunchAgents/com.operator-inbox.serve.plist
+operator-inbox doctor
 ```
 
-`launchctl bootout` on its own stops it until the next login or the next `setup.sh`.
+checks the install: Node, the bin on `PATH`, `config.json`, the event log, the server, the launch agent, the Claude Code hooks, the skill, the desktop window and listen mode's voice. Each row reads `ok`, `warn` or `fail`, with a one-line fix. It changes nothing, exits non-zero when a row fails, and takes `--json`. [`docs/install.md`](docs/install.md#troubleshooting) covers the common cases.
 
 ## Configure
 
