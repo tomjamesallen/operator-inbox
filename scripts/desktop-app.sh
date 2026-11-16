@@ -36,7 +36,7 @@ URL=http://127.0.0.1:7184
 # whenever anything baked into the bundle changes: the URL, the name or the
 # pake options below. (A changed icon is caught without a bump: check compares
 # the bundled icon with the committed one.)
-VERSION=1.2.0
+VERSION=1.3.0
 PAKE_MIN=3.17.4
 RUSTC_MIN=1.85
 
@@ -238,6 +238,12 @@ PAKE_ARGV=(
   # The menu's accelerators fire only in the window, so in a browser tab Cmd+F
   # stays the browser's own.
   --enable-find
+  # macOS: no title bar. The traffic lights float over the page's top edge
+  # and the page lays its header into the strip (apps/web/src/desktop-titlebar.ts
+  # marks the root; index.css's titlebar: variant lay it out). Pake's own drag
+  # bar there would take the header's clicks, so the page hides it and marks
+  # its own empty header data-tauri-drag-region.
+  --hide-title-bar
   # One JSON result on stdout, logs on stderr, Pake's own prompts off.
   --json
 )
