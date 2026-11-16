@@ -210,7 +210,7 @@ export const KEYMAP_SECTIONS: ReadonlyArray<KeymapSection> = [
   'Help',
 ];
 
-/** tmux's prefix in the operator's own config, and so the default here. */
+/** A common tmux prefix, and so the default here. */
 export const DEFAULT_PREFIX = 'ctrl+space';
 
 // The default bindings, in the config file's own syntax: each is a line a

@@ -109,7 +109,7 @@ const SHIFTED_SYMBOLS: Readonly<Record<string, string>> = {
 
 // The key each shifted character sits on, on a US layout. Under Control or
 // Command macOS's layouts drop Shift from the character, though not from the
-// event: measured with UCKeyTranslate on the operator's Mac, Ctrl+Shift+, types
+// event: measured with UCKeyTranslate on a Mac, Ctrl+Shift+, types
 // `,`. So a press names a shifted character by that key, with Shift held.
 const UNSHIFTED_SYMBOLS: Readonly<Record<string, string>> = {
   ...Object.fromEntries(
