@@ -14,14 +14,17 @@ import {
   missingInboxOf,
   selectedInboxAtom,
 } from '../../inbox';
+import { elsewhereShownAtom } from '../../inbox-elsewhere';
 import { activeQueueAtom } from '../../inbox-reader';
 import { inboxClashHeading, inboxClashNotice } from '../../machine-notices';
 import { owlStirringAtom } from '../../owl-stir';
+import { Elsewhere } from './elsewhere';
 import { ICON_COPY, ICON_DONE, ICON_FAILED, Icon } from './icon';
 
 // What stands in the question's place when there is no question: the first
 // load, a board that could not be read, an Inbox that is not on the board, and
 // an empty queue. Each says why, never "nothing waiting" when it cannot know.
+// An empty Inbox while others have something lists them instead (`Elsewhere`).
 
 const namesOf = (machines: ReadonlyArray<{ readonly label: string }>) =>
   machines.map((m) => m.label).join(' and ');
@@ -232,6 +235,7 @@ export const NoQuestion = () => {
   const selected = useAtomValue(selectedInboxAtom);
   const seen = useAtomValue(inboxesSeenAtom);
   const queue = useAtomValue(activeQueueAtom);
+  const elsewhere = useAtomValue(elsewhereShownAtom);
   if (board === undefined)
     return AsyncResult.isFailure(result) ? (
       <p
@@ -255,6 +259,7 @@ export const NoQuestion = () => {
         name={seen.get(selected)?.label ?? 'This inbox'}
       />
     );
+  if (elsewhere) return <Elsewhere />;
   const unread = (board.machines ?? []).filter(
     (m) => isUnreadMachine(m) && !board.greyed.has(m.key),
   );
