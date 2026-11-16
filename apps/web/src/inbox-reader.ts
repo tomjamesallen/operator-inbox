@@ -128,8 +128,14 @@ export const askingAtom = fromSnapshot(
   (s) => s.matches({ composer: 'asking' }),
   false,
 );
-export const placingAtom = fromSnapshot(
-  (s) => (s.value as { readonly scroll: string }).scroll === 'placing',
+// A scrub places each question it passes, so it holds as a placement does.
+export const placingAtom = fromSnapshot((s) => {
+  const { scroll } = s.value as { readonly scroll: string };
+  return scroll === 'placing' || scroll === 'scrubbing';
+}, false);
+/** A finger is dragging down the minimap. */
+export const scrubbingAtom = fromSnapshot(
+  (s) => s.matches({ scroll: 'scrubbing' }),
   false,
 );
 export const jumpAtom = fromSnapshot<ReaderContext['jump']>(

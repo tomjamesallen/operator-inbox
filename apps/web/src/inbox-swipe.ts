@@ -92,6 +92,8 @@ const scrollsSideways = (from: Element, reader: Element): boolean => {
 
 const panelOf = (target: EventTarget | null): Element | undefined => {
   if (!(target instanceof Element)) return undefined;
+  // A finger on the minimap is scrubbing, however far it drifts sideways.
+  if (target.closest('[data-zen-minimap]') !== null) return undefined;
   const reader = target.closest('[data-inbox-reader]');
   return reader === null || scrollsSideways(target, reader)
     ? undefined

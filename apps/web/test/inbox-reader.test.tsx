@@ -360,6 +360,63 @@ describe('the queues', () => {
     expect(screen.getByText('2 of 2')).toBeDefined();
   });
 
+  it('scrubs by a finger dragged down the minimap, with a label to say where', async () => {
+    board = boardOf([
+      view({ awaitingOperator: [waiting(1), waiting(2), waiting(3)] }),
+    ]);
+    mount();
+    await litArticle();
+    const nav = screen.getByRole('navigation', { name: 'Questions' });
+    const rows = within(nav).getAllByRole('button');
+    // happy-dom lays nothing out: each row is drawn 10px tall, from 100.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const i = rows.indexOf(this as HTMLButtonElement);
+        return { top: 100 + i * 10, bottom: 110 + i * 10 } as DOMRect;
+      });
+    const finger = { pointerId: 7, pointerType: 'touch', isPrimary: true };
+    const label = () => document.querySelector('[data-zen-scrub-label]');
+    try {
+      fireEvent.pointerDown(rows[0] as HTMLElement, {
+        ...finger,
+        clientY: 105,
+      });
+      expect(label()).toBeNull();
+      fireEvent.pointerMove(nav, { ...finger, clientY: 125 });
+      await waitFor(() => expect(label()?.textContent).toContain('Question 3'));
+      await waitFor(async () =>
+        expect((await litArticle()).textContent).toContain('Question 3'),
+      );
+      fireEvent.pointerMove(nav, { ...finger, clientY: 112 });
+      await waitFor(() => expect(label()?.textContent).toContain('Question 2'));
+      fireEvent.pointerUp(nav, { ...finger, clientY: 112 });
+      await waitFor(() => expect(label()).toBeNull());
+      expect((await litArticle()).textContent).toContain('Question 2');
+      expect(screen.getByText('2 of 3')).toBeDefined();
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it('leaves a mouse dragging on the minimap alone', async () => {
+    board = twoWaiting();
+    mount();
+    await litArticle();
+    const nav = screen.getByRole('navigation', { name: 'Questions' });
+    const mouse = { pointerId: 1, pointerType: 'mouse', isPrimary: true };
+    fireEvent.pointerDown(
+      within(nav).getAllByRole('button')[0] as HTMLElement,
+      {
+        ...mouse,
+        clientY: 0,
+      },
+    );
+    fireEvent.pointerMove(nav, { ...mouse, clientY: 400 });
+    expect(document.querySelector('[data-zen-scrub-label]')).toBeNull();
+    expect(nav.hasAttribute('data-zen-scrubbing')).toBe(false);
+  });
+
   it('marks a highlighted question and a linked one', async () => {
     board = boardOf([
       view({
