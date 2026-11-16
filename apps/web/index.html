@@ -10,7 +10,10 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fdfcfa" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <!-- The PNG for a browser without SVG favicons. It carries a size and the
+         SVG does not, so a browser that takes both picks the SVG. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Operator Inbox</title>
   </head>

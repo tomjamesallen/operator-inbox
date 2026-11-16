@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Make the desktop window's icon, `scripts/desktop-app/operator-inbox.icns`,
-// from the web app's favicon. Run by hand when the favicon changes, then commit
+// from the web app's "Oi" icon (`icon-any-512.png`, made by
+// `scripts/web-icons/make.mjs`). Run by hand when that icon changes, then commit
 // the result:
 //
 //   node scripts/desktop-app/make-icon.mjs
@@ -30,7 +31,7 @@ const source = join(
   'web',
   'public',
   'icons',
-  'icon-512.png',
+  'icon-any-512.png',
 );
 const target = join(here, 'operator-inbox.icns');
 
