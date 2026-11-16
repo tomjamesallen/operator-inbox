@@ -99,6 +99,10 @@
   --spacing-rail: calc(218px * var(--ui-scale));
 
   --max-height-body: 46vh;
+  /* The tallest a picture in a question's body is drawn inline: an Excalidraw
+     drawing's preview and a Mermaid diagram alike. A taller one scales down
+     to fit, and its full-screen view shows it larger. */
+  --max-height-picture: calc(360px * var(--ui-scale));
   /* A modal panel: tall enough for a long list,
      never taller than the viewport it floats in. */
   --max-height-dialog: 86dvh;

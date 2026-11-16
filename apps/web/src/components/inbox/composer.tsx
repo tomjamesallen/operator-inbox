@@ -23,6 +23,7 @@ import {
 import type { InboxItem } from '../../inbox-queues';
 import {
   activeQueueAtom,
+  answerDrawingConflictsAtom,
   answerPlaceOf,
   askChoicesAtom,
   askPlaceOf,
@@ -146,10 +147,13 @@ const Actions = ({
   label,
   ready,
   deferrable = false,
+  deferReady = true,
 }: {
   readonly label: string;
   readonly ready: boolean;
   readonly deferrable?: boolean;
+  // Whether "Leave it to the agent" may send now.
+  readonly deferReady?: boolean;
 }) => {
   const send = useAtomSet(sendComposerAtom);
   const sendHint = useAtomValue(keyHintAtom('send_response'));
@@ -162,9 +166,10 @@ const Actions = ({
             type="button"
             aria-label="Leave it to the agent"
             aria-keyshortcuts={deferHint.aria}
+            disabled={!deferReady}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => send(true)}
-            className="flex size-7 cursor-pointer items-center justify-center text-fg/35 hover:bg-fg/7 hover:text-fg"
+            className={`flex size-7 items-center justify-center ${deferReady ? 'cursor-pointer text-fg/35 hover:bg-fg/7 hover:text-fg' : 'pointer-events-none text-fg/15'}`}
           >
             <Icon d="M12 3l1.9 5.6a2 2 0 0 0 1.3 1.3L21 12l-5.8 2.1a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.6a2 2 0 0 0-1.3-1.3L3 12l5.8-2.1a2 2 0 0 0 1.3-1.3z" />
           </button>
@@ -219,6 +224,8 @@ const AnswerBox = ({
   readonly held: boolean;
 }) => {
   const [draft, setDraft] = useAtom(responseDraftAtom(item.key));
+  // A drawing waiting on the operator's choice holds both sends.
+  const free = useAtomValue(answerDrawingConflictsAtom).length === 0;
   return (
     <Frame place={answerPlaceOf(item.key)}>
       <Box
@@ -234,8 +241,9 @@ const AnswerBox = ({
       />
       <Actions
         label="Send"
-        ready={!held && draft.trim() !== ''}
+        ready={!held && free && draft.trim() !== ''}
         deferrable={!held}
+        deferReady={free}
       />
     </Frame>
   );
@@ -436,6 +444,7 @@ const FootNote = ({ composer }: { readonly composer: ComposerState }) => {
   const board = useAtomValue(drawnBoardAtom);
   const troubles = useAtomValue(troublesAtom);
   const progress = useAtomValue(askProgressAtom);
+  const drawingConflicts = useAtomValue(answerDrawingConflictsAtom);
   const asking = composer._tag === 'Asking' ? composer.inboxId : undefined;
   const note = footNoteOf(
     composer,
@@ -448,6 +457,7 @@ const FootNote = ({ composer }: { readonly composer: ComposerState }) => {
     },
     board?.inboxes.find((i) => i.inboxId === asking)?.machine?.key,
     progress,
+    drawingConflicts,
   );
   return (
     <output

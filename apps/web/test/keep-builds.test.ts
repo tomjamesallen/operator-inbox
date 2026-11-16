@@ -106,4 +106,17 @@ describe('the keep-earlier-builds build step', () => {
     ) as string[][];
     expect(listed[0]).toEqual([`assets/index-${BUILDS_KEPT + 1}.js`]);
   });
+
+  // Excalidraw's fonts are copied to `dist/excalidraw/fonts` by every build
+  // (`excalidrawFonts`), outside `assets/`, so no number of builds clears them.
+  it('never touches the files outside assets/, Excalidraw’s fonts among them', () => {
+    const dir = distWith(['index-0.js']);
+    const font = join(dir, 'excalidraw', 'fonts', 'Excalifont', 'a.woff2');
+    mkdirSync(join(dir, 'excalidraw', 'fonts', 'Excalifont'), {
+      recursive: true,
+    });
+    writeFileSync(font, '');
+    for (let i = 1; i <= BUILDS_KEPT + 1; i++) build(dir, [`index-${i}.js`]);
+    expect(existsSync(font)).toBe(true);
+  });
 });

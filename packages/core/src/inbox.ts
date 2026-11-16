@@ -1,4 +1,5 @@
 import { Data, Effect, Result, Schema } from 'effect';
+import { checkDrawings } from './drawing';
 import { lettersOfNamedCode, questionRef } from './inbox-code';
 import {
   emptyMetadata,
@@ -54,6 +55,25 @@ export const applyMetadata = (
   return next;
 };
 
+// --- drawings -------------------------------------------------------------------
+
+// A Question's drawings, by id: each an Excalidraw scene as JSON text, which a
+// body line `<Excalidraw id="…"/>` shows (`drawing.ts` holds the forms, the
+// checks and the limits). Text, not a decoded value: a scene has nulls and
+// arrays of arrays, and nothing here looks inside it.
+export const Drawings = Schema.Record(Schema.String, Schema.String);
+export type Drawings = typeof Drawings.Type;
+
+// A drawing as the fold holds it: its scene, and the revision of the Question
+// that last set or changed it. The page keeps an edit with the revision it
+// was made against, so it can tell the operator the agent has since changed
+// that drawing, and only that one.
+export const QuestionDrawing = Schema.Struct({
+  scene: Schema.String,
+  revision: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type QuestionDrawing = typeof QuestionDrawing.Type;
+
 // --- events ---------------------------------------------------------------------
 
 export const InboxOpened = Schema.TaggedStruct('InboxOpened', {
@@ -87,6 +107,9 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   metadata: Schema.optionalKey(Metadata),
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
+  // The drawings the body shows. An optional key, so every Question asked
+  // before drawings existed reads as it did.
+  drawings: Schema.optionalKey(Drawings),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
 
@@ -96,12 +119,16 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // none. An optional key, so every answer logged before it reads as it did.
 // `highlightReply` asks the agent to highlight the Question it asks in reply,
 // so the operator finds it among the rest. Optional for the same reason.
+// `drawings` holds only the drawings the operator changed, each the whole
+// edited scene; a drawing left alone is not sent. Optional for the same
+// reason.
 export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   inboxId: InboxId,
   number: QuestionNumber,
   response: Schema.String,
   deferred: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
+  drawings: Schema.optionalKey(Drawings),
 });
 export type QuestionAnswered = typeof QuestionAnswered.Type;
 
@@ -113,11 +140,15 @@ export type AnswerProcessed = typeof AnswerProcessed.Type;
 
 // The agent rewrote a question the operator has not answered yet. It carries
 // the whole new title and body, not a patch, so the fold needs no merge.
+// `drawings`, when set, is the whole new set of drawings in the same way; left
+// out, the drawings stay as they were, as every edit logged before drawings
+// existed did.
 export const QuestionEdited = Schema.TaggedStruct('QuestionEdited', {
   inboxId: InboxId,
   number: QuestionNumber,
   title: Schema.String,
   body: Schema.String,
+  drawings: Schema.optionalKey(Drawings),
 });
 export type QuestionEdited = typeof QuestionEdited.Type;
 
@@ -285,6 +316,8 @@ export const MovedQuestion = Schema.Struct({
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
   deferred: Schema.optionalKey(Schema.Literal(true)),
   highlightReply: Schema.optionalKey(Schema.Literal(true)),
+  drawings: Schema.optionalKey(Schema.Record(Schema.String, QuestionDrawing)),
+  sentDrawings: Schema.optionalKey(Drawings),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -451,6 +484,10 @@ export interface InboxQuestion {
   // Set when the operator asked for the agent's reply to be highlighted
   // (`highlightReply` on their answer or their question).
   readonly highlightReply?: true;
+  // The agent's drawings, by id, each with the revision that last set it.
+  readonly drawings?: Readonly<Record<string, QuestionDrawing>>;
+  // The drawings the operator changed and sent with their answer, by id.
+  readonly sentDrawings?: Drawings;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -498,6 +535,24 @@ export const emptyInboxState: InboxState = {
   questions: [],
   processedCount: 0,
 };
+
+// A Question's drawings once `next` is its whole set at `revision`: a drawing
+// whose scene is unchanged keeps the revision it had, a new or changed one
+// takes `revision`, and one left out of `next` is gone.
+const drawingsAt = (
+  current: Readonly<Record<string, QuestionDrawing>> | undefined,
+  next: Drawings,
+  revision: QuestionRevision,
+): Readonly<Record<string, QuestionDrawing>> =>
+  Object.fromEntries(
+    Object.entries(next).map(([id, scene]) => {
+      const was = current?.[id];
+      return [
+        id,
+        was !== undefined && was.scene === scene ? was : { scene, revision },
+      ];
+    }),
+  );
 
 const withQuestion = (
   state: InboxState,
@@ -571,6 +626,15 @@ export const evolveInbox = (
             metadata: event.metadata ?? emptyMetadata,
             state: 'awaiting-operator',
             withdrawn: false,
+            ...(event.drawings === undefined
+              ? {}
+              : {
+                  drawings: drawingsAt(
+                    undefined,
+                    event.drawings,
+                    QuestionRevision.make(1),
+                  ),
+                }),
             ...(stamp === undefined ? {} : { askedStamp: stamp }),
           },
         ],
@@ -584,6 +648,9 @@ export const evolveInbox = (
         ...(event.highlightReply === undefined
           ? {}
           : { highlightReply: event.highlightReply }),
+        ...(event.drawings === undefined
+          ? {}
+          : { sentDrawings: event.drawings }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
       }));
     case 'AnswerProcessed':
@@ -598,12 +665,20 @@ export const evolveInbox = (
         }),
       );
     case 'QuestionEdited':
-      return withQuestion(state, event.number, (q) => ({
-        ...q,
-        title: event.title,
-        body: event.body,
-        revision: QuestionRevision.make(q.revision + 1),
-      }));
+      return withQuestion(state, event.number, (q) => {
+        const revision = QuestionRevision.make(q.revision + 1);
+        if (event.drawings === undefined)
+          return { ...q, title: event.title, body: event.body, revision };
+        const { drawings: _, ...rest } = q;
+        const drawings = drawingsAt(q.drawings, event.drawings, revision);
+        return {
+          ...rest,
+          title: event.title,
+          body: event.body,
+          revision,
+          ...(Object.keys(drawings).length === 0 ? {} : { drawings }),
+        };
+      });
     case 'QuestionWithdrawn':
       return withQuestion(
         { ...state, processedCount: state.processedCount + 1 },
@@ -674,6 +749,10 @@ export const evolveInbox = (
               ...(q.highlightReply === undefined
                 ? {}
                 : { highlightReply: q.highlightReply }),
+              ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+              ...(q.sentDrawings === undefined
+                ? {}
+                : { sentDrawings: q.sentDrawings }),
             },
           ],
         };
@@ -922,7 +1001,8 @@ export type InboxRefusalReason =
   | 'not-highlighted'
   | 'moved'
   | 'same-inbox'
-  | 'code-taken';
+  | 'code-taken'
+  | 'bad-drawing';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
 // name, so the agent can look at it and adopt it.
@@ -943,6 +1023,16 @@ const nameTaken = (label: string, holder: InboxId) =>
       conflictingInboxId: holder,
     }),
   );
+
+const checkedDrawings = (
+  drawings: Drawings | undefined,
+): Result.Result<Drawings | undefined, InboxRefusal> =>
+  drawings === undefined
+    ? Result.succeed(undefined)
+    : Result.mapError(
+        checkDrawings(drawings),
+        (message) => new InboxRefusal({ reason: 'bad-drawing', message }),
+      );
 
 const notFound = (inboxId: InboxId) =>
   refuse('not-found', `inbox ${inboxId} does not exist`);
@@ -1299,22 +1389,29 @@ export const decideAsk = (
     readonly title: string;
     readonly body: string;
     readonly metadata?: Metadata;
+    // Scenes by id, for the body's `<Excalidraw id="…"/>` lines.
+    readonly drawings?: Drawings;
   },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
   if (input.title.trim().length === 0)
     return refuse('empty', 'a question needs a title');
   const highest = state.questions.reduce((n, q) => Math.max(n, q.number), 0);
-  return Result.map(
-    checkedMetadata(input.metadata),
-    (metadata): QuestionAsked => ({
-      _tag: 'QuestionAsked',
-      inboxId: input.inboxId,
-      number: QuestionNumber.make(highest + 1),
-      title: input.title,
-      body: input.body,
-      ...(metadata === undefined ? {} : { metadata }),
-    }),
+  return Result.flatMap(checkedDrawings(input.drawings), (drawings) =>
+    Result.map(
+      checkedMetadata(input.metadata),
+      (metadata): QuestionAsked => ({
+        _tag: 'QuestionAsked',
+        inboxId: input.inboxId,
+        number: QuestionNumber.make(highest + 1),
+        title: input.title,
+        body: input.body,
+        ...(metadata === undefined ? {} : { metadata }),
+        ...(drawings === undefined || Object.keys(drawings).length === 0
+          ? {}
+          : { drawings }),
+      }),
+    ),
   );
 };
 
@@ -1437,6 +1534,8 @@ export const decideAnswer = (
     readonly deferred?: true;
     // The operator asks the agent to highlight the Question it asks in reply.
     readonly highlightReply?: true;
+    // The drawings the operator changed, by id: each the whole edited scene.
+    readonly drawings?: Drawings;
   },
 ): Result.Result<QuestionAnswered, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1464,8 +1563,16 @@ export const decideAnswer = (
     );
   if (input.deferred !== true && input.response.trim().length === 0)
     return refuse('empty', 'an answer cannot be empty');
-  return Result.succeed({
-    _tag: 'QuestionAnswered',
+  const unknown = Object.keys(input.drawings ?? {}).find(
+    (id) => q.drawings?.[id] === undefined,
+  );
+  if (unknown !== undefined)
+    return refuse(
+      'bad-drawing',
+      `${questionRef(state.code, input.number)} has no drawing named "${unknown}"`,
+    );
+  return Result.map(checkedDrawings(input.drawings), (drawings) => ({
+    _tag: 'QuestionAnswered' as const,
     inboxId: input.inboxId,
     number: input.number,
     response: input.response,
@@ -1473,7 +1580,10 @@ export const decideAnswer = (
     ...(input.highlightReply === undefined
       ? {}
       : { highlightReply: input.highlightReply }),
-  });
+    ...(drawings === undefined || Object.keys(drawings).length === 0
+      ? {}
+      : { drawings }),
+  }));
 };
 
 /**
@@ -1522,27 +1632,52 @@ export const decideEdit = (
     readonly number: QuestionNumber;
     readonly title?: string;
     readonly body?: string;
+    // Drawings to set, by id: each replaces the drawing of that id or adds
+    // one; the Question's other drawings stay.
+    readonly drawings?: Drawings;
   },
 ): Result.Result<QuestionEdited, InboxRefusal> =>
   Result.flatMap(changeable(state, input.inboxId, input.number), (q) => {
-    if (input.title === undefined && input.body === undefined)
-      return refuse('empty', 'an edit needs a new title, a new body, or both');
+    if (
+      input.title === undefined &&
+      input.body === undefined &&
+      input.drawings === undefined
+    )
+      return refuse(
+        'empty',
+        'an edit needs a new title, a new body or a drawing',
+      );
     const title = input.title ?? q.title;
     const body = input.body ?? q.body;
     if (title.trim().length === 0)
       return refuse('empty', 'a question needs a title');
-    if (title === q.title && body === q.body)
-      return refuse(
-        'unchanged',
-        `${questionRef(state.code, input.number)} already says that; nothing changed`,
-      );
-    return Result.succeed({
-      _tag: 'QuestionEdited',
-      inboxId: input.inboxId,
-      number: input.number,
-      title,
-      body,
-    });
+    const current: Record<string, string> = Object.fromEntries(
+      Object.entries(q.drawings ?? {}).map(([id, d]) => [id, d.scene]),
+    );
+    return Result.flatMap(
+      input.drawings === undefined
+        ? Result.succeed(undefined)
+        : checkedDrawings({ ...current, ...input.drawings }),
+      (drawings) => {
+        const sameDrawings =
+          drawings === undefined ||
+          (Object.keys(drawings).length === Object.keys(current).length &&
+            Object.entries(drawings).every(([id, s]) => current[id] === s));
+        if (title === q.title && body === q.body && sameDrawings)
+          return refuse(
+            'unchanged',
+            `${questionRef(state.code, input.number)} already says that; nothing changed`,
+          );
+        return Result.succeed({
+          _tag: 'QuestionEdited' as const,
+          inboxId: input.inboxId,
+          number: input.number,
+          title,
+          body,
+          ...(drawings === undefined || sameDrawings ? {} : { drawings }),
+        });
+      },
+    );
   });
 
 /**
@@ -1727,6 +1862,8 @@ const movedQuestionOf = (
     ...(q.highlightReply === undefined
       ? {}
       : { highlightReply: q.highlightReply }),
+    ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+    ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
   };
 };
 

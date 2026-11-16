@@ -62,7 +62,7 @@ Once the Inbox is open, every question you would have asked the operator in the 
 operator-inbox ask --title "<the decision, as a question>" --body-file <path>
 ```
 
-It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn as a diagram, folded under a *Diagram* fold that the operator opens, with a full-screen view. Use one for a flow, a sequence or a state machine the operator has to follow. A diagram Mermaid cannot parse shows its error and its source, so check the syntax. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. Otherwise prefer a pseudocode block, a file tree or a table.
+It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn inline as a picture, the column's width and at most about 360 px tall (a taller one is scaled down to fit), with a full-screen view one click away. Use one for a flow, a sequence or a state machine the operator has to follow. A diagram Mermaid cannot parse shows its error and its source, so check the syntax. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. For a layout the operator should rearrange, use a **drawing** (*Drawings* below). Otherwise prefer a pseudocode block, a file tree or a table.
 
 **The operator will read it cold, maybe days later, with nothing else open.** So each body holds:
 
@@ -72,6 +72,51 @@ It prints the Question's **code**, such as `asv#3` (see *Question codes* below).
 4. **The options**, each one line, and **your recommendation** with its reason.
 
 The title names the decision (`Keep the old flag, or remove it now?`), not the topic (`Flags`).
+
+### Drawings
+
+A drawing is an Excalidraw scene the operator sees as a picture in the body and can rearrange in a full-screen editor; whatever they change goes back to you with their answer. Use one for a wireframe, a layout or a before-and-after where the operator's answer is easiest to give by moving things. For a flow or a sequence the operator only reads, a Mermaid fence is enough.
+
+1. **Write it in the compact form**, one element per line, to a scratch file. Coordinates are pixels from the top left, `y` grows downwards, and `#` starts a comment:
+
+   ```text
+   rect    <id> <x> <y> <w> <h> ["label"] [options]
+   ellipse <id> <x> <y> <w> <h> ["label"] [options]
+   diamond <id> <x> <y> <w> <h> ["label"] [options]
+   text    <id> <x> <y> "text" [size=N]
+   arrow   <id> <fromId> -> <toId> ["label"] [dashed]
+   line    <id> <x1> <y1> <x2> <y2> [dashed]
+   ```
+
+   Options: `fill=#hex`, `dashed`, `dotted`, `rounded`, `size=N` (a label's font size, default 16), `align=left`. A label is centred in its shape and wrapped to its width, and the shape grows taller if the label needs it; `\n` breaks a line. Free `text` runs about 0.6 × its size wide per character. An arrow joins two shapes by id and is drawn straight, edge to edge. Write a larger shape before the shapes inside it. Give every element a short, meaningful id: you read the drawing back by them.
+
+   A small wireframe, `layout.txt`:
+
+   ```text
+   # A settings page: a header, a side menu, the form
+   rect page   0   0 640 400 rounded
+   rect header 0   0 640 50  "Settings" fill=#e9ecef
+   rect menu   0  60 160 320 "Menu"
+   rect form 180  60 440 240 "Form"
+   rect save 500 320 120  40 "Save" fill=#a5d8ff rounded
+   arrow submit form -> save
+   ```
+
+2. **Reference it in the body** with a line of its own, exactly `<Excalidraw id="layout"/>` (the id: lower-case letters, digits and hyphens, at most 40), and **pass the file with `--drawing <id>=<file>`**, once per drawing:
+
+   ```sh
+   operator-inbox ask --title "Is this the settings layout you want?" --body-file body.md --drawing layout=layout.txt
+   ```
+
+   The CLI converts the compact form; it also takes an Excalidraw skeleton or a full scene as JSON. At most 8 drawings per Question and 200 KiB per scene; images are refused. A tag naming an id the Question does not carry shows the operator a "no drawing named …" box, so pass every drawing the body names. `edit` takes `--drawing` too, and replaces that drawing only.
+
+3. **Read it back with `drawing --compact`**, never as raw JSON: when the operator changed a drawing, `answers` shows `DRAWING CHANGED: <id> (n elements)` above their answer. Then:
+
+   ```sh
+   operator-inbox drawing asv#3 layout --compact
+   ```
+
+   It prints the operator's drawing, one line per element (shapes nested in the shapes that hold them, each with its label, position and size; then the arrows, by what they join), about a twentieth of the scene's size. Without `--compact` it prints the whole scene, which `answers --json` carries too; read that only when you need an arrow's points. With no change from the operator it prints your own.
 
 ### Metadata
 
@@ -113,7 +158,7 @@ operator-inbox meta asv#3 --unset group                                     # mo
 Every Question has a code: its Inbox's code, then `#` and its number, such as `asv#3`. The Inbox's code is three random lower-case letters, unique on this machine, set once when the Inbox is opened, and a rename never changes it. The operator sees the code on each card in the app, and clicking it copies the Question for this session.
 
 - **Quote the code whenever you mention a Question**, in the session and in a Question's body: `asv#3`, not `#3`. The operator may have many Inboxes open, and the code says which one.
-- **Every command that takes a question number takes the code too**: `done`, `edit`, `withdraw`, `meta`, `highlight`, `unhighlight` and `move`. A code names its Inbox, so it needs neither this session nor `--inbox`: `operator-inbox done asv#3` works from any session. When the operator pastes a code, use it as it is.
+- **Every command that takes a question number takes the code too**: `done`, `edit`, `drawing`, `withdraw`, `meta`, `highlight`, `unhighlight` and `move`. A code names its Inbox, so it needs neither this session nor `--inbox`: `operator-inbox done asv#3` works from any session. When the operator pastes a code, use it as it is.
 - A plain number (`operator-inbox done 3`) still works, in this session's Inbox or the one `--inbox` names. Give every Question in one command as a code or every one as a number, from one Inbox.
 - `--inbox` and `move --to` take an Inbox's code (`asv`) as well as its id.
 - `open` prints the Inbox's code in brackets after its name, `list` prints it after each id, and `answers` names each Question by its code (`"code"` under `--json`). An Inbox opened before codes gets its code when `operator-inbox serve` next starts; until then it shows `#3`, and its numbers work as before.
@@ -223,7 +268,7 @@ If a Question is still right but its wording or context is wrong, edit it instea
 operator-inbox edit asv#3 --title "<new title>" --body-file <path>
 ```
 
-Either flag may be left out to keep that field. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
+Either flag may be left out to keep that field, and `--drawing <id>=<file>` sets one drawing (§2, *Drawings*). If the operator had already changed that drawing, the app asks them to keep theirs or take yours before they can send. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
 
 ## 5. Archive the Inbox when the work is finished
 
