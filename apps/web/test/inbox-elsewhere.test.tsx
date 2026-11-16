@@ -574,6 +574,37 @@ describe('clearing the last question', () => {
     expect(lit()?.textContent).toContain('quarry');
   });
 
+  // jsdom never clamps a scroll, as an engine still running out a slide or a
+  // fling does not: the empty state must not wait on the browser for it.
+  const flow = () =>
+    document.querySelector<HTMLElement>('[data-zen-flow]') as HTMLElement;
+
+  it('brings the empty state into view when answered from far down the page', async () => {
+    serve.board = board([ONE, empty(VIEW_B)]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(items()).toEqual([`${A}/1`]));
+    flow().scrollTop = 5_000;
+    serve.post = () => json(DONE);
+    serve.board = board([DONE, empty(VIEW_B)]);
+    type('Yes');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('Nothing waiting on you.');
+    expect(flow().scrollTop).toBe(0);
+  });
+
+  it('brings the list of other Inboxes into view the same way', async () => {
+    serve.board = board([ONE, VIEW_B]);
+    mount(`/inbox/${A}`);
+    await waitFor(() => expect(items()).toEqual([`${A}/1`]));
+    flow().scrollTop = 5_000;
+    serve.post = () => json(DONE);
+    serve.board = board([DONE, VIEW_B]);
+    type('Yes');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(list()).not.toBeNull());
+    expect(flow().scrollTop).toBe(0);
+  });
+
   // Nothing waits on the operator in orchard; its answers are with the agent.
   const QUIET_A = { ...VIEW_A, awaitingOperator: [] };
   const toAgent = async () => {
@@ -638,5 +669,176 @@ describe('clearing the last question', () => {
     await waitFor(() => expect(list()).not.toBeNull());
     await settle();
     expect(document.activeElement).not.toBe(list());
+  });
+});
+
+// --- a group of an Inbox --------------------------------------------------------
+
+// orchard in two groups: dig, every question of it answered, and Default,
+// with one still waiting on the operator.
+const inGroup = <Q extends { readonly metadata: object }>(
+  q: Q,
+  group: string,
+) => ({ ...q, metadata: { ...q.metadata, group } }) as Q;
+const DIG_DONE = answered(2, 'Dig two', 20, 'Done.');
+const GROUPED: WireView = {
+  ...empty(VIEW_A),
+  awaitingOperator: [asked(1, 'Default one', 2)],
+  awaitingAgent: [inGroup(DIG_DONE, 'dig')],
+};
+// orchard with nothing waiting in any group.
+const GROUPED_EMPTY: WireView = { ...GROUPED, awaitingOperator: [] };
+// orchard with Default empty and dig still waiting.
+const DEFAULT_DONE: WireView = {
+  ...empty(VIEW_A),
+  awaitingOperator: [inGroup(asked(1, 'Dig one', 2), 'dig')],
+  awaitingAgent: [answered(2, 'Default two', 20, 'Done.')],
+};
+
+describe('which places are listed for a group', () => {
+  const rowsFor = (views: ReadonlyArray<WireView>, groups: string[]) =>
+    elsewhereRowsOf(
+      drawn(views),
+      A as InboxId,
+      NOW,
+      Number.POSITIVE_INFINITY,
+      [],
+      groups,
+    ).map((r) => [r.inboxId, r.count]);
+
+  it('lists the group’s Inbox while its other groups have something waiting', () => {
+    expect(rowsFor([GROUPED, VIEW_B], ['dig'])).toEqual([
+      [A, 1],
+      [B, 1],
+    ]);
+    expect(
+      waitingHereOf(drawn([GROUPED]), A as InboxId, new Set(), ['dig']),
+    ).toBe(0);
+    expect(waitingHereOf(drawn([GROUPED]), A as InboxId, new Set())).toBe(1);
+  });
+
+  it('leaves the group’s Inbox out when nothing in it waits', () => {
+    expect(rowsFor([GROUPED_EMPTY, VIEW_B], ['dig'])).toEqual([[B, 1]]);
+  });
+
+  it('lists the Inbox for its Default group, counting the other groups', () => {
+    expect(rowsFor([DEFAULT_DONE, VIEW_B], [''])).toEqual([
+      [A, 1],
+      [B, 1],
+    ]);
+    expect(
+      waitingHereOf(drawn([DEFAULT_DONE]), A as InboxId, new Set(), ['']),
+    ).toBe(0);
+  });
+
+  it('leaves the selected Inbox out with no group in force', () => {
+    expect(rowsFor([GROUPED, VIEW_B], [])).toEqual([[B, 1]]);
+    expect(rowsFor([GROUPED, VIEW_B], ['gone'])).toEqual([[B, 1]]);
+  });
+});
+
+describe('the empty state of a group', () => {
+  const focusList = async () => {
+    await waitFor(() => expect(list()).not.toBeNull());
+    (list() as HTMLElement).focus();
+  };
+
+  it('lists the group’s Inbox beside the others, and opens it whole', async () => {
+    serve.board = board([GROUPED, VIEW_B]);
+    mount(`/inbox/${A}#group=dig`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    expect(options()).toEqual(['orchard1', 'quarry1', 'Show all inbox items']);
+    expect(screen.queryByText('Nothing waiting on you.')).toBeNull();
+    fireEvent.click(
+      document.querySelector(`[data-elsewhere="${A}"]`) as Element,
+    );
+    await waitFor(() => expect(location.hash).toBe(''));
+    expect(location.pathname).toBe(`/inbox/${A}`);
+    await waitFor(() => expect(items()).toEqual([`${A}/1`]));
+  });
+
+  it('opens the group’s Inbox on Enter, with the caret in the box', async () => {
+    serve.board = board([GROUPED, VIEW_B]);
+    mount(`/inbox/${A}#group=dig`);
+    await focusList();
+    expect(lit()?.textContent).toContain('orchard');
+    press({ key: 'Enter' }, list() as HTMLElement);
+    await waitFor(() => expect(location.hash).toBe(''));
+    await waitFor(() => expect(items()).toEqual([`${A}/1`]));
+    await waitFor(() => expect(document.activeElement).toBe(box()));
+  });
+
+  it('lists only the others when the group’s Inbox is empty too', async () => {
+    serve.board = board([GROUPED_EMPTY, VIEW_B]);
+    mount(`/inbox/${A}#group=dig`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    expect(options()).toEqual(['quarry1', 'Show all inbox items']);
+  });
+
+  it('lists the Inbox for an empty Default group', async () => {
+    serve.board = board([DEFAULT_DONE, VIEW_B]);
+    mount(`/inbox/${A}#group=`);
+    await waitFor(() => expect(list()).not.toBeNull());
+    expect(options()).toEqual(['orchard1', 'quarry1', 'Show all inbox items']);
+  });
+
+  it('puts the focus on the list when the last question of the group is answered', async () => {
+    const ONE: WireView = {
+      ...GROUPED,
+      awaitingOperator: [
+        asked(1, 'Default one', 2),
+        inGroup(asked(3, 'Dig three', 9), 'dig'),
+      ],
+    };
+    const DONE: WireView = {
+      ...GROUPED,
+      awaitingAgent: [
+        inGroup(DIG_DONE, 'dig'),
+        inGroup(answered(3, 'Dig three', 21, 'Yes'), 'dig'),
+      ],
+    };
+    serve.board = board([ONE, VIEW_B]);
+    mount(`/inbox/${A}#group=dig`);
+    await waitFor(() => expect(items()).toEqual([`${A}/3`]));
+    await waitFor(() => expect(document.activeElement).toBe(box()));
+    serve.post = () => json(DONE);
+    serve.board = board([DONE, VIEW_B]);
+    type('Yes');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(list()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+    expect(lit()?.textContent).toContain('orchard');
+  });
+
+  it('brings the empty state into view when the group is emptied from far down', async () => {
+    const ONE: WireView = {
+      ...GROUPED,
+      awaitingOperator: [
+        asked(1, 'Default one', 2),
+        inGroup(asked(3, 'Dig three', 9), 'dig'),
+      ],
+    };
+    const DONE: WireView = {
+      ...GROUPED,
+      awaitingAgent: [
+        inGroup(DIG_DONE, 'dig'),
+        inGroup(answered(3, 'Dig three', 21, 'Yes'), 'dig'),
+      ],
+    };
+    serve.board = board([ONE, VIEW_B]);
+    mount(`/inbox/${A}#group=dig`);
+    await waitFor(() => expect(items()).toEqual([`${A}/3`]));
+    const flow = document.querySelector<HTMLElement>(
+      '[data-zen-flow]',
+    ) as HTMLElement;
+    flow.scrollTop = 5_000;
+    serve.post = () => json(DONE);
+    serve.board = board([DONE, VIEW_B]);
+    type('Yes');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(list()).not.toBeNull());
+    expect(
+      (document.querySelector('[data-zen-flow]') as HTMLElement).scrollTop,
+    ).toBe(0);
   });
 });

@@ -1,15 +1,22 @@
-import { type InboxId, SESSION_TITLE_KEY } from '@operator-inbox/core/api';
+import {
+  type InboxId,
+  type InboxViewDto,
+  SESSION_TITLE_KEY,
+} from '@operator-inbox/core/api';
 import { DateTime, Option } from 'effect';
 import { Atom } from 'effect/reactivity';
 import {
   type DrawnBoard,
   drawnBoardAtom,
+  groupOf,
+  groupsInForce,
   refusedInboxesOf,
   type SessionTarget,
   screenStateAtom,
   selectedInboxAtom,
   sessionTargetOf,
   sidebarPinnedOnlyAtom,
+  withoutArchivedGroups,
 } from './inbox';
 import { chaseNowAtom, isStale } from './inbox-chase';
 import { answerKey, type FreshMark, type QueueName } from './inbox-queues';
@@ -25,8 +32,9 @@ import {
 } from './inbox-reader';
 import { inboxReaderAtoms } from './inbox-reader-machine';
 
-// Elsewhere: the selected Inbox has nothing waiting on the operator, but other
-// Inboxes do, or hold a question stuck with the agent. The empty state then
+// Elsewhere: the selected Inbox, or the groups of it on screen, has nothing
+// waiting on the operator, but other Inboxes do, or hold a question stuck with
+// the agent. With a group on screen, the rest of its Inbox is one of them. The empty state then
 // lists them under an owl that is awake, so the operator can go straight to
 // the next one. What is listed and in what order is pure, here; the drawing is
 // `components/inbox/elsewhere.tsx`.
@@ -94,10 +102,36 @@ export const elsewhereOrder = (a: ElsewhereRow, b: ElsewhereRow): number =>
     (a.lastAt ?? Number.NEGATIVE_INFINITY);
 
 /**
+ * What an Inbox holds outside the groups of it in force: what picking the
+ * whole Inbox shows beyond them. Undefined while no group is in force, as the
+ * whole Inbox is then what is on screen.
+ */
+export const outsideGroupsOf = (
+  view: InboxViewDto | undefined,
+  chosen: ReadonlyArray<string>,
+): InboxViewDto | undefined => {
+  if (view === undefined) return undefined;
+  const inForce = groupsInForce(view, chosen);
+  if (inForce.length === 0) return undefined;
+  const whole = withoutArchivedGroups(view);
+  const keep = (q: Parameters<typeof groupOf>[0]) =>
+    !inForce.includes(groupOf(q));
+  return {
+    ...whole,
+    awaitingOperator: whole.awaitingOperator.filter(keep),
+    awaitingAgent: whole.awaitingAgent.filter(keep),
+    processed: whole.processed.filter(keep),
+  };
+};
+
+/**
  * Every other active Inbox with something for the operator: a question waiting
- * on them, or one stuck with the agent. Archived Inboxes, and one two machines
- * claim and the board refuses, are left out, and so are muted ones: muting an
- * Inbox says it is not to call the operator, so it never brings the list on.
+ * on them, or one stuck with the agent. With groups of the selected Inbox in
+ * force (`groups`), the selected Inbox is listed too, for what it holds
+ * outside them, so only the groups on screen are left out. Archived Inboxes,
+ * and one two machines claim and the board refuses, are left out, and so are
+ * muted ones: muting an Inbox says it is not to call the operator, so it
+ * never brings the list on.
  */
 export const elsewhereRowsOf = (
   board: DrawnBoard | undefined,
@@ -105,19 +139,25 @@ export const elsewhereRowsOf = (
   nowMs: number,
   afterMs: number,
   fresh: ReadonlyArray<FreshMark>,
+  groups: ReadonlyArray<string> = [],
 ): ReadonlyArray<ElsewhereRow> => {
   if (board === undefined) return [];
   const refused = refusedInboxesOf(board);
+  const outside = outsideGroupsOf(
+    board.views.find((v) => v.inboxId === selected),
+    groups,
+  );
   return board.inboxes
     .filter(
       (r) =>
         !r.archived &&
         r.muted !== true &&
-        r.inboxId !== selected &&
+        (r.inboxId !== selected || outside !== undefined) &&
         !refused.has(r.inboxId),
     )
     .map((r): ElsewhereRow => {
-      const view = board.views.find((v) => v.inboxId === r.inboxId);
+      const here = r.inboxId === selected ? outside : undefined;
+      const view = here ?? board.views.find((v) => v.inboxId === r.inboxId);
       // As `chasesOf`, which the chase button counts.
       const stale = (view?.awaitingAgent ?? []).filter((q) =>
         isStale(q, nowMs, afterMs),
@@ -128,7 +168,7 @@ export const elsewhereRowsOf = (
       return {
         inboxId: r.inboxId,
         label: r.label,
-        count: r.awaitingOperator,
+        count: here?.awaitingOperator.length ?? r.awaitingOperator,
         stuck: stale.length,
         stuckForMs: stale.length === 0 ? 0 : Math.max(0, nowMs - oldest),
         fresh: fresh.filter((f) => f.inboxId === r.inboxId).at(-1),
@@ -142,26 +182,31 @@ export const elsewhereRowsOf = (
 };
 
 /**
- * What still waits on the operator in the selected Inbox, by the board: an
- * answer on its way has left it, as it has left the reader's queue.
+ * What still waits on the operator in the selected Inbox, or in the groups of
+ * it in force, by the board: an answer on its way has left it, as it has left
+ * the reader's queue.
  */
 export const waitingHereOf = (
   board: DrawnBoard | undefined,
   selected: InboxId | undefined,
   sending: ReadonlySet<string>,
+  groups: ReadonlyArray<string> = [],
 ): number => {
   const view = board?.views.find((v) => v.inboxId === selected);
   if (view === undefined || selected === undefined) return 0;
+  const inForce = groupsInForce(view, groups);
   return view.awaitingOperator.filter(
-    (q) => !sending.has(answerKey(selected, q.number)),
+    (q) =>
+      !sending.has(answerKey(selected, q.number)) &&
+      (inForce.length === 0 || inForce.includes(groupOf(q))),
   ).length;
 };
 
 /**
  * Whether the empty state lists the other Inboxes: an Inbox is selected and on
- * the board, Your inbox is the queue on screen, nothing in that Inbox waits on
- * the operator (a filter that only hides its questions does not count), and
- * some other Inbox has something.
+ * the board, Your inbox is the queue on screen, nothing in that Inbox (or the
+ * groups of it in force) waits on the operator (a filter that only hides its
+ * questions does not count), and somewhere else has something.
  */
 export const elsewhereAppliesOf = ({
   board,
@@ -256,6 +301,7 @@ const waitingHereAtom = Atom.make((get) =>
     get(drawnBoardAtom),
     get(selectedInboxAtom),
     get(sendingKeysAtom),
+    get(screenStateAtom).groups,
   ),
 );
 
@@ -267,6 +313,7 @@ export const elsewhereRowsAtom = Atom.make((get) =>
     get(chaseNowAtom),
     get(chaseAfterMsAtom),
     get(freshElsewhereAtom),
+    get(screenStateAtom).groups,
   ),
 );
 
