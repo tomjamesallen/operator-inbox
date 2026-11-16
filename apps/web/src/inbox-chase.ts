@@ -19,7 +19,7 @@ import { chaseAfterMsAtom } from './inbox-reader';
 import { tickEvery } from './poll';
 
 // Chasing: a question the operator answered, deferred or asked, which has sat
-// in With the agent past config.json's `chaseAfterMinutes` (five by default)
+// in With the agent past config.json's `chaseAfterMinutes` (ten by default)
 // probably needs the session nudged: chiefly a session that is stuck, or has
 // dropped its Inbox. Its card highlights when it was answered and gives a
 // Chase link to the session, and a toast for its Inbox stays up until the
