@@ -1,4 +1,4 @@
-import { loadMetadataRules } from '@operator-inbox/core';
+import { loadConfig, loadMetadataRules } from '@operator-inbox/core';
 import {
   InboxConfigUnreadable,
   type OperatorInboxApi,
@@ -8,10 +8,12 @@ import { HttpApiBuilder } from 'effect/http-api';
 
 // `GET /api/inbox-config`: the Inbox settings the page needs, read fresh on
 // every request so an edit shows on the page's next load with no restart of
-// serve. Today that is the metadata rules from `metadata.json`: as the file
-// holds them, or the default when there is no file. A file that is there and
-// cannot be read, or whose rules are not usable, is a failure carrying the
-// sentence the CLI prints for it.
+// serve: the metadata rules from `metadata.json`, as the file holds them, or
+// the default when there is no file, and config.json's `chaseAfterMinutes`.
+// A metadata.json that is there and cannot be read, or whose rules are not
+// usable, is a failure carrying the sentence the CLI prints for it. A
+// config.json that does not load costs only the chase setting, so the page
+// keeps its default: serve's start-up line already names that file's problem.
 export const readInboxConfig = Effect.fnUntraced(function* () {
   const loaded = yield* loadMetadataRules().pipe(
     Effect.catch((e) =>
@@ -27,7 +29,14 @@ export const readInboxConfig = Effect.fnUntraced(function* () {
   );
   if (Result.isFailure(loaded.rules))
     return yield* new InboxConfigUnreadable({ message: loaded.rules.failure });
-  return { metadata: loaded.rules.success };
+  const chaseAfterMinutes = yield* loadConfig().pipe(
+    Effect.map(({ config }) => config.chaseAfterMinutes),
+    Effect.orElseSucceed(() => undefined),
+  );
+  return {
+    metadata: loaded.rules.success,
+    ...(chaseAfterMinutes === undefined ? {} : { chaseAfterMinutes }),
+  };
 });
 
 export const makeInboxConfigApiLive = (api: typeof OperatorInboxApi) =>

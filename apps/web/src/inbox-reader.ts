@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CHASE_AFTER_MINUTES,
   DEFAULT_INBOX_METADATA,
   type InboxId,
   type InboxMachineKey,
@@ -364,6 +365,20 @@ export const metadataRulesAtom = Atom.make(
       onNone: () => DEFAULT_INBOX_METADATA,
       onSome: (config) => config.metadata,
     }),
+);
+
+/**
+ * How long a question may sit with the agent before it needs chasing, in
+ * milliseconds: config.json's `chaseAfterMinutes`, or the default until the
+ * config is read, or when it cannot be.
+ */
+export const chaseAfterMsAtom = Atom.make(
+  (get): number =>
+    Option.match(AsyncResult.value(get(inboxConfigAtom)), {
+      onNone: () => DEFAULT_CHASE_AFTER_MINUTES,
+      onSome: (config) =>
+        config.chaseAfterMinutes ?? DEFAULT_CHASE_AFTER_MINUTES,
+    }) * 60_000,
 );
 
 /** Why the rules could not be read, for the sidebar's notes. */

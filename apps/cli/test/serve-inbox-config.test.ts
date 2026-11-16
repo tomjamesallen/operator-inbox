@@ -74,6 +74,27 @@ describe('serve’s inbox config', () => {
     }),
   );
 
+  it.effect('answers config.json’s chaseAfterMinutes when it is set', () =>
+    Effect.gen(function* () {
+      expect(
+        (yield* readUnder(xdgWith({ config: '{"chaseAfterMinutes":10}' })))
+          .chaseAfterMinutes,
+      ).toBe(10);
+      expect(
+        'chaseAfterMinutes' in (yield* readUnder(xdgWith({ config: '{}' }))),
+      ).toBe(false);
+    }),
+  );
+
+  it.effect('keeps the rules when config.json does not load', () =>
+    Effect.gen(function* () {
+      const read = yield* readUnder(
+        xdgWith({ config: '{"chaseAfterMinutes":0}' }),
+      );
+      expect(read).toEqual({ metadata: DEFAULT_INBOX_METADATA });
+    }),
+  );
+
   it.effect('answers the configured rules, as the file is now', () =>
     Effect.gen(function* () {
       const xdg = xdgWith({ metadata: JSON.stringify(RULES) });
