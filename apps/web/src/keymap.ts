@@ -13,7 +13,6 @@ import { Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
 import { failureText } from './failure';
-import { goToSessionOpenAtom, setGoToSessionOpenAtom } from './go-to-session';
 import {
   archiveAtom,
   copyQuestionAtom,
@@ -35,25 +34,29 @@ import {
   sessionTargetOf,
   sidebarPinnedOnlyAtom,
 } from './inbox';
+import { focusYourInboxAtom } from './inbox-elsewhere';
+import { inboxPickerOpenAtom, setInboxPickerOpenAtom } from './inbox-picker';
 import {
   openRenameAtom,
   type RailFocus,
   railFocusAskedAtom,
 } from './inbox-rail';
 import {
+  activeQueueAtom,
   askingAtom,
-  boxFocusAskedAtom,
   colophonOpenAtom,
   composerAtom,
   flowStepAskedAtom,
+  highlightPlaceOf,
   isSending,
   railStateAtom,
   readerSnapshotAtom,
   sendComposerAtom,
   stepAskAtom,
   toggleAskAtom,
+  toggleHighlightReplyAtom,
 } from './inbox-reader';
-import { inboxReaderAtoms, litOf } from './inbox-reader-machine';
+import { composerOf, inboxReaderAtoms, litOf } from './inbox-reader-machine';
 import { stepViewAtom } from './inbox-swipe';
 import {
   clearSelectionByKey,
@@ -180,7 +183,7 @@ const boardOf = (get: Atom.AtomContext) => get.once(drawnBoardAtom);
 const dialogOpen = (get: Atom.AtomContext): boolean =>
   get.once(keymapHelpOpenAtom) ||
   get.once(questionSearchOpenAtom) ||
-  get.once(goToSessionOpenAtom);
+  get.once(inboxPickerOpenAtom);
 
 const isComposerBox = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && target.dataset.zenBox !== undefined;
@@ -256,7 +259,10 @@ const focusRail = (get: Atom.AtomContext, at: RailFocus): boolean => {
 };
 
 // Along the views as a swipe goes, so Ask sits left of the queues.
+// Landing on Your inbox while it shows the empty state's list, the list takes
+// the focus.
 const stepView = (get: Atom.AtomContext, by: 1 | -1): boolean => {
+  get.set(focusYourInboxAtom, { orBox: false });
   get.set(stepViewAtom, by);
   return true;
 };
@@ -395,7 +401,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   focus_inbox_column: (get) => {
     send(get, { type: 'QueueChosen', queue: 'inbox' });
     send(get, { type: 'RailDismissed' });
-    get.set(boxFocusAskedAtom, get.once(boxFocusAskedAtom) + 1);
+    get.set(focusYourInboxAtom, { orBox: true });
     return true;
   },
   focus_sidebar_search: (get) => focusRail(get, 'search'),
@@ -407,9 +413,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return inboxId === undefined ? false : selectInbox(get, inboxId);
   },
   go_to_session: (get) => {
-    const open = get.once(goToSessionOpenAtom);
+    const open = get.once(inboxPickerOpenAtom);
     if (!open && dialogOpen(get)) return false;
-    get.set(setGoToSessionOpenAtom, !open);
+    get.set(setInboxPickerOpenAtom, !open);
     return true;
   },
   previous_queue: (get) => stepView(get, -1),
@@ -438,6 +444,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (dialogOpen(get) || otherFieldKeeps(binding, e)) return false;
     if (get.once(composerAtom)._tag !== 'Answer') return false;
     get.set(sendComposerAtom, true);
+    return true;
+  },
+  // The box on screen asks for its reply highlighted, or stops. Nothing while
+  // a modal holds the keyboard, or no box sends to an agent.
+  toggle_highlight_reply: (get) => {
+    const snapshot = get.once(readerSnapshotAtom);
+    if (
+      dialogOpen(get) ||
+      snapshot === undefined ||
+      highlightPlaceOf(composerOf(snapshot)) === undefined
+    )
+      return false;
+    get.set(toggleHighlightReplyAtom, undefined);
     return true;
   },
   copy_question: (get) => {

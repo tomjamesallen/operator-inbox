@@ -35,6 +35,7 @@ import {
   dispatchUnhighlight,
   dispatchWait,
   dispatchWithdraw,
+  HIGHLIGHT_REPLY_LINE,
   type InboxSession,
   inboxUrl,
   renderAnswers,
@@ -91,13 +92,19 @@ const open = (
 
 // The operator's answer, as the serve handler records it: read, decide,
 // append. A refusal fails, so a test can flip it.
-const answer = (inboxId: InboxId, n: number, response = 'yes') =>
+const answer = (
+  inboxId: InboxId,
+  n: number,
+  response = 'yes',
+  highlightReply?: true,
+) =>
   decideAndAppend(inboxId, (state) =>
     Result.map(
       decideAnswer(state, {
         inboxId,
         number: QuestionNumber.make(n),
         response,
+        ...(highlightReply === undefined ? {} : { highlightReply }),
       }),
       (event) => ({ events: [event], result: undefined }),
     ),
@@ -267,6 +274,69 @@ describe('a deferred answer', () => {
       `#1 Pick one\n  ${DEFERRED_LINE}\n  lean b`,
     );
   });
+});
+
+describe('an answer that asks for the reply highlighted', () => {
+  it('opens with the highlight line, before the answer', () => {
+    expect(
+      renderAnswers(
+        [
+          {
+            number: QuestionNumber.make(1),
+            title: 'Pick one',
+            metadata: {},
+            response: 'b',
+            highlightReply: true,
+          },
+        ],
+        false,
+      ),
+    ).toBe(`#1 Pick one\n  ${HIGHLIGHT_REPLY_LINE}\n  b`);
+    expect(HIGHLIGHT_REPLY_LINE).toBe(
+      'HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight',
+    );
+  });
+
+  it.effect(
+    'carries the flag through answers, and ask --highlight highlights the reply',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* open(Option.some(SESSION));
+          yield* dispatchAsk({ inboxId: ID, title: 'Pick one', body: '' });
+          yield* answer(ID, 1, 'b', true);
+          expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+            `#1 Pick one\n  ${HIGHLIGHT_REPLY_LINE}\n  b`,
+          );
+          expect(
+            JSON.parse(yield* dispatchAnswers({ inboxId: ID, json: true })),
+          ).toEqual([
+            {
+              number: 1,
+              title: 'Pick one',
+              response: 'b',
+              metadata: {},
+              highlightReply: true,
+            },
+          ]);
+          expect(
+            yield* dispatchAsk({
+              inboxId: ID,
+              title: 'Follow-up',
+              body: '',
+              highlight: true,
+            }),
+          ).toBe('#2');
+          expect(
+            yield* dispatchAsk({ inboxId: ID, title: 'Plain', body: '' }),
+          ).toBe('#3');
+          // Only the one asked with --highlight is highlighted.
+          expect(yield* dispatchUnhighlight({ inboxId: ID, numbers: [] })).toBe(
+            'unhighlighted #2',
+          );
+        }),
+      ),
+  );
 });
 
 describe('the question loop', () => {

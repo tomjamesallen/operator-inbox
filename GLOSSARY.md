@@ -16,7 +16,7 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 
 **With the agent**: the queue of Questions the operator has answered, deferred or asked, which the agent has not yet marked done.
 
-**Chase**: nudging the session that holds a Question which has sat in **With the agent** too long, chiefly one that is stuck or has dropped its Inbox. Past `config.json`'s `chaseAfterMinutes` (ten by default) the page marks the Question's time with a **Chase** link to the session, and raises a toast per Inbox that stays until the operator dismisses it. An Inbox with no **session link** gets the mark and the toast, without the link.
+**Chase**: nudging the session that holds a Question which has sat in **With the agent** too long, chiefly one that is stuck or has dropped its Inbox. Past `config.json`'s `chaseAfterMinutes` (ten by default) the page marks the Question's time with a **Chase** link to the session, and a round warning button in the bottom right counts the Inboxes holding such a Question. The button is there only while one does, and it never folds away; it opens the **Inbox picker**, which lists those Inboxes first. An Inbox with no **session link** gets the mark and is counted, without the link.
 
 **Processed**: the queue of Questions the agent has marked done or withdrawn, each shown with its answer or the agent's reason. The operator can still read them there.
 
@@ -24,9 +24,13 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 
 **Watcher**: the long-lived process `operator-inbox watch` starts for a session. It waits on the inbox log and prints one signal line when an answer arrives, which the session's harness turns into a wake-up; everything else goes to stderr. It stops when its owning session's process goes away, or at its deadline. Its record lives under `inbox-watchers/`.
 
-**Metadata rules**: the list of metadata keys an Inbox and its Questions carry, read from `metadata.json`: each key's type, description and presence (`required`, `expected` or `optional`), and whether keys the list does not name are allowed. `session` and `sessionLink` are built in. The rules bind what the CLI writes, never what the log already holds.
+**Metadata rules**: the list of metadata keys an Inbox and its Questions carry, read from `metadata.json`: each key's type, description and presence (`required`, `expected` or `optional`), and whether keys the list does not name are allowed. `session`, `sessionLink` and `sessionTitle` are built in. The rules bind what the CLI writes, never what the log already holds.
 
 **Session link**: the `sessionLink` key on an Inbox: a `claude://` link that opens the Claude desktop session working it. `operator-inbox open` fills it, with `sessionTitle`, from the desktop app's session files.
+
+**Inbox picker**: the modal that finds an Inbox or its session (`Ctrl+Space i` or `Ctrl+Space s` by default, or the chase button): a search field over every Inbox, matching its name, its session's title or its **Inbox code**, in the order the empty state lists other Inboxes, then the rest. Enter selects the Inbox and puts the caret in its answer box; Ctrl+Enter, or the session icon on its row, opens its session and leaves the picker open. _Avoid_: session picker.
+
+**Highlight reply**: the operator's request, set per send with `Ctrl+Space h`, that the agent highlight the Question it asks in reply. The box's border turns the highlight's yellow while it is on, and a send that lands turns it off. The answer or operator's question carries `highlightReply`; `answers` opens it with `HIGHLIGHT YOUR RESPONSE`, and the agent asks with `ask --highlight`.
 
 **Keymap**: the inbox page's key bindings: every action it can bind, each bound to one or more triggers (`ctrl+b`, or a sequence after the prefix, `ctrl+space>n`). It is the defaults with `keybindings` applied in order.
 

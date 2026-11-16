@@ -66,7 +66,8 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
   {
     id: 'go_to_session',
     section: 'Navigate',
-    description: 'Pick an inbox, and open the session working it',
+    description:
+      'Pick an inbox or its session: Enter selects the inbox, Ctrl+Enter opens its session',
   },
   {
     id: 'previous_queue',
@@ -149,6 +150,12 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
       'Defer to the agent: it decides, with what is in the box as a note',
   },
   {
+    id: 'toggle_highlight_reply',
+    section: 'Questions',
+    description:
+      'Ask the agent to highlight the question it asks in reply to this send',
+  },
+  {
     id: 'copy_question',
     section: 'Questions',
     description: 'Copy the selected question',
@@ -219,8 +226,11 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   'super+b=toggle_sidebar',
   'ctrl+b=toggle_sidebar',
   'escape=close_drawer',
-  'prefix>h=focus_sidebar',
-  'prefix>i=focus_inbox_column',
+  // b for the sidebar ("bar"), j to jump to the answer box; h and i are
+  // highlight_reply's and the inbox picker's, which s opens too.
+  'prefix>b=focus_sidebar',
+  'prefix>j=focus_inbox_column',
+  'prefix>i=go_to_session',
   'prefix>/=focus_sidebar_search',
   'prefix>n=next_inbox',
   'prefix>p=previous_inbox',
@@ -250,6 +260,7 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   'super+shift+enter=defer_to_agent',
   'ctrl+shift+enter=defer_to_agent',
   'prefix>u=defer_to_agent',
+  'prefix>h=toggle_highlight_reply',
   'prefix>y=copy_question',
   'prefix>o=open_session',
   'prefix>d=dismiss_highlight',
@@ -272,8 +283,13 @@ export const WIDGET_KEYS: ReadonlyArray<{
 }> = [
   {
     keys: '↑ ↓ ↩',
-    where: 'Search, ask, sessions',
+    where: 'Search, ask',
     what: 'Move through the matches and open one',
+  },
+  {
+    keys: '↑ ↓ ↩ / Ctrl+↩',
+    where: 'Inbox picker',
+    what: 'Move through the inboxes and select one / open its session, staying open',
   },
   {
     keys: '↑ ↓ ↩ / Ctrl+↩',

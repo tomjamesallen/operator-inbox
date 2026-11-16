@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import { TestClock } from 'effect/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clockAtom } from '../src/clock';
-import { chaseLine, chaseToastsOf, isStale } from '../src/inbox-chase';
+import { chasesOf, isStale } from '../src/inbox-chase';
 import {
   A,
   answered,
@@ -20,8 +20,8 @@ import {
 } from './inbox-page-harness';
 
 // Chasing a question that sits with the agent: past five minutes its card's
-// time is marked with a Chase link beside it, and its Inbox raises a toast
-// that stays until dismissed.
+// time is marked with a Chase link beside it, and a warning button counts the
+// Inboxes holding one and opens the inbox picker.
 
 useInboxPage();
 
@@ -67,56 +67,25 @@ describe('which questions are stale', () => {
   });
 });
 
-describe('the toasts', () => {
-  it('raises one per Inbox, naming each stale question', () => {
-    const toasts = chaseToastsOf(
-      drawn([linkedA, VIEW_B]),
-      at('11:20'),
-      FIVE,
-      new Set(),
-    );
-    expect(toasts.map((t) => [t.inboxId, t.numbers])).toEqual([[A, [2, 6]]]);
-    expect(toasts[0]?.target).toEqual({ _tag: 'Here', link: LINK_A });
-    expect(chaseLine(toasts[0] as never)).toBe(
-      '2 questions (#2, #6) in orchard have sat with the agent for 9m.',
-    );
+describe('the Inboxes to chase', () => {
+  it('lists each Inbox with its stale questions', () => {
+    expect(
+      chasesOf(drawn([linkedA, VIEW_B]), at('11:20'), FIVE).map((c) => [
+        c.inboxId,
+        c.numbers,
+      ]),
+    ).toEqual([[A, [2, 6]]]);
   });
 
-  it('names each question by its code once its Inbox has one', () => {
-    const coded = { ...VIEW_A, code: 'or-chd' };
+  it('leaves out an Inbox muted or archived', () => {
     expect(
-      chaseLine(
-        chaseToastsOf(drawn([coded]), at('11:20'), FIVE, new Set())[0] as never,
-      ),
-    ).toBe(
-      '2 questions (or-chd#2, or-chd#6) in orchard have sat with the agent for 9m.',
-    );
-    expect(
-      chaseLine(
-        chaseToastsOf(
-          drawn([coded]),
-          at('11:20'),
-          FIVE,
-          new Set([`${A}/2`]),
-        )[0] as never,
-      ),
-    ).toBe('or-chd#6 in orchard has sat with the agent for 9m.');
-  });
-
-  it('leaves out a dismissed question, and an Inbox muted or archived', () => {
-    expect(
-      chaseToastsOf(drawn([VIEW_A]), at('11:20'), FIVE, new Set([`${A}/2`]))[0]
-        ?.numbers,
-    ).toEqual([6]);
-    expect(
-      chaseToastsOf(
+      chasesOf(
         drawn([
           { ...VIEW_A, muted: true },
           { ...VIEW_A, inboxId: B, archived: true },
         ]),
         at('11:20'),
         FIVE,
-        new Set(),
       ),
     ).toEqual([]);
   });
@@ -125,8 +94,8 @@ describe('the toasts', () => {
 const card = (key: string) =>
   document.querySelector<HTMLElement>(`[data-zen-item="${key}"]`);
 
-const toast = () =>
-  document.querySelector<HTMLElement>(`[data-chase-toast="${A}"]`);
+const chaseButton = () =>
+  document.querySelector<HTMLElement>('[data-chase-button]');
 
 describe('on the page', () => {
   it('marks a stale answer’s time and puts Chase beside it', async () => {
@@ -161,33 +130,44 @@ describe('on the page', () => {
     expect(card(`${A}/6`)?.querySelector('[data-chase]')).toBeNull();
   });
 
-  it('raises a toast with the session, which stays dismissed', async () => {
+  it('shows the button with the count, and it opens and shuts the picker', async () => {
     serve.board = board([linkedA, VIEW_B]);
-    const view = mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:25')]]);
-    await waitFor(() => expect(toast()).not.toBeNull());
-    // In the reader's foot, beside or above the answer box, never over it.
-    expect(
-      toast()
-        ?.closest('[data-chase-toasts]')
-        ?.parentElement?.contains(document.querySelector('[data-zen-answer]')),
-    ).toBe(true);
-    expect(toast()?.textContent).toContain('#2, #6');
-    expect(
-      toast()?.querySelector('[data-chase="here"]')?.getAttribute('href'),
-    ).toBe(LINK_A);
-    fireEvent.click(
-      toast()?.querySelector('[aria-label="Dismiss"]') as HTMLElement,
-    );
-    await waitFor(() => expect(toast()).toBeNull());
-    expect(
-      JSON.parse(localStorage.getItem('operator-inbox:chase-dismissed') ?? ''),
-    ).toEqual([`${A}/2`, `${A}/6`]);
-    // A reload keeps it dismissed.
-    view.unmount();
     mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:25')]]);
-    await waitFor(() => expect(items().length).toBeGreaterThan(0));
+    await waitFor(() => expect(chaseButton()).not.toBeNull());
+    // In the reader's foot, beside or above the answer box.
+    expect(
+      chaseButton()?.parentElement?.contains(
+        document.querySelector('[data-zen-answer]'),
+      ),
+    ).toBe(true);
+    expect(
+      chaseButton()?.querySelector('[data-chase-count]')?.textContent,
+    ).toBe('1');
+    expect(chaseButton()?.getAttribute('aria-label')).toBe(
+      '1 Inbox probably needs chasing — open the inbox picker',
+    );
+    fireEvent.click(chaseButton() as HTMLElement);
+    const picker = await waitFor(() => {
+      const el = document.querySelector('[data-testid="inbox-picker"]');
+      if (el === null) throw new Error('no picker');
+      return el;
+    });
+    // The Inbox to chase comes first.
+    expect(
+      picker
+        .querySelector('[data-testid="inbox-picker-row"]')
+        ?.getAttribute('data-key'),
+    ).toBe(A);
+    fireEvent.keyDown(
+      picker.querySelector('[data-testid="inbox-picker-field"]') as HTMLElement,
+      { key: 'Escape' },
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="inbox-picker"]')).toBeNull(),
+    );
+    // Nothing folds it away while there is something to chase.
     await settle();
-    expect(toast()).toBeNull();
+    expect(chaseButton()).not.toBeNull();
   });
 
   it('takes the threshold from config.json’s chaseAfterMinutes', async () => {
@@ -197,13 +177,13 @@ describe('on the page', () => {
     };
     // Two minutes after #2's answer, three after #6's.
     mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:14')]]);
-    await waitFor(() => expect(toast()?.textContent).toContain('#2, #6'));
+    await waitFor(() => expect(chaseButton()).not.toBeNull());
   });
 
-  it('raises none before five minutes', async () => {
+  it('shows no button before five minutes', async () => {
     mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:14')]]);
     await waitFor(() => expect(items().length).toBeGreaterThan(0));
     await settle();
-    expect(toast()).toBeNull();
+    expect(chaseButton()).toBeNull();
   });
 });

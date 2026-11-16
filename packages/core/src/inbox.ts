@@ -77,6 +77,8 @@ export type InboxAdopted = typeof InboxAdopted.Type;
 // `body` is the operator's whole question, which the fold holds as what the
 // agent acts on (`response`), with no context of its own, and `title` is its
 // first line (`operatorQuestionTitle`).
+// `highlightReply`, on an operator's question only, asks the agent to
+// highlight the Question it asks in reply (see `QuestionAnswered`).
 export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   inboxId: InboxId,
   number: QuestionNumber,
@@ -84,6 +86,7 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   body: Schema.String,
   metadata: Schema.optionalKey(Metadata),
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
+  highlightReply: Schema.optionalKey(Schema.Literal(true)),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
 
@@ -91,11 +94,14 @@ export type QuestionAsked = typeof QuestionAsked.Type;
 // decide"): the agent makes the call itself.
 // `response` is then the operator's optional note with it, '' when they gave
 // none. An optional key, so every answer logged before it reads as it did.
+// `highlightReply` asks the agent to highlight the Question it asks in reply,
+// so the operator finds it among the rest. Optional for the same reason.
 export const QuestionAnswered = Schema.TaggedStruct('QuestionAnswered', {
   inboxId: InboxId,
   number: QuestionNumber,
   response: Schema.String,
   deferred: Schema.optionalKey(Schema.Literal(true)),
+  highlightReply: Schema.optionalKey(Schema.Literal(true)),
 });
 export type QuestionAnswered = typeof QuestionAnswered.Type;
 
@@ -278,6 +284,7 @@ export const MovedQuestion = Schema.Struct({
   processedStamp: Schema.optionalKey(CarriedStamp),
   operatorQuestion: Schema.optionalKey(Schema.Literal(true)),
   deferred: Schema.optionalKey(Schema.Literal(true)),
+  highlightReply: Schema.optionalKey(Schema.Literal(true)),
 });
 export type MovedQuestion = typeof MovedQuestion.Type;
 
@@ -441,6 +448,9 @@ export interface InboxQuestion {
   // Set when the operator's answer deferred to the agent
   // (`QuestionAnswered`'s `deferred`): `response` is their note, if any.
   readonly deferred?: true;
+  // Set when the operator asked for the agent's reply to be highlighted
+  // (`highlightReply` on their answer or their question).
+  readonly highlightReply?: true;
   // Where it went, once `moved`.
   readonly movedTo?: {
     readonly inboxId: InboxId;
@@ -540,6 +550,9 @@ export const evolveInbox = (
               state: 'awaiting-agent',
               withdrawn: false,
               operatorQuestion: true,
+              ...(event.highlightReply === undefined
+                ? {}
+                : { highlightReply: event.highlightReply }),
               ...(stamp === undefined
                 ? {}
                 : { askedStamp: stamp, answeredStamp: stamp }),
@@ -568,6 +581,9 @@ export const evolveInbox = (
         response: event.response,
         state: 'awaiting-agent',
         ...(event.deferred === undefined ? {} : { deferred: event.deferred }),
+        ...(event.highlightReply === undefined
+          ? {}
+          : { highlightReply: event.highlightReply }),
         ...(stamp === undefined ? {} : { answeredStamp: stamp }),
       }));
     case 'AnswerProcessed':
@@ -655,6 +671,9 @@ export const evolveInbox = (
                 ? {}
                 : { operatorQuestion: q.operatorQuestion }),
               ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+              ...(q.highlightReply === undefined
+                ? {}
+                : { highlightReply: q.highlightReply }),
             },
           ],
         };
@@ -1324,7 +1343,12 @@ export const operatorQuestionTitle = (text: string): string => {
  */
 export const decideOperatorAsk = (
   state: InboxState,
-  input: { readonly inboxId: InboxId; readonly text: string },
+  input: {
+    readonly inboxId: InboxId;
+    readonly text: string;
+    // The operator asks the agent to highlight the Question it asks in reply.
+    readonly highlightReply?: true;
+  },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
   const text = input.text.trim();
@@ -1337,6 +1361,9 @@ export const decideOperatorAsk = (
     title: operatorQuestionTitle(text),
     body: text,
     operatorQuestion: true,
+    ...(input.highlightReply === undefined
+      ? {}
+      : { highlightReply: input.highlightReply }),
   });
 };
 
@@ -1408,6 +1435,8 @@ export const decideAnswer = (
     // The operator hands the decision to the agent; `response` may then be
     // empty, as a note with the deferral is optional.
     readonly deferred?: true;
+    // The operator asks the agent to highlight the Question it asks in reply.
+    readonly highlightReply?: true;
   },
 ): Result.Result<QuestionAnswered, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
@@ -1441,6 +1470,9 @@ export const decideAnswer = (
     number: input.number,
     response: input.response,
     ...(input.deferred === undefined ? {} : { deferred: input.deferred }),
+    ...(input.highlightReply === undefined
+      ? {}
+      : { highlightReply: input.highlightReply }),
   });
 };
 
@@ -1692,6 +1724,9 @@ const movedQuestionOf = (
       ? {}
       : { operatorQuestion: q.operatorQuestion }),
     ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+    ...(q.highlightReply === undefined
+      ? {}
+      : { highlightReply: q.highlightReply }),
   };
 };
 

@@ -448,13 +448,14 @@ describe('metadata.json', () => {
   const decode = (value: unknown) =>
     decodeMetadataRules(JSON.stringify(value), M);
 
-  it('defaults to repo, branch and pr, expected, and the two built-in session keys', () => {
+  it('defaults to repo, branch and pr, expected, and the three built-in session keys', () => {
     expect(DEFAULT_INBOX_METADATA.keys.map((k) => k.key)).toEqual([
       'repo',
       'branch',
       'pr',
       'session',
       'sessionLink',
+      'sessionTitle',
     ]);
     expect(
       DEFAULT_INBOX_METADATA.keys.every((k) => k.presence === 'expected'),

@@ -300,10 +300,12 @@ export const InboxMetadataRules = Schema.Struct({
 });
 export type InboxMetadataRules = typeof InboxMetadataRules.Type;
 
-// Every session is expected to say who it is and how to reach it, on every
-// machine, so these two are not config's to set. A metadata.json that still
-// lists one is overruled. The page opens the link from an icon beside the copy
-// button, and the card behind `<>` lists both as text.
+// Every session is expected to say who it is, how to reach it and what it is
+// called, on every machine, so these three are not config's to set. A
+// metadata.json that still lists one is overruled. The page opens the link
+// from an icon beside the copy button, shows the title under the Inbox's name
+// in the inbox picker and the empty state's list, and the card behind `<>`
+// lists all three as text.
 export const BUILT_IN_METADATA_KEYS: ReadonlyArray<MetadataKey> = [
   {
     key: SESSION_KEY,
@@ -319,6 +321,14 @@ export const BUILT_IN_METADATA_KEYS: ReadonlyArray<MetadataKey> = [
     presence: 'expected',
     type: 'string',
     pattern: SESSION_LINK_PATTERN,
+    level: 'inbox',
+  },
+  {
+    key: SESSION_TITLE_KEY,
+    description:
+      'The title of the desktop session working this Inbox; the CLI fills it in a desktop session',
+    presence: 'expected',
+    type: 'string',
     level: 'inbox',
   },
 ];

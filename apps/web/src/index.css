@@ -122,17 +122,15 @@
      the column's own, and the pixels are the drawn size at the reader's
      `--ui-scale` of 1.5. */
   --container-code-gutter: calc(60ch + 300px);
-  /* A chase toast's width. */
-  --container-chase: calc(240px * var(--ui-scale));
-  /* The width of the inbox reader's column at which the chase toasts fit in
-     its bottom right corner, beside the centred answer box rather than on top
-     of it (`@chase-beside:`, a container query on the reader's foot): the
-     measure, and room either side for a toast, its gap from the box and its
-     inset from the edge. Plain lengths, as the code gutter's: `ch` is the
+  /* The width of the inbox reader's column at which the chase button sits in
+     its bottom right corner, beside the centred answer box rather than above
+     it (`@chase-beside:`, a container query on the reader's foot): the
+     measure, and room either side for the button, its gap from the box and
+     its inset from the edge. Plain lengths, as the code gutter's: `ch` is the
      foot's own, the font the box's measure is counted in, and the pixels are
-     `--container-chase` and twice `--spacing-s4` at the reader's `--ui-scale`
-     of 1.5. */
-  --container-chase-beside: calc(60ch + 828px);
+     `size-6` and twice `--spacing-s4`, each side, at the reader's
+     `--ui-scale` of 1.5. */
+  --container-chase-beside: calc(60ch + 180px);
   /* The question search's and the key bindings sheet's width: one result to
      a line, title and inbox. */
   --container-search: calc(480px * var(--ui-scale));

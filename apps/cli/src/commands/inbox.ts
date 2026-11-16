@@ -669,6 +669,9 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
   readonly metadata?: Metadata;
   // This machine's metadata rules. Left out, nothing is checked.
   readonly rules?: InboxMetadataRules;
+  // Highlight the new Question as it is asked, in the same append: the reply
+  // an answer's `highlightReply` asked for.
+  readonly highlight?: boolean;
 }) {
   const given = opts.metadata ?? emptyMetadata;
   const asked = yield* decideOrFail(opts.inboxId, (state) => {
@@ -681,17 +684,32 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
         'question',
       );
     if (refusal !== undefined) return Result.fail(refusal);
-    return Result.map(
+    return Result.flatMap(
       decideAsk(state, {
         inboxId: opts.inboxId,
         title: opts.title,
         body: opts.body,
         ...(opts.metadata === undefined ? {} : { metadata: opts.metadata }),
       }),
-      (event) => ({
-        events: askEvents(state, event),
-        result: questionRef(state.code, event.number),
-      }),
+      (event) => {
+        const asked: ReadonlyArray<InboxEvent> = askEvents(state, event);
+        const result = questionRef(state.code, event.number);
+        if (opts.highlight !== true)
+          return Result.succeed({ events: asked, result });
+        // The highlight is decided on the Inbox as it stands once asked, so it
+        // passes the same checks as `highlight <n>` would straight after.
+        const after = asked.reduce(
+          (folded, e) => evolveInbox(folded, e),
+          state,
+        );
+        return Result.map(
+          decideHighlight(after, {
+            inboxId: opts.inboxId,
+            numbers: [event.number],
+          }),
+          (highlighted) => ({ events: [...asked, ...highlighted], result }),
+        );
+      },
     );
   });
   if (opts.rules !== undefined) {
@@ -721,6 +739,7 @@ export interface AnswerLine {
   readonly metadata: Metadata;
   readonly operatorQuestion?: true;
   readonly deferred?: true;
+  readonly highlightReply?: true;
 }
 
 const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
@@ -736,6 +755,9 @@ const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
       ? {}
       : { operatorQuestion: q.operatorQuestion }),
     ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
+    ...(q.highlightReply === undefined
+      ? {}
+      : { highlightReply: q.highlightReply }),
   }));
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
@@ -747,6 +769,11 @@ export const renderMetadata = (metadata: Metadata): ReadonlyArray<string> =>
 // The line a deferred answer opens with, so the agent knows the call is its own.
 export const DEFERRED_LINE =
   'DEFERRED TO AGENT: you decide. Record what you chose and why.';
+
+// The line an answer opens with when the operator asked for the reply to be
+// highlighted, so the agent's next Question rises in their inbox.
+export const HIGHLIGHT_REPLY_LINE =
+  'HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight';
 
 export const renderAnswers = (
   answers: ReadonlyArray<AnswerLine>,
@@ -760,6 +787,7 @@ export const renderAnswers = (
         `${a.code ?? `#${a.number}`} ${a.operatorQuestion === true ? '(the operator asks) ' : ''}${a.title}\n${[
           ...renderMetadata(a.metadata).map((m) => `meta ${m}`),
           ...(a.deferred === true ? [DEFERRED_LINE] : []),
+          ...(a.highlightReply === true ? [HIGHLIGHT_REPLY_LINE] : []),
           ...(a.deferred === true && a.response === ''
             ? []
             : a.response.split('\n')),
@@ -1319,8 +1347,14 @@ const askCommand = Command.make(
     inbox: inboxOpt,
     meta: metaOpt,
     metaJson: metaJsonOpt,
+    highlight: Flag.Boolean('highlight').pipe(
+      Flag.withDescription(
+        'Highlight the question as it is asked: the reply an answer marked HIGHLIGHT YOUR RESPONSE asks for',
+      ),
+      Flag.withDefault(false),
+    ),
   },
-  ({ title, bodyFile, inbox, meta, metaJson }) =>
+  ({ title, bodyFile, inbox, meta, metaJson, highlight }) =>
     print(
       Effect.gen(function* () {
         const inboxId = yield* resolved(inbox);
@@ -1333,6 +1367,7 @@ const askCommand = Command.make(
           body,
           ...(metadata === undefined ? {} : { metadata }),
           ...(rules === undefined ? {} : { rules }),
+          ...(highlight ? { highlight: true } : {}),
         });
         // A nudge at the moment it matters: nothing is watching for the
         // answer. On stderr, so `#n` stays the whole

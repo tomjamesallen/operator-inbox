@@ -1,6 +1,9 @@
 import { useAtomMount, useAtomSet, useAtomValue } from '@effect/atom-react';
 import { inboxVisibleRefreshAtom } from '../../inbox';
-import { elsewhereClearWatchAtom } from '../../inbox-elsewhere';
+import {
+  elsewhereClearWatchAtom,
+  yourInboxLandingWatchAtom,
+} from '../../inbox-elsewhere';
 import {
   greyedLineAtom,
   inboxTabTitleAtom,
@@ -14,7 +17,7 @@ import { keymapKeyAtom } from '../../keymap';
 import { KeymapHelp, PendingKeys } from '../keymap-help';
 import { QuestionSearch } from '../question-search';
 import { InboxMetaCard } from './colophon';
-import { GoToSession } from './go-to-session';
+import { InboxPicker } from './inbox-picker';
 import { Masthead } from './masthead';
 import { InboxReader } from './reader';
 import { Rail } from './sidebar';
@@ -84,6 +87,7 @@ export const InboxPage = () => {
   useAtomMount(keymapKeyAtom);
   useAtomMount(readerSwipeAtom);
   useAtomMount(elsewhereClearWatchAtom);
+  useAtomMount(yourInboxLandingWatchAtom);
   return (
     <div className="flex h-dvh overflow-hidden bg-bg font-zen text-fg">
       <Masthead />
@@ -92,7 +96,7 @@ export const InboxPage = () => {
       <RailProbe />
       <GreyedStatus />
       <QuestionSearch />
-      <GoToSession />
+      <InboxPicker />
       <InboxMetaCard />
       <KeymapHelp />
       <PendingKeys />

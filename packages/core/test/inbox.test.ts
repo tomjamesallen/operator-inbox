@@ -288,6 +288,27 @@ describe('the operator asks the agent', () => {
     );
   });
 
+  it('carries highlightReply on the operator’s question and into the fold', () => {
+    const event = Result.getOrThrow(
+      decideOperatorAsk(inboxState([opened]), {
+        inboxId: ID,
+        text: 'Check X',
+        highlightReply: true,
+      }),
+    );
+    expect(event).toMatchObject({
+      operatorQuestion: true,
+      highlightReply: true,
+    });
+    expect(inboxState([opened, event]).questions[0]).toMatchObject({
+      state: 'awaiting-agent',
+      highlightReply: true,
+    });
+    expect(Result.getOrThrow(ask([opened]))).not.toHaveProperty(
+      'highlightReply',
+    );
+  });
+
   it('cuts a long first line, with an ellipsis', () => {
     const title = operatorQuestionTitle('x'.repeat(200));
     expect(title.length).toBe(OPERATOR_QUESTION_TITLE_LIMIT);
@@ -469,6 +490,27 @@ describe('decideAnswer', () => {
     expect(Result.getOrThrow(answer([opened, asked(1)]))).not.toHaveProperty(
       'deferred',
     );
+  });
+
+  it('carries highlightReply on the answer and into the fold, and leaves it off a plain one', () => {
+    const result = decideAnswer(inboxState([opened, asked(1)]), {
+      inboxId: ID,
+      number: n(1),
+      response: 'yes',
+      highlightReply: true,
+    });
+    expect(Result.getOrThrow(result)).toEqual({
+      _tag: 'QuestionAnswered',
+      inboxId: ID,
+      number: n(1),
+      response: 'yes',
+      highlightReply: true,
+    });
+    const state = inboxState([opened, asked(1), Result.getOrThrow(result)]);
+    expect(state.questions[0]?.highlightReply).toBe(true);
+    expect(
+      inboxState([opened, asked(1), answered(1)]).questions[0],
+    ).not.toHaveProperty('highlightReply');
   });
 
   it('refuses a deferral the same way as an answer once it is answered', () => {
@@ -1374,6 +1416,30 @@ describe('moving a question between inboxes', () => {
     expect(events[0]?.question.deferred).toBe(true);
     const to = inboxState([openedTo, ...events]);
     expect(to.questions[0]?.deferred).toBe(true);
+  });
+
+  it('carries highlightReply with the question it moves', () => {
+    const events = Result.getOrThrow(
+      decideMove(
+        inboxState([
+          opened,
+          asked(1),
+          {
+            _tag: 'QuestionAnswered',
+            inboxId: ID,
+            number: n(1),
+            response: 'yes',
+            highlightReply: true,
+          },
+        ]),
+        inboxState([openedTo]),
+        { inboxId: ID, numbers: [n(1)], toInboxId: TO },
+      ),
+    );
+    expect(events[0]?.question.highlightReply).toBe(true);
+    expect(inboxState([openedTo, ...events]).questions[0]?.highlightReply).toBe(
+      true,
+    );
   });
 
   it('folds into the inbox it joins, and leaves its number moved where it was', () => {

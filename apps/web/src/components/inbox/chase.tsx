@@ -1,23 +1,20 @@
-import { Toast } from '@base-ui/react/toast';
-import { useAtomMount, useAtomSet, useAtomValue } from '@effect/atom-react';
-import { Atom } from 'effect/reactivity';
+import { useAtomSet, useAtomValue } from '@effect/atom-react';
+import { TriangleAlert } from 'lucide-react';
 import {
   drawnBoardAtom,
   inDesktopWindow,
   openSessionLinkAtom,
   sessionTargetOf,
 } from '../../inbox';
+import { chasesAtom } from '../../inbox-chase';
 import {
-  type ChaseToast,
-  chaseLine,
-  chaseToastsAtom,
-  dismissChaseAtom,
-} from '../../inbox-chase';
-import { ICON_FAILED, Icon } from './icon';
+  inboxPickerOpenAtom,
+  setInboxPickerOpenAtom,
+} from '../../inbox-picker';
 
-// The chase: a Chase link beside a stale question's time, and a toast per
-// Inbox that stays until dismissed. Which questions are stale, and which
-// toasts show, is `inbox-chase.ts`; here they are drawn.
+// The chase: a Chase link beside a stale question's time, and a warning button
+// counting the Inboxes that hold one. Which questions are stale is
+// `inbox-chase.ts`; here they are drawn.
 
 // Not on a touch screen, by the device, as Open session: a phone has no Claude
 // app to hand the link to.
@@ -75,112 +72,45 @@ export const ChaseLink = ({
   );
 };
 
-// --- the toasts ------------------------------------------------------------------
+// --- the button ------------------------------------------------------------------
 
-const manager = Toast.createToastManager<{ readonly chase: ChaseToast }>();
-
-const sameToast = (a: ChaseToast, b: ChaseToast) =>
-  chaseLine(a) === chaseLine(b) &&
-  a.target?._tag === b.target?._tag &&
-  (a.target?._tag !== 'Here' ||
-    (b.target?._tag === 'Here' && a.target.link === b.target.link));
-
-// Keeps Base UI's toasts in step with `chaseToastsAtom`. A toast the operator
-// closes is dismissed; one this closes, because its questions left With the
-// agent, is not. Mounted with the toasts, so its subscription lives with them.
-const chaseToastSyncAtom = Atom.readable((get) => {
-  const shown = new Map<string, ChaseToast>();
-  const sync = (toasts: ReadonlyArray<ChaseToast>) => {
-    const wanted = new Set(toasts.map((t) => t.id));
-    for (const id of [...shown.keys()])
-      if (!wanted.has(id)) {
-        shown.delete(id);
-        manager.close(id);
-      }
-    for (const toast of toasts) {
-      const was = shown.get(toast.id);
-      shown.set(toast.id, toast);
-      if (was === undefined)
-        manager.add({
-          id: toast.id,
-          timeout: 0,
-          data: { chase: toast },
-          onClose: () => {
-            const last = shown.get(toast.id);
-            if (last === undefined) return;
-            shown.delete(toast.id);
-            get.set(dismissChaseAtom, last);
-          },
-        });
-      else if (!sameToast(was, toast))
-        manager.update(toast.id, { data: { chase: toast } });
-    }
-  };
-  get.subscribe(chaseToastsAtom, sync, { immediate: true });
-  get.addFinalizer(() => {
-    const ids = [...shown.keys()];
-    shown.clear();
-    for (const id of ids) manager.close(id);
-  });
-});
-
-const ChaseToastItem = ({
-  toast,
-}: {
-  readonly toast: Toast.Root.ToastObject<{ readonly chase: ChaseToast }>;
-}) => {
-  const chase = toast.data?.chase;
-  if (chase === undefined) return null;
-  return (
-    <Toast.Root
-      toast={toast}
-      data-chase-toast={chase.inboxId}
-      className="pointer-events-auto flex w-full items-start gap-s3 border border-orange/40 bg-rail p-s3 font-zen text-12 text-fg/80 shadow-sm"
-    >
-      <Toast.Content className="min-w-0 flex-1">
-        <Toast.Title className="font-medium text-orange">
-          Probably needs chasing
-        </Toast.Title>
-        <Toast.Description className="mt-s1 leading-body">
-          {chaseLine(chase)}
-        </Toast.Description>
-        <ChaseLink inboxId={chase.inboxId} className="mt-s1 inline-block" />
-      </Toast.Content>
-      <Toast.Close
-        aria-label="Dismiss"
-        className="flex shrink-0 cursor-pointer items-center text-fg/30 hover:text-fg"
-      >
-        <Icon d={ICON_FAILED} />
-      </Toast.Close>
-    </Toast.Root>
-  );
-};
-
-const ChaseToastList = () => {
-  const { toasts } = Toast.useToastManager<{ readonly chase: ChaseToast }>();
-  return toasts.map((t) => <ChaseToastItem key={t.id} toast={t} />);
-};
+const chasingLabel = (n: number) =>
+  `${n} ${n === 1 ? 'Inbox' : 'Inboxes'} probably ${n === 1 ? 'needs' : 'need'} chasing`;
 
 /**
- * The chase toasts, in the reader's foot. Mounted inside the foot, the box the
- * answer sits in, so they are placed against it whatever its height: in the
- * bottom right corner while the column has room for them beside the centred
- * answer box (`@chase-beside:`, a container query on the foot), and stacked
- * on top of the foot otherwise, full width on a phone. A new toast goes above
- * the ones already up, so the first stays in the corner and none moves under
- * the pointer.
+ * The chase button, in the reader's foot: a round warning in the bottom right,
+ * there only while some Inbox has a question stale with the agent, with the
+ * count of those Inboxes. It never folds away while there is something to
+ * chase. A click opens the inbox picker, which lists those Inboxes first, and
+ * a second shuts it. Placed as the answer box allows: in the bottom right
+ * corner while the column has room beside the centred box (`@chase-beside:`,
+ * a container query on the foot), above the foot's right edge otherwise.
  */
-export const ChaseToasts = () => {
-  useAtomMount(chaseToastSyncAtom);
-  // Every stale Inbox shows: a chase hidden behind a limit is no chase.
+export const ChaseButton = () => {
+  const chases = useAtomValue(chasesAtom);
+  const open = useAtomValue(inboxPickerOpenAtom);
+  const setOpen = useAtomSet(setInboxPickerOpenAtom);
+  const count = chases.length;
+  if (count === 0) return null;
+  const label = `${chasingLabel(count)} — open the inbox picker`;
   return (
-    <Toast.Provider toastManager={manager} limit={Number.POSITIVE_INFINITY}>
-      <Toast.Viewport
-        data-chase-toasts
-        className="pointer-events-none absolute inset-x-s5 bottom-full z-20 ml-auto flex max-w-chase flex-col gap-s2 @chase-beside:right-s4 @chase-beside:bottom-s4"
+    <button
+      type="button"
+      aria-label={label}
+      title={chasingLabel(count)}
+      aria-expanded={open}
+      data-chase-button
+      onClick={() => setOpen(!open)}
+      className="absolute right-s5 bottom-full z-20 flex size-6 cursor-pointer items-center justify-center rounded-full border border-orange/40 bg-rail text-orange shadow-sm transition-colors hover:bg-orange/10 motion-reduce:transition-none @chase-beside:right-s4 @chase-beside:bottom-s4"
+    >
+      <TriangleAlert aria-hidden className="size-3.5" />
+      <span
+        aria-hidden
+        data-chase-count
+        className="absolute -top-1 -right-1 flex min-w-3 items-center justify-center rounded-full bg-orange px-0.5 font-zen text-9 leading-card text-rail tabular-nums"
       >
-        <ChaseToastList />
-      </Toast.Viewport>
-    </Toast.Provider>
+        {count}
+      </span>
+    </button>
   );
 };

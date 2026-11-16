@@ -1,4 +1,4 @@
-import type { InboxId } from '@operator-inbox/core/api';
+import { type InboxId, SESSION_TITLE_KEY } from '@operator-inbox/core/api';
 import { DateTime, Option } from 'effect';
 import { Atom } from 'effect/reactivity';
 import {
@@ -6,18 +6,22 @@ import {
   drawnBoardAtom,
   refusedInboxesOf,
   type SessionTarget,
+  screenStateAtom,
   selectedInboxAtom,
   sessionTargetOf,
+  sidebarPinnedOnlyAtom,
 } from './inbox';
 import { chaseNowAtom, isStale } from './inbox-chase';
 import { answerKey, type FreshMark, type QueueName } from './inbox-queues';
 import { freshElsewhereAtom, pickRowAtom } from './inbox-rail';
 import {
   activeQueueAtom,
+  askingAtom,
   boxFocusAskedAtom,
   chaseAfterMsAtom,
   readerSnapshotAtom,
   shownQueuesAtom,
+  viewKeyOf,
 } from './inbox-reader';
 import { inboxReaderAtoms } from './inbox-reader-machine';
 
@@ -42,7 +46,30 @@ export interface ElsewhereRow {
   /** `lastActivityAt`, in epoch ms. */
   readonly lastAt: number | undefined;
   readonly target: SessionTarget | undefined;
+  /** The session's title, shown under the name: see `sessionSubtextOf`. */
+  readonly session: string | undefined;
 }
+
+/**
+ * The line under an Inbox's name: the title of the session working it
+ * (`sessionTitle`), where it has one. Left out when it says what the name
+ * already says (the same words, ignoring case and spaces at the ends), since
+ * a repeat tells the operator nothing.
+ */
+export const sessionSubtextOf = (
+  board: DrawnBoard,
+  inboxId: InboxId,
+  label: string,
+): string | undefined => {
+  const title = board.views.find((v) => v.inboxId === inboxId)?.metadata[
+    SESSION_TITLE_KEY
+  ];
+  if (typeof title !== 'string') return undefined;
+  const text = title.trim();
+  return text === '' || text.toLowerCase() === label.trim().toLowerCase()
+    ? undefined
+    : text;
+};
 
 const millisOf = (at: string | undefined): number | undefined =>
   at === undefined
@@ -51,7 +78,7 @@ const millisOf = (at: string | undefined): number | undefined =>
         Option.map(DateTime.make(at), DateTime.toEpochMillis),
       );
 
-/** Something has sat with the agent too long: the chase toast's rule. */
+/** Something has sat with the agent too long: the chase button's rule. */
 export const needsAttention = (row: ElsewhereRow): boolean => row.stuck > 0;
 
 /**
@@ -91,8 +118,7 @@ export const elsewhereRowsOf = (
     )
     .map((r): ElsewhereRow => {
       const view = board.views.find((v) => v.inboxId === r.inboxId);
-      // As `chaseToastsOf`. A dismissed toast is still counted: dismissing it
-      // does not unstick the question.
+      // As `chasesOf`, which the chase button counts.
       const stale = (view?.awaitingAgent ?? []).filter((q) =>
         isStale(q, nowMs, afterMs),
       );
@@ -108,6 +134,7 @@ export const elsewhereRowsOf = (
         fresh: fresh.filter((f) => f.inboxId === r.inboxId).at(-1),
         lastAt: millisOf(r.lastActivityAt),
         target: sessionTargetOf(board, r.inboxId),
+        session: sessionSubtextOf(board, r.inboxId, r.label),
       };
     })
     .filter((row) => row.count > 0 || row.stuck > 0)
@@ -304,8 +331,74 @@ export const pickElsewhereAtom = Atom.writable<void, ElsewhereLine>(
   },
 );
 
-/** Set when the list should take the focus as it is drawn; the list clears it. */
-export const elsewhereFocusAskedAtom = Atom.make(false).pipe(Atom.keepAlive);
+/**
+ * Set when the list should take the focus as it is drawn; the list clears it.
+ * `cleared`: the operator emptied the Inbox, and the list takes the focus only
+ * from the answer box or from nowhere. `moved`: a keyboard move landed here
+ * (`focusYourInboxAtom`), and the list takes it from wherever it is.
+ */
+export const elsewhereFocusAskedAtom = Atom.make<false | 'cleared' | 'moved'>(
+  false,
+).pipe(Atom.keepAlive);
+
+// A keyboard move that may land on Your inbox, waiting for the reader: the
+// machine takes the move a moment after the key, so what it showed when the
+// key went down (`from`) is not yet where it lands.
+interface Landing {
+  readonly orBox: boolean;
+  readonly from: unknown;
+}
+const landingAskedAtom = Atom.make<Landing | undefined>(undefined).pipe(
+  Atom.keepAlive,
+);
+
+/**
+ * A keyboard move that may land on Your inbox: a queue switch (`orBox` false),
+ * `focus_inbox_column` or a pick in the inbox picker (`orBox` true, a move to
+ * it). Once the reader has taken the move, if it is on Your inbox and that
+ * shows the empty state's list of other Inboxes, the focus goes to the list,
+ * on its first line. Otherwise an `orBox` move puts the caret in the answer
+ * box, and a queue switch leaves the focus where it is. A page load asks
+ * nothing, so nothing is taken from where the browser put the focus.
+ */
+export const focusYourInboxAtom = Atom.writable<
+  void,
+  { readonly orBox: boolean }
+>(
+  () => undefined,
+  (ctx, { orBox }) =>
+    ctx.set(landingAskedAtom, { orBox, from: ctx.get(readerSnapshotAtom) }),
+);
+
+/**
+ * Carries out a landing once the reader shows the view now selected and has
+ * moved since the key (or, for a move to Your inbox, is there already). Not on
+ * Your inbox, or composing a question, it lets the landing go. Mounted with
+ * the page.
+ */
+export const yourInboxLandingWatchAtom = Atom.make((get): void => {
+  const asked = get(landingAskedAtom);
+  const snapshot = get(readerSnapshotAtom);
+  if (asked === undefined || snapshot === undefined) return;
+  const { inboxes, groups } = get(screenStateAtom);
+  const view = viewKeyOf(
+    get(selectedInboxAtom),
+    inboxes,
+    groups,
+    get(sidebarPinnedOnlyAtom),
+  );
+  if (snapshot.context.view !== view) return;
+  const there = get(activeQueueAtom) === 'inbox' && !get(askingAtom);
+  if (snapshot === asked.from && !(asked.orBox && there)) return;
+  if (there && get(elsewhereShownAtom)) {
+    get.set(elsewhereCursorAtom, undefined);
+    get.set(elsewhereFocusAskedAtom, 'moved');
+  } else if (there && asked.orBox)
+    get.set(boxFocusAskedAtom, get.once(boxFocusAskedAtom) + 1);
+  // Last: setting what this atom reads runs it again at once, and the writes
+  // after it in this run are lost.
+  get.set(landingAskedAtom, undefined);
+});
 
 interface ClearWatch {
   readonly view: string | undefined;
@@ -326,7 +419,7 @@ export const elsewhereClearWatchAtom = Atom.make((get): ClearWatch => {
   const was = Option.getOrUndefined(get.self<ClearWatch>());
   if (clearedOf(was, now) && get(elsewhereShownAtom)) {
     get.set(elsewhereCursorAtom, undefined);
-    get.set(elsewhereFocusAskedAtom, true);
+    get.set(elsewhereFocusAskedAtom, 'cleared');
   }
   return now;
 });
