@@ -121,12 +121,14 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
   {
     id: 'scroll_up',
     section: 'Questions',
-    description: 'Scroll the list up a little; while asking, the inbox above',
+    description:
+      'Scroll the list up a little; while asking, the inbox above; in listen mode, the paragraph before',
   },
   {
     id: 'scroll_down',
     section: 'Questions',
-    description: 'Scroll the list down a little; while asking, the inbox below',
+    description:
+      'Scroll the list down a little; while asking, the inbox below; in listen mode, the next paragraph',
   },
   {
     id: 'toggle_metadata',
@@ -166,6 +168,39 @@ export const KEYMAP_ACTIONS: ReadonlyArray<KeymapAction> = [
     section: 'Questions',
     description:
       'Comment on the text selected in the question you are answering',
+  },
+  {
+    id: 'toggle_listen',
+    section: 'Questions',
+    description:
+      'Turn listen mode on or off: the questions are read aloud, and their audio is made ahead',
+  },
+  {
+    id: 'play_readout',
+    section: 'Questions',
+    description:
+      'Read the question aloud, or pause; turns listen mode on when it is off',
+  },
+  {
+    id: 'slower_readout',
+    section: 'Questions',
+    description: 'In listen mode: read more slowly (down to 1×)',
+  },
+  {
+    id: 'faster_readout',
+    section: 'Questions',
+    description: 'In listen mode: read faster (up to 1.5×)',
+  },
+  {
+    id: 'comment_reading',
+    section: 'Questions',
+    description:
+      'In listen mode: comment on the paragraph being read, and pause',
+  },
+  {
+    id: 'focus_answer',
+    section: 'Questions',
+    description: 'Put the caret in the answer box of the selected question',
   },
   {
     id: 'copy_question',
@@ -281,6 +316,20 @@ export const DEFAULT_BINDINGS: ReadonlyArray<string> = [
   'c=comment_selection',
   'super+alt+m=comment_selection',
   'ctrl+alt+m=comment_selection',
+  // l for listen; the prefix then space, or ⌥P from anywhere, the answer box
+  // included, to play and pause.
+  'prefix>l=toggle_listen',
+  'prefix>space=play_readout',
+  'alt+p=play_readout',
+  // ⌥, and ⌥. step the speed, as < and > sit on those keys.
+  'alt+comma=slower_readout',
+  'alt+period=faster_readout',
+  // c for comment, after the prefix or with ⌥, as ⌥P plays, from anywhere.
+  'prefix>c=comment_reading',
+  'alt+c=comment_reading',
+  // r for reply; ⌥↩ from the page, as the answer box's own send is ⌘↩.
+  'prefix>r=focus_answer',
+  'alt+enter=focus_answer',
   'prefix>y=copy_question',
   'prefix>o=open_session',
   'prefix>d=dismiss_highlight',

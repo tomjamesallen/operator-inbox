@@ -16,17 +16,19 @@ import {
 } from 'effect/http';
 import { HttpApiBuilder } from 'effect/http-api';
 import { NetAddress } from 'effect/net';
+import { ReadoutLive } from './readout';
 import { makeInboxApiLive } from './serve-inbox-api';
 import { makeInboxConfigApiLive } from './serve-inbox-config-api';
 import { makeKeybindingsApiLive } from './serve-keybindings-api';
 import { makeMacrosApiLive } from './serve-macros-api';
+import { makeReadoutApiLive, readoutAudioRouteLive } from './serve-readout-api';
 import { staticRoutesLive } from './serve-static';
 
 // The HTTP server behind `operator-inbox serve`: the `OperatorInboxApi`
 // contract, its groups' live layers, the web build's static routes, and a
 // Node listener. Composition only; the handlers are in `serve-inbox-api.ts`,
-// `serve-inbox-config-api.ts`, `serve-keybindings-api.ts` and
-// `serve-static.ts`.
+// `serve-inbox-config-api.ts`, `serve-keybindings-api.ts`,
+// `serve-readout-api.ts` and `serve-static.ts`.
 
 // The ONLY interface the server binds: the inbox holds the operator's
 // questions and answers, so it is never reachable from another machine
@@ -258,6 +260,8 @@ export const localOnly = localOnlyWith(undefined);
 // The API with every group's live layer under it. Adding a group is one more
 // `Layer.provide` here. The inbox group needs `InboxLog`, which the caller
 // provides LAZILY (`InboxLogLazy`), so the store never gates start-up. The
+// readout group's `Readout` is lazy in the same way (`ReadoutLive`): nothing
+// of listen mode is built, and no voice started, until a page asks. The
 // API declares the `RequestDecodeErrors` middleware, which answers a request
 // that does not decode with a 400 and a JSON body; its live layer is
 // provided here, or the API does not build.
@@ -266,6 +270,9 @@ export const OperatorInboxApiLive = HttpApiBuilder.layer(OperatorInboxApi).pipe(
   Layer.provide(makeInboxConfigApiLive(OperatorInboxApi)),
   Layer.provide(makeKeybindingsApiLive(OperatorInboxApi)),
   Layer.provide(makeMacrosApiLive(OperatorInboxApi)),
+  Layer.provide(
+    makeReadoutApiLive(OperatorInboxApi).pipe(Layer.provide(ReadoutLive)),
+  ),
   Layer.provide(RequestDecodeErrorsLive),
 );
 
@@ -296,7 +303,11 @@ export const makeServeLayer = (
   tailnet?: ServeTailnet,
 ) =>
   HttpRouter.serve(
-    Layer.mergeAll(OperatorInboxApiLive, staticRoutesLive(webDist)),
+    Layer.mergeAll(
+      OperatorInboxApiLive,
+      readoutAudioRouteLive,
+      staticRoutesLive(webDist),
+    ),
     {
       middleware: localOnlyWith(tailnet),
       disableLogger: true,

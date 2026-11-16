@@ -50,6 +50,16 @@ It replaces an earlier build of the window, never another app at that name, and 
 
 `bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's `icon-any-512.png` (the "Oi" mark, written by `node scripts/web-icons/make.mjs`) with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
 
+## Listen mode
+
+Listen mode reads the Questions aloud, with a local voice: Kokoro-82M, run on this Mac through [mlx-audio](https://github.com/Blaizzy/mlx-audio). It needs Apple silicon and mlx-audio, installed with:
+
+```sh
+uv tool install mlx-audio
+```
+
+`setup.sh` runs that for you when [uv](https://docs.astral.sh/uv/) is installed. The model (about 330 MB) downloads the first time a Question is read. The voice is `readout.voice` in `config.json` (default `bm_george`, a British voice). The audio is cached under `~/.local/state/operator-inbox/readout/`, swept to the last 30 days and 256 MiB. If serve cannot find mlx-audio's Python, set `OPERATOR_INBOX_READOUT_PYTHON` to it.
+
 ## Stopping the server
 
 To stop the server and remove the launch agent:
@@ -65,7 +75,7 @@ rm ~/Library/LaunchAgents/com.operator-inbox.serve.plist
 
 Nothing is needed to start. To change anything, edit the files in `~/.config/operator-inbox/` (under `$XDG_CONFIG_HOME` when that is set):
 
-- `config.json`: this machine's settings, such as `databasePath` to move the store, `serve.tailnet` to reach the app from your other devices through `tailscale serve`, and `inboxMachines` to show another machine's Inboxes here. Display settings live there too: `chaseAfterMinutes`, and `diagramSize` (diagram size: `"box"`, the default, fills the box a picture may take; `"area"` also limits its area, so a tall or a wide picture takes about the same room).
+- `config.json`: this machine's settings, such as `databasePath` to move the store, `serve.tailnet` to reach the app from your other devices through `tailscale serve`, and `inboxMachines` to show another machine's Inboxes here. `readout.voice` is listen mode's voice. Display settings live there too: `chaseAfterMinutes`, and `diagramSize` (diagram size: `"box"`, the default, fills the box a picture may take; `"area"` also limits its area, so a tall or a wide picture takes about the same room).
 - `metadata.json`: the metadata keys your Inboxes and Questions carry. `operator-inbox keys` shows the rules in force.
 - `keybindings`: your own key bindings for the page.
 - `macros.json`: your macros, slash commands for the answer box. Each has a name, a line saying what it is for, an instruction for the agent and its parameters, each a closed list of options (one of them, or with `"multiple": true` any of them), text or a number; every parameter is required unless it says `"required": false`. Type `/` at the start of a word in the answer box to pick one. `operator-inbox macros` checks the file and prints what it offers.

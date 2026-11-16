@@ -73,6 +73,21 @@ import {
   questionSearchOpenAtom,
   toggleSearchByKey,
 } from './question-search';
+import { readingAnchor } from './readout/comment';
+import { playerAtoms } from './readout/player';
+import {
+  canJumpAtom,
+  jumpAtom,
+  listenOnAtom,
+  litReadyAtom,
+  playerStateAtom,
+  playKeyAtom,
+  readoutRateAtom,
+  readoutTimeAtom,
+  setRateAtom,
+  steppedRate,
+  toggleListenAtom,
+} from './readout/readout';
 
 // The inbox screen's keymap: the defaults from
 // `@operator-inbox/core/keymap`, with the operator's keybindings file applied, read
@@ -427,6 +442,21 @@ const toggleArchive = (get: Atom.AtomContext): boolean => {
   return true;
 };
 
+// A paragraph jump in listen mode, when it has somewhere to go.
+const readoutJump = (get: Atom.AtomContext, by: 1 | -1): boolean => {
+  if (dialogOpen(get) || !get.once(canJumpAtom)) return false;
+  get.set(jumpAtom, by);
+  return true;
+};
+
+const stepReadoutRate = (get: Atom.AtomContext, by: 1 | -1): boolean => {
+  if (dialogOpen(get) || !get.once(listenOnAtom)) return false;
+  const next = steppedRate(get.once(readoutRateAtom), by);
+  if (next === undefined) return false;
+  get.set(setRateAtom, next);
+  return true;
+};
+
 type Handler = (
   get: Atom.AtomContext,
   e: KeyboardEvent,
@@ -468,8 +498,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   next_highlighted: (get) => send(get, { type: 'MovedToHighlight', by: 1 }),
   first_question: (get, e, binding) => toEnd(get, e, binding, 'first'),
   last_question: (get, e, binding) => toEnd(get, e, binding, 'last'),
-  scroll_up: (get, e, binding) => stepFlow(get, e, binding, -1),
-  scroll_down: (get, e, binding) => stepFlow(get, e, binding, 1),
+  // In listen mode, once the lit Question's audio is made, a paragraph.
+  scroll_up: (get, e, binding) =>
+    readoutJump(get, -1) || stepFlow(get, e, binding, -1),
+  scroll_down: (get, e, binding) =>
+    readoutJump(get, 1) || stepFlow(get, e, binding, 1),
   toggle_metadata: (get) => {
     get.set(colophonOpenAtom, !get.once(colophonOpenAtom));
     return true;
@@ -521,6 +554,47 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const selection = readCommentSelection();
     if (selection === undefined) return false;
     get.set(commentHereAtom, selection);
+    return true;
+  },
+  toggle_listen: (get) => {
+    if (dialogOpen(get)) return false;
+    get.set(toggleListenAtom, undefined);
+    return true;
+  },
+  // With listen mode off, it turns it on, then plays once the audio is made.
+  play_readout: (get) => {
+    if (dialogOpen(get) || litItem(get) === undefined) return false;
+    get.set(playKeyAtom, undefined);
+    return true;
+  },
+  slower_readout: (get) => stepReadoutRate(get, -1),
+  faster_readout: (get) => stepReadoutRate(get, 1),
+  // The paragraph being read, whole, as a selection of it would be; reading
+  // pauses there, so the comment's card can take the typing.
+  comment_reading: (get) => {
+    const lit = get.once(litReadyAtom);
+    if (dialogOpen(get) || lit === undefined) return false;
+    const anchor = readingAnchor(
+      document,
+      lit.key,
+      lit.script,
+      lit.ready.segments,
+      get.once(readoutTimeAtom),
+    );
+    if (anchor === undefined) return false;
+    if (get.once(playerStateAtom) !== 'stopped')
+      get.set(playerAtoms.send, {
+        type: 'Pause',
+        at: get.once(readoutTimeAtom),
+      });
+    get.set(commentHereAtom, { key: lit.key, anchor });
+    return true;
+  },
+  // The caret into the lit Question's answer box, nothing else moved.
+  focus_answer: (get) => {
+    const box = document.querySelector<HTMLTextAreaElement>('[data-zen-box]');
+    if (dialogOpen(get) || box === null) return false;
+    box.focus();
     return true;
   },
   copy_question: (get) => {

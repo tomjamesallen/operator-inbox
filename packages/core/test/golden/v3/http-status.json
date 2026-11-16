@@ -306,6 +306,19 @@
           "MacrosUnreadable"
         ]
       }
+    },
+    {
+      "endpoint": "readout.queue",
+      "method": "POST",
+      "path": "/api/readout",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ]
+      }
     }
   ]
 }

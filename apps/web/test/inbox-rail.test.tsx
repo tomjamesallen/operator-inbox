@@ -557,42 +557,58 @@ describe('the crumbs over a question', () => {
     await waitFor(() => expect(location.pathname).toBe(`/inbox/${GROVE}`));
     expect(decodeURIComponent(location.hash)).toContain('alpha');
     await waitFor(() =>
-      expect(document.querySelector('[data-zen-scope]')?.textContent).toBe(
-        'grove › alpha',
-      ),
+      expect(
+        crumbs(5)
+          .getAllByRole('button')
+          .filter((b) => b.hasAttribute('data-crumb-scope'))
+          .map((b) => b.textContent),
+      ).toEqual(['grove', 'alpha']),
     );
     expect(itemOf(4)).toBeUndefined();
   });
 });
 
-describe('the scope over the box', () => {
-  const scopeMenu = async () => {
-    const scope = await waitFor(() => {
-      const el = document.querySelector('[data-zen-scope]');
+describe('the scope in the breadcrumbs', () => {
+  const allCrumb = () =>
+    waitFor(() => {
+      const el = document.querySelector('[data-all-inboxes-crumb]');
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    fireEvent.contextMenu(scope, { clientX: 10, clientY: 10 });
-    return screen.findByRole('menu');
-  };
 
-  it('goes back to All from its menu, which shows the key', async () => {
+  it('marks the selected inbox, and its breadcrumb sticks', async () => {
     board = boardOf([grove, nightly]);
     await mount(`/inbox/${GROVE}`);
-    const item = within(await scopeMenu()).getByRole('menuitem', {
-      name: /All inboxes/,
-    });
-    const keys = keysLabel(resolveKeymap(undefined), 'all_inboxes', 1);
-    expect(keys).toBeDefined();
-    expect(item.textContent).toBe(`All inboxes${keys}`);
-    fireEvent.click(item);
-    await waitFor(() => expect(location.pathname).toBe('/inbox'));
     await waitFor(() =>
-      expect(document.querySelector('[data-zen-scope]')).toBeNull(),
+      expect(
+        [...document.querySelectorAll('[data-crumb-scope]')].map(
+          (c) => c.textContent,
+        ),
+      ).not.toHaveLength(0),
     );
+    expect(document.querySelector('[data-crumb-sticky]')).not.toBeNull();
+    expect(
+      document
+        .querySelector('[data-header-glass]')
+        ?.getAttribute('data-header-glass'),
+    ).toBe('grown');
   });
 
-  it('has nothing to clear in All, pinned', async () => {
+  it('goes back to All from the queue icon, which shows the key', async () => {
+    board = boardOf([grove, nightly]);
+    await mount(`/inbox/${GROVE}`);
+    const icon = await allCrumb();
+    expect(icon.getAttribute('aria-label')).toBe('All inboxes');
+    expect(keysLabel(resolveKeymap(undefined), 'all_inboxes', 1)).toBeDefined();
+    fireEvent.click(icon);
+    await waitFor(() => expect(location.pathname).toBe('/inbox'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-crumb-scope]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-crumb-sticky]')).toBeNull();
+  });
+
+  it('marks nothing and sticks nothing in All, pinned', async () => {
     board = {
       ...boardOf([grove, nightly]),
       inboxes: [row(grove, true), row(nightly)],
@@ -600,10 +616,9 @@ describe('the scope over the box', () => {
     await mount();
     await openDrawer();
     click('Show only pinned');
-    const item = within(await scopeMenu()).getByRole('menuitem', {
-      name: /All inboxes/,
-    });
-    expect(item.getAttribute('aria-disabled')).toBe('true');
+    await allCrumb();
+    expect(document.querySelector('[data-crumb-scope]')).toBeNull();
+    expect(document.querySelector('[data-crumb-sticky]')).toBeNull();
   });
 });
 

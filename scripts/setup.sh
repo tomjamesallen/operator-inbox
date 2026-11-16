@@ -7,7 +7,9 @@
 # all (the default): install the dependencies, build, link the
 # `operator-inbox` bin globally, write the launch agent that runs
 # `operator-inbox serve` and (re)load it, install the Claude Code hooks
-# (unless --no-hooks), then check the server answers.
+# (unless --no-hooks), install listen mode's voice (`uv tool install
+# mlx-audio`, when uv is here and it is not installed; never fatal), then
+# check the server answers.
 #
 # Both modes end by saying whether the optional desktop window is installed
 # and current (scripts/desktop-app.sh check). Neither builds it.
@@ -55,7 +57,7 @@ PNPM_LINK="${OPERATOR_INBOX_PNPM_LINK:-pnpm}"
 DOMAIN="gui/$(id -u)"
 
 usage() {
-  sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 MODE=all
@@ -169,7 +171,7 @@ env_entries() {
   local name
   printf '    <key>PATH</key>\n    <string>%s</string>\n' "$(xml_escape "$(agent_path)")"
   printf '    <key>HOME</key>\n    <string>%s</string>\n' "$(xml_escape "$HOME")"
-  for name in XDG_CONFIG_HOME XDG_STATE_HOME OPERATOR_INBOX_DATABASE_PATH; do
+  for name in XDG_CONFIG_HOME XDG_STATE_HOME OPERATOR_INBOX_DATABASE_PATH OPERATOR_INBOX_READOUT_PYTHON; do
     if [[ -n "${!name:-}" ]]; then
       printf '    <key>%s</key>\n    <string>%s</string>\n' "$name" "$(xml_escape "${!name}")"
     fi
@@ -435,6 +437,29 @@ if [[ "$MODE" == all ]]; then
     fi
   else
     note "Claude Code hooks skipped (--no-hooks)"
+  fi
+fi
+
+# --- Listen mode -----------------------------------------------------------
+
+# Listen mode reads the Questions aloud with a local voice, Kokoro through
+# mlx-audio (apps/cli/src/readout-kokoro.ts), which serve finds by the
+# console script `uv tool install` puts in ~/.local/bin. Optional: setup
+# installs it when uv is here, says how when it is not, and never fails for
+# it. Only all does this; rebuild, which a sync job runs, installs nothing.
+if [[ "$MODE" == all ]]; then
+  if [[ -n "${OPERATOR_INBOX_READOUT_PYTHON:-}" ]] ||
+    command -v mlx_audio.tts.generate >/dev/null 2>&1 ||
+    [[ -x "$HOME/.local/bin/mlx_audio.tts.generate" ]]; then
+    note "listen mode's voice (mlx-audio) is installed"
+  elif command -v uv >/dev/null 2>&1; then
+    if run uv tool install mlx-audio; then
+      note "listen mode's voice (mlx-audio) installed with uv; its model downloads on first use"
+    else
+      note "listen mode's voice (mlx-audio) did not install; listen mode stays off until: uv tool install mlx-audio"
+    fi
+  else
+    note "listen mode needs uv to install its voice: install uv, then run: uv tool install mlx-audio"
   fi
 fi
 

@@ -1,5 +1,3 @@
-import { ContextMenu } from '@base-ui/react/context-menu';
-import { Menu } from '@base-ui/react/menu';
 import {
   useAtom,
   useAtomSet,
@@ -18,11 +16,7 @@ import {
   followUpDraftAtom,
   isTextEntry,
   responseDraftAtom,
-  scopeLine,
-  screenStateAtom,
   selectedInboxAtom,
-  selectSidebarAtom,
-  sidebarPinnedOnlyAtom,
 } from '../../inbox';
 import type { InboxItem } from '../../inbox-queues';
 import {
@@ -59,13 +53,14 @@ import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
+import { ListenControl } from './listen-control';
 import {
   firstCardStop,
   MacroCards,
   MacroMenuList,
   useMacroMenu,
 } from './macro-cards';
-import { InboxMenuButton, MENU_ITEM, POPUP } from './row-menu';
+import { InboxMenuButton } from './row-menu';
 
 // The box at the foot. It belongs to the lit question, and the machine says how
 // (`composerOf`): an answer, a follow-up, a question for the agent, or nothing
@@ -572,74 +567,32 @@ const FootNote = ({ composer }: { readonly composer: ComposerState }) => {
   );
 };
 
-// What the page is narrowed to, beside the count, while it is narrowed.
-const useScope = (): string | undefined => {
-  const board = useAtomValue(drawnBoardAtom);
-  const selected = useAtomValue(selectedInboxAtom);
-  const { inboxes, groups } = useAtomValue(screenStateAtom);
-  const onlyPinned = useAtomValue(sidebarPinnedOnlyAtom);
-  if (
-    board === undefined ||
-    (selected === undefined && inboxes.length === 0 && !onlyPinned)
-  )
-    return undefined;
-  const scope = scopeLine(board, selected, inboxes, groups, onlyPinned);
-  return onlyPinned ? `${scope}, pinned` : scope;
-};
-
-// What the page is narrowed to. A right-click (a long press on a touch screen)
-// opens its menu, which goes back to All as the `all_inboxes` key does.
-const ScopeLabel = ({ scope }: { readonly scope: string }) => {
-  const selected = useAtomValue(selectedInboxAtom);
-  const { inboxes } = useAtomValue(screenStateAtom);
-  const select = useAtomSet(selectSidebarAtom);
-  const keys = useAtomValue(keyHintAtom('all_inboxes'));
-  return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger data-zen-scope className="min-w-0 truncate">
-        {scope}
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Positioner className="z-40">
-          <ContextMenu.Popup finalFocus={false} className={POPUP}>
-            <Menu.Item
-              className={MENU_ITEM}
-              disabled={selected === undefined && inboxes.length === 0}
-              data-all-inboxes
-              onClick={() => select({ inboxId: undefined, groups: [] })}
-            >
-              All inboxes
-              <span className="text-fg/30">{keys.first}</span>
-            </Menu.Item>
-          </ContextMenu.Popup>
-        </ContextMenu.Positioner>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
-  );
-};
-
+// The line over the answer box: listen mode's control on the left, and the
+// lit Question's actions and place on the right. The page's scope is shown in
+// each Question's breadcrumb (`scope-crumb.tsx`), not here, so nothing on
+// this line moves when listen mode is toggled or the scope changes. On a
+// phone the line keeps a strip under its buttons for listen mode's bar,
+// whether listen mode is on or off.
 const TitleLine = () => {
   const queue = useAtomValue(activeQueueAtom);
   const items = useAtomValue(shownQueuesAtom)[queue];
   const lit = useAtomValue(litKeyAtom);
-  const scope = useScope();
   const selected = useAtomValue(selectedInboxAtom);
   const at = items.findIndex((i) => i.key === lit);
   const item = items[at];
-  // Narrowed to nothing, the scope says why, and an Inbox's own session and
-  // metadata sit beside its name, with no question to carry them.
+  // Narrowed to nothing, an Inbox's own session and metadata sit here, with
+  // no question to carry them.
   if (item === undefined)
-    return scope === undefined ? null : (
+    return selected === undefined ? null : (
       <div className="mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40">
-        <ScopeLabel scope={scope} />
-        {selected !== undefined && <InboxActions inboxId={selected} />}
-        {selected !== undefined && <InboxMenuButton inboxId={selected} />}
+        <InboxActions inboxId={selected} />
+        <InboxMenuButton inboxId={selected} />
       </div>
     );
   return (
     // The lit question is plain on the page, so its title is not repeated here.
-    <div className="mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40">
-      {scope !== undefined && <ScopeLabel scope={scope} />}
+    <div className="relative mb-s1 flex items-center justify-end gap-s2 text-11 text-fg/40 compact:pb-5">
+      <ListenControl />
       <LitActions inboxId={item.inboxId} />
       <InboxMenuButton inboxId={item.inboxId} lit />
       <span className="shrink-0 tabular-nums">

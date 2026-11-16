@@ -100,6 +100,13 @@
   --spacing-s5: calc(27px * var(--ui-scale));
   /* Fixed parts of the layout. */
   --spacing-header: calc(42px * var(--ui-scale));
+  /* A breadcrumb row; where a stuck one sits, tucked up under the header's
+     icons with a gutter of s2 between; how far that is above the header's
+     foot; and the header's glass grown down to hold it. */
+  --spacing-crumb: calc(30px * var(--ui-scale));
+  --spacing-crumb-top: calc(34px * var(--ui-scale));
+  --spacing-crumb-lift: calc((42px - 34px) * var(--ui-scale));
+  --spacing-header-crumb: calc((34px + 30px) * var(--ui-scale));
   --spacing-rail: calc(218px * var(--ui-scale));
   /* A card field's first row: its label and its control are both this tall,
      so a label sits level with the control's first line however many lines
