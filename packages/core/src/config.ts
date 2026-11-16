@@ -11,7 +11,7 @@ import {
   SchemaTransformation,
 } from 'effect';
 import { LOCAL_MACHINE } from './api/inbox-api';
-import { ChaseAfterMinutes } from './api/inbox-config-api';
+import { ChaseAfterMinutes, DiagramSize } from './api/inbox-config-api';
 import { SERVE_DEFAULT_PORT } from './api/serve-port';
 import {
   DEFAULT_INBOX_METADATA,
@@ -306,6 +306,9 @@ export const AppConfig = Schema.Struct({
   // How long a question may sit with the agent before the page says it
   // probably needs chasing, in minutes. Unset: `DEFAULT_CHASE_AFTER_MINUTES`.
   chaseAfterMinutes: Schema.optional(ChaseAfterMinutes),
+  // How a picture in a question's body is sized: `box` or `area`
+  // (`DiagramSize`). Unset: `DEFAULT_DIAGRAM_SIZE`, `box`.
+  diagramSize: Schema.optional(DiagramSize),
 });
 export type AppConfig = typeof AppConfig.Type;
 

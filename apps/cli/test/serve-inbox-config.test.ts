@@ -86,6 +86,18 @@ describe('serve’s inbox config', () => {
     }),
   );
 
+  it.effect('answers config.json’s diagramSize when it is set', () =>
+    Effect.gen(function* () {
+      expect(
+        (yield* readUnder(xdgWith({ config: '{"diagramSize":"area"}' })))
+          .diagramSize,
+      ).toBe('area');
+      expect(
+        'diagramSize' in (yield* readUnder(xdgWith({ config: '{}' }))),
+      ).toBe(false);
+    }),
+  );
+
   it.effect('keeps the rules when config.json does not load', () =>
     Effect.gen(function* () {
       const read = yield* readUnder(

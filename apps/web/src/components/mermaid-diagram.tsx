@@ -6,21 +6,34 @@ import { mermaidImageAtom, mermaidReservedSizeAtom } from '../mermaid';
 import { PictureFrame } from './picture-frame';
 import { focusRing, headerButton, label } from './styles';
 
-// A diagram, drawn inline as a picture the column's width, in the frame every
-// picture in a body shares (`PictureFrame`), with a full-screen view one click
-// away: Base UI's Dialog, which takes Escape to close and gives the caret back
-// to ⤢. The drawing is started when the board arrives (`mermaidPrefetchAtom`),
-// so by the time a question is drawn its diagram usually is too.
+// A diagram, drawn inline as a picture in the frame every picture in a body
+// shares (`PictureFrame`), with a full-screen view one click away: Base UI's
+// Dialog, which takes Escape to close and gives the caret back to ⤢. The
+// drawing is started when the board arrives (`mermaidPrefetchAtom`), so by
+// the time a question is drawn its diagram usually is too.
+//
+// In the reading column the figure is sized as a code block is (`index.css`,
+// `[data-zen-flow] [data-question-body] > pre`): the column's width at least,
+// as wide as its picture asks, and no further than the right edge of the
+// reader (`max-w-figure-bleed`: the code block's edge, written from inside
+// the column-wide `picture-room` its picture is sized in). The label row
+// keeps out of that sum (`contain-inline-size`), so only the picture widens
+// the figure.
 export const MermaidDiagram = ({ source }: { readonly source: string }) => (
-  <figure className="my-s2 border border-fg/13" data-mermaid>
-    <div className="flex items-center gap-s2 px-s2 py-0.5">
-      <span className={`min-w-0 flex-1 truncate ${label}`}>Diagram</span>
-      <FullScreen source={source} />
-    </div>
-    <div className="border-t border-fg/10 p-s2">
-      <MermaidPicture source={source} />
-    </div>
-  </figure>
+  <div className="picture-room">
+    <figure
+      className="my-s2 border border-fg/13 in-data-zen-flow:w-max in-data-zen-flow:max-w-figure-bleed in-data-zen-flow:min-w-full"
+      data-mermaid
+    >
+      <div className="flex contain-inline-size items-center gap-s2 px-s2 py-0.5">
+        <span className={`min-w-0 flex-1 truncate ${label}`}>Diagram</span>
+        <FullScreen source={source} />
+      </div>
+      <div className="border-t border-fg/10 p-s2">
+        <MermaidPicture source={source} />
+      </div>
+    </figure>
+  </div>
 );
 
 const FullScreen = ({ source }: { readonly source: string }) => (

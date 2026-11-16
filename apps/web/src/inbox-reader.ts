@@ -1,6 +1,8 @@
 import {
   DEFAULT_CHASE_AFTER_MINUTES,
+  DEFAULT_DIAGRAM_SIZE,
   DEFAULT_INBOX_METADATA,
+  DiagramSize,
   type InboxId,
   type InboxMachineKey,
   type InboxMetadataRules,
@@ -8,6 +10,7 @@ import {
   type MacroInvoked,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
+import { KeyValueStore } from 'effect/persistence';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { InboxClient } from './api';
 import { clockAtom, nowMillis } from './clock';
@@ -396,6 +399,35 @@ export const chaseAfterMsAtom = Atom.make(
         config.chaseAfterMinutes ?? DEFAULT_CHASE_AFTER_MINUTES,
     }) * 60_000,
 );
+
+// The diagram size last read, kept in this browser's localStorage, so a
+// reload sizes each picture by it from the first render, before config.json
+// is read again: a picture's box, reserved before it is drawn, is what keeps
+// the reader's place (`PictureFrame`). Where localStorage cannot be read, the
+// default stands in until the config arrives.
+const rememberedDiagramSizeAtom = Atom.kvs({
+  runtime: Atom.runtime(KeyValueStore.layerStorage(() => localStorage)),
+  key: 'operator-inbox:diagram-size',
+  schema: DiagramSize,
+  defaultValue: (): DiagramSize => DEFAULT_DIAGRAM_SIZE,
+}).pipe(Atom.keepAlive);
+
+/**
+ * How a picture in a question's body is sized (`pictureFrameStyle`):
+ * config.json's `diagramSize`, or `box` when it is unset. Until the config is
+ * read, or when it cannot be, the one last read in this browser.
+ */
+export const diagramSizeAtom = Atom.make((get): DiagramSize => {
+  const remembered = get(rememberedDiagramSizeAtom);
+  return Option.match(AsyncResult.value(get(inboxConfigAtom)), {
+    onNone: () => remembered,
+    onSome: (config) => {
+      const size = config.diagramSize ?? DEFAULT_DIAGRAM_SIZE;
+      if (size !== remembered) get.set(rememberedDiagramSizeAtom, size);
+      return size;
+    },
+  });
+}).pipe(Atom.keepAlive);
 
 /** Why the rules could not be read, for the sidebar's notes. */
 export const metadataRulesFailureAtom = Atom.make((get): string | undefined => {

@@ -102,7 +102,12 @@
   /* The tallest a picture in a question's body is drawn inline: an Excalidraw
      drawing's preview and a Mermaid diagram alike. A taller one scales down
      to fit, and its full-screen view shows it larger. */
-  --max-height-picture: calc(360px * var(--ui-scale));
+  --max-height-picture: min(80vh, calc(600px * var(--ui-scale)));
+  /* The most room a framed picture may take under config.json's
+     `diagramSize: "area"`, as a depth: its area is held to the column's width
+     times this, so a picture of any shape costs about as much of the page
+     (`pictureFrameStyle` in `picture-frame.tsx`). */
+  --max-area-picture: calc(400px * var(--ui-scale));
   /* A modal panel: tall enough for a long list,
      never taller than the viewport it floats in. */
   --max-height-dialog: 86dvh;
@@ -326,6 +331,16 @@
   }
 }
 
+/* `inline`, so the utility carries the value itself: a value in `@theme`
+   lives on `:root`, and a `var()` inside it would be read there, where
+   `--reader-width` is never set. */
+@theme inline {
+  /* `--container-bleed`'s edge, for a picture's figure. The figure sits in a
+     container the column's width (`picture-room`), so there `cqw` is the
+     column, and the reader's width comes in as `--reader-width`. */
+  --container-figure-bleed: calc(50cqw + var(--reader-width) / 2);
+}
+
 /* Tailwind v4 wraps `hover:` in `@media (hover: hover)`, so on a touch
    screen it never fires. The design's hover reveals a control, and a tap
    must still reach it, so `hover:` is plain :hover. */
@@ -354,6 +369,23 @@
    minimap stands in for it. */
 @utility scrollbar-none {
   scrollbar-width: none;
+}
+
+/* Tailwind has no utility for this. The room a picture in a question's body
+   is sized in: a container the column's width, so `cqw` inside it is the
+   column, which a picture's size is reckoned from (`pictureFrameStyle`); a
+   container's own `cqw` is still its parent container's, the reader's, so
+   it hands that width down as `--reader-width`. The property is registered
+   as a length so it is fixed to the reader's width here, not worked out
+   again against the column further down. */
+@property --reader-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@utility picture-room {
+  container-type: inline-size;
+  --reader-width: 100cqw;
 }
 
 @layer base {
@@ -529,8 +561,10 @@
     @apply max-w-measure;
   }
   /* In the one-question reading column, code and tables keep the column's
-     left edge and run right into the empty margin when they need it. Mermaid
-     and images do not grow. */
+     left edge and run right into the empty margin when they need it. A
+     drawing's or a Mermaid diagram's figure does the same, to the same edge,
+     with utilities on the element (`drawing-block.tsx`,
+     `mermaid-diagram.tsx`); images do not grow. */
   [data-zen-flow] [data-question-body] > :is(pre, table) {
     @apply w-max max-w-bleed min-w-full;
   }
