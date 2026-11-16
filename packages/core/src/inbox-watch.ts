@@ -6,7 +6,7 @@ import { InboxId } from './schema/identifiers';
 // (`operator-inbox watch`) polls one Inbox and prints a line when the
 // operator answers, so a session armed with it through the harness's Monitor is
 // woken; the guard (`operator-inbox guard`, run by the Stop hook) stops a turn
-// ending while questions wait and no watcher is running. The burst and owner
+// ending while answers wait, or while no watcher is running. The burst and owner
 // rules are `watcher.ts`'s.
 
 /**
@@ -69,8 +69,10 @@ export type WatchGuardInput = {
  * running: an answer would then land with nothing to wake the session, and an
  * agent often forgets to watch for one. That holds when nothing waits too,
  * because the operator can put a Question to the agent from the app at any
- * time, and a watcher paused on an empty Inbox would miss it. The reason is what the agent reads, so it
- * says exactly what to do.
+ * time, and a watcher paused on an empty Inbox would miss it. Nor while
+ * answers wait, watcher or not: a watcher counts every answer there when it
+ * starts as seen, so an answer that landed before it was armed never wakes the
+ * session. The reason is what the agent reads, so it says exactly what to do.
  */
 export const decideWatchGuard = (
   input: WatchGuardInput,
@@ -79,9 +81,17 @@ export const decideWatchGuard = (
   | { readonly block: true; readonly reason: string } => {
   const inbox = input.inbox;
   if (input.stopHookActive || inbox === undefined) return { block: false };
-  if (inbox.watcherAlive || inbox.state.archived) return { block: false };
+  if (inbox.state.archived) return { block: false };
   const asked = awaitingOperator(inbox.state).length;
   const answered = awaitingAgent(inbox.state).length;
+  const them = answered === 1 ? 'it' : 'them';
+  if (inbox.watcherAlive) {
+    if (answered === 0) return { block: false };
+    return {
+      block: true,
+      reason: `Inbox "${inbox.label}": ${answered} answer${answered === 1 ? ' is' : 's are'} already waiting, and the running watcher will not report ${them}: run \`operator-inbox answers\`, act on ${them}, then mark ${them} with \`operator-inbox done\`.`,
+    };
+  }
   const parts: Array<string> = [];
   if (answered > 0)
     parts.push(

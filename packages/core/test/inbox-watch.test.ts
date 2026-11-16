@@ -81,6 +81,21 @@ describe('the guard', () => {
     );
   });
 
+  it('blocks on answers already waiting even while a watcher runs, since it will never report them', () => {
+    const decision = decideWatchGuard({
+      stopHookActive: false,
+      inbox: inbox([opened, asked(1), asked(2), answered(1)], true),
+    });
+    expect(decision.block).toBe(true);
+    if (!decision.block) return;
+    expect(decision.reason).toContain('1 answer is already waiting');
+    expect(decision.reason).toContain('operator-inbox answers');
+    // A watcher runs, so the reason does not ask for another one, nor dwell
+    // on the question still with the operator.
+    expect(decision.reason).not.toContain(WATCH_COMMAND);
+    expect(decision.reason).not.toContain('waits for the operator');
+  });
+
   it('blocks an idle inbox nothing watches, since the operator can ask from the app', () => {
     const decision = decideWatchGuard({
       stopHookActive: false,

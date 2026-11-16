@@ -1455,7 +1455,7 @@ const guardCommand = Command.make('guard', {}, () =>
   ),
 ).pipe(
   Command.withDescription(
-    "The Stop hook: blocks the turn ending while this session's inbox waits on answers with no watcher running, and, in inbox mode, while the last message asks the operator something in chat",
+    "The Stop hook: blocks the turn ending while this session's inbox has answers waiting (watcher or not), or has no watcher running, and, in inbox mode, while the last message asks the operator something in chat",
   ),
 );
 
