@@ -188,6 +188,21 @@ describe('question codes', () => {
     expect(slot()?.classList.contains('invisible')).toBe(false);
   });
 
+  // jsdom lays nothing out, so this holds the shape the eyebrow's height
+  // depends on: the button sits on its text's baseline, not on the bottom of
+  // the mark's taller icon, so the eyebrow is as tall with the code in it as
+  // with the code in the gutter.
+  it('sits the code on its text, so the eyebrow is one height wherever the code is', async () => {
+    serve.board = coded();
+    await mounted();
+    await waitFor(() => expect(litKey()).not.toBeUndefined());
+    const text = lit().querySelector(
+      '[data-question-code] > [data-question-code-text]',
+    );
+    expect(text?.textContent).toMatch(/^toe#\d+$/);
+    expect(text?.classList).toContain('self-baseline');
+  });
+
   it('shows #n for an Inbox with no code yet', async () => {
     await mounted();
     await waitFor(() => expect(litKey()).not.toBeUndefined());

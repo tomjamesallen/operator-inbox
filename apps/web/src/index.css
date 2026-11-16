@@ -200,6 +200,12 @@
   --grid-template-columns-shut: 0fr;
   --grid-template-columns-open: 1fr;
 
+  /* The gutter left of a question that its box takes in, so what hangs there,
+     its code, is inside the box its fade is set on: WebKit leaves out that
+     fade when it repaints only a part of the page outside the box. Half the
+     room `--container-code-gutter` adds, at the reader's scale of 1.5. */
+  --spacing-code-gutter: calc(100px * var(--ui-scale));
+
   /* What the inbox sidebar keeps clear of the question: 48px at the reader's
      scale. */
   --spacing-rail-gutter: calc(32px * var(--ui-scale));

@@ -88,7 +88,13 @@ const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
           >
             <Icon d={mark === 'bad' ? ICON_FAILED : ICON_DONE} />
           </span>
-          {code}
+          {/* The button's baseline is the code's own, not the bottom of the
+              mark's icon, which would sit the button lower than the
+              eyebrow's text and make the eyebrow taller with the code in it
+              than in the gutter: the question would move as the code does. */}
+          <span data-question-code-text className="self-baseline">
+            {code}
+          </span>
         </button>
       </Tip>
     </span>
@@ -346,7 +352,11 @@ const Dots = ({ item }: { readonly item: ReaderItem }) => (
 );
 
 // The flow sets how much of each question shows (`paint`), straight on this div
-// and before the browser draws it, so nothing here says so.
+// and before the browser draws it, so nothing here says so. The div reaches
+// into the gutter on its left (`-ml-code-gutter pl-code-gutter`), so the code
+// that hangs there is inside its box as well as inside it: WebKit drops a
+// box's opacity from a repaint that does not touch the box, and drew the code
+// at full strength beside its faded question.
 export const QuestionItem = memo(
   ({
     item,
@@ -359,23 +369,26 @@ export const QuestionItem = memo(
   }) => (
     <div
       data-zen-item={item.key}
-      className="relative data-zen-dark:pointer-events-none"
+      className="-ml-code-gutter pl-code-gutter data-zen-dark:pointer-events-none"
     >
-      <Dots item={item} />
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keys and the minimap move the focus too */}
-      <article
-        data-zen-lit={lit || undefined}
-        onClick={() => {
-          if (!lit) onPick(item.key);
-        }}
-        className={lit ? undefined : 'cursor-pointer'}
-      >
-        <Eyebrow item={item} />
-        <div className="mt-s2 font-reading">
-          <Content item={item} />
-        </div>
-        <Colophon item={item} lit={lit} />
-      </article>
+      {/* `relative`: the dots sit beside the question, not the gutter. */}
+      <div className="relative">
+        <Dots item={item} />
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keys and the minimap move the focus too */}
+        <article
+          data-zen-lit={lit || undefined}
+          onClick={() => {
+            if (!lit) onPick(item.key);
+          }}
+          className={lit ? undefined : 'cursor-pointer'}
+        >
+          <Eyebrow item={item} />
+          <div className="mt-s2 font-reading">
+            <Content item={item} />
+          </div>
+          <Colophon item={item} lit={lit} />
+        </article>
+      </div>
     </div>
   ),
 );
