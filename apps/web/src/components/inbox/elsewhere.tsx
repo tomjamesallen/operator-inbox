@@ -28,8 +28,8 @@ const lineId = (key: string) => `elsewhere-${key}`;
  * The empty state's owl (`SnoozingOwl`'s drawing), awake: its eyes open, a
  * little lidded, a blink every few seconds and a shake now and then. Its body
  * runs on below its base, behind the box it sits on, so the box's top edge is
- * what cuts it off and no line of the owl crosses the box. With reduced motion
- * it sits still, eyes open.
+ * what cuts it off and no line of the owl crosses the box. It moves under
+ * reduced motion too: its motion is slight and slow, and the operator wants it.
  */
 export const AwakeOwl = () => (
   <svg
@@ -41,7 +41,7 @@ export const AwakeOwl = () => (
     strokeLinejoin="round"
     className="relative -mb-2 w-36 overflow-visible fill-none stroke-fg"
   >
-    <g className="origin-owl animate-owl-shake motion-reduce:animate-none">
+    <g className="origin-owl animate-owl-shake">
       {/* One fade for the lot, so a line crossing another does not darken. */}
       <g className="opacity-45">
         <path d="M35 72V66C33 54 33 44 37 37L34 28 47 32Q60 28 73 32L86 28 83 37C87 44 87 54 85 66V72" />
@@ -52,12 +52,12 @@ export const AwakeOwl = () => (
         <path
           d="M42 47Q48.5 52 55 47M65 47Q71.5 52 78 47"
           data-owl-lid
-          className="animate-owl-blink-lid opacity-0 motion-reduce:hidden"
+          className="animate-owl-blink-lid opacity-0"
         />
       </g>
       <g
         data-owl-eyes
-        className="origin-center animate-owl-blink fill-fg stroke-none opacity-80 transform-fill motion-reduce:animate-none"
+        className="origin-center animate-owl-blink fill-fg stroke-none opacity-80 transform-fill"
       >
         <circle cx="48.5" cy="48" r="3.25" />
         <circle cx="71.5" cy="48" r="3.25" />

@@ -307,15 +307,15 @@ describe('the empty state', () => {
     expect(options()).toEqual(['kiln1', 'Show all inbox items']);
   });
 
-  it('sits still with reduced motion', async () => {
+  it('keeps moving with reduced motion', async () => {
     serve.board = emptyHere();
     mount(`/inbox/${A}`);
     await waitFor(() => expect(list()).not.toBeNull());
     const owl = document.querySelector('[data-zen-owl="awake"]') as Element;
-    for (const part of owl.querySelectorAll('[class*="animate-owl"]'))
-      expect(part.getAttribute('class')).toMatch(
-        /motion-reduce:(animate-none|hidden)/,
-      );
+    const parts = owl.querySelectorAll('[class*="animate-owl"]');
+    expect(parts.length).toBeGreaterThan(0);
+    for (const part of parts)
+      expect(part.getAttribute('class')).not.toMatch(/motion-reduce:/);
   });
 
   it('takes no focus on a page load', async () => {
