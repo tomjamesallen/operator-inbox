@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "exactOptionalPropertyTypes": true,
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          // Correctness / requirement-leak family. missingEffectContext +
+          // missingLayerContext are error by default; pinned so a future default
+          // downgrade can't silently weaken the context/leak gate.
+          "missingEffectContext": "error",
+          "missingLayerContext": "error",
+          // A service whose methods need other services leaks them to every caller.
+          "leakingRequirements": "error",
+          // The clock is read via DateTime, never the
+          // platform Date API, so it stays mockable with TestClock.
+          "globalDate": "error",
+          "globalDateInEffect": "error",
+          // Determinism: ids come from the injected newId (ulid), never a
+          // non-deterministic global.
+          "globalRandom": "error",
+          "globalRandomInEffect": "error",
+          // Output goes through Effect Console, never raw console.
+          "globalConsole": "error",
+          "globalConsoleInEffect": "error",
+          // ulid-based ids only; no crypto.randomUUID().
+          "cryptoRandomUUID": "error",
+          "cryptoRandomUUIDInEffect": "error",
+          // Env is read via Config (the sanctioned mockable edge), never
+          // process.env directly.
+          "processEnv": "error",
+          "processEnvInEffect": "error"
+        }
+      }
+    ]
+  },
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,26 @@
+{"_tag":"InboxOpened","inboxId":"01J00000000000000000000IA1","label":"Example inbox","sessionId":"00000000-0000-4000-8000-00000000c0de","cwd":"/work/example","metadata":{"topic":"example-topic","repo":"example-owner/example-repo"}}
+{"_tag":"InboxOpened","inboxId":"01J00000000000000000000IB1","label":"Bare inbox"}
+{"_tag":"InboxAdopted","inboxId":"01J00000000000000000000IA1","sessionId":"00000000-0000-4000-8000-00000000c0de"}
+{"_tag":"InboxRenamed","inboxId":"01J00000000000000000000IA1","label":"Renamed inbox","previousLabel":"Example inbox"}
+{"_tag":"InboxRenamed","inboxId":"01J00000000000000000000IB1","label":"Renamed bare inbox"}
+{"_tag":"InboxArchived","inboxId":"01J00000000000000000000IB1"}
+{"_tag":"InboxUnarchived","inboxId":"01J00000000000000000000IB1"}
+{"_tag":"QuestionAsked","inboxId":"01J00000000000000000000IA1","number":1,"title":"First question","body":"A body with **markdown**, a \"quote\" and a\nsecond line.","metadata":{"group":"alpha"}}
+{"_tag":"QuestionAsked","inboxId":"01J00000000000000000000IA1","number":2,"title":"Second question","body":"Unicode: café — ✓"}
+{"_tag":"QuestionAnswered","inboxId":"01J00000000000000000000IA1","number":1,"response":"Yes, go ahead."}
+{"_tag":"AnswerProcessed","inboxId":"01J00000000000000000000IA1","number":1}
+{"_tag":"QuestionEdited","inboxId":"01J00000000000000000000IA1","number":2,"title":"Second question, edited","body":"Edited body."}
+{"_tag":"QuestionWithdrawn","inboxId":"01J00000000000000000000IA1","number":2,"reason":"No longer relevant."}
+{"_tag":"QuestionWithdrawn","inboxId":"01J00000000000000000000IA1","number":3,"reason":""}
+{"_tag":"InboxMetadataChanged","inboxId":"01J00000000000000000000IA1","set":{"team":"example-team"},"unset":["repo"]}
+{"_tag":"QuestionMetadataChanged","inboxId":"01J00000000000000000000IA1","number":1,"set":{},"unset":[]}
+{"_tag":"QuestionHighlighted","inboxId":"01J00000000000000000000IA1","number":4,"note":"Related to the release."}
+{"_tag":"QuestionHighlighted","inboxId":"01J00000000000000000000IA1","number":5}
+{"_tag":"QuestionHighlightDismissed","inboxId":"01J00000000000000000000IA1","number":4,"by":"operator"}
+{"_tag":"QuestionHighlightDismissed","inboxId":"01J00000000000000000000IA1","number":5,"by":"agent"}
+{"_tag":"QuestionMoved","inboxId":"01J00000000000000000000IA1","number":6,"toInboxId":"01J00000000000000000000IB1","toNumber":1,"question":{"title":"Moved question","body":"Moved body.","revision":2,"metadata":{"group":"beta"},"state":"processed","response":"Done.","withdrawn":false,"reason":"Carried reason.","highlight":{"note":"Carried note.","stamp":{"seq":40,"at":"2026-01-02T03:04:05.000Z"}},"askedStamp":{"seq":10,"at":"2026-01-01T00:00:00.000Z"},"answeredStamp":{"seq":20},"processedStamp":{"seq":30,"at":"2026-01-01T02:00:00.000Z"}}}
+{"_tag":"QuestionMoved","inboxId":"01J00000000000000000000IA1","number":7,"toInboxId":"01J00000000000000000000IB1","toNumber":2,"question":{"title":"Bare moved question","body":"","revision":1,"metadata":{},"state":"awaiting-operator","withdrawn":false,"highlight":{}}}
+{"_tag":"InboxPinned","inboxId":"01J00000000000000000000IA1"}
+{"_tag":"InboxUnpinned","inboxId":"01J00000000000000000000IA1"}
+{"_tag":"GroupPinned","inboxId":"01J00000000000000000000IA1","group":"alpha"}
+{"_tag":"GroupUnpinned","inboxId":"01J00000000000000000000IA1","group":"alpha"}

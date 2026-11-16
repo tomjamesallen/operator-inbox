@@ -1,0 +1,15 @@
+# Golden encodings for `@operator-inbox/core`
+
+Each file here is the exact bytes the core writes for the fixed, literal input beside it in `test/encoded-forms-v3.test.ts`. That test encodes the inputs and compares byte for byte and, where a form is read back, decodes the file and compares the value, so a change to an on-disk or on-the-wire form fails a test even when the type-check is clean.
+
+**A golden edited to make a build pass is a defect, not a fix.** If the build writes different bytes, the build is what changed. Either fix the build, or make the change on purpose, as a deliberate change to an on-disk or on-the-wire form.
+
+What is here:
+
+- `inbox-events.jsonl`: every `InboxEvent` variant as the inbox log stores it, one encoded event per line.
+- `dto-inbox-board.json`, `dto-inbox-index.json`: the inbox API's two read DTOs.
+- `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, rename).
+- `http-error-bodies.json`: the body of every error the inbox API sends. The messages of `InboxConfigUnreadable` and `KeybindingsUnreadable` name the app's own config paths.
+- `http-status.json`: the status of every error the inbox API sends, and every endpoint's method, path, successes and errors.
+
+biome must never format this directory (the root `biome.json` excludes `**/test/golden`): a formatted golden is no longer the bytes the core writes.

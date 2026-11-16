@@ -1,0 +1,35 @@
+{
+  "name": "operator-inbox",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "engines": {
+    "node": ">=22.16.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "source-map-js": ">=1.2.2"
+    }
+  },
+  "scripts": {
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "check-effect": "turbo check-effect",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "turbo test && pnpm test-processes",
+    "test-processes": "pnpm --filter @operator-inbox/cli exec vitest run --config vitest.processes.config.ts",
+    "check-code-lite": "biome check . && turbo check-types && turbo check-effect",
+    "check-code-full": "pnpm check-code-lite && pnpm test",
+    "verify": "pnpm check-code-full && pnpm build",
+    "cli": "pnpm --filter @operator-inbox/cli cli"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "turbo": "^2.9.16",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
