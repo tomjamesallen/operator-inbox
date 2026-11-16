@@ -62,7 +62,7 @@ Once the Inbox is open, every question you would have asked the operator in the 
 operator-inbox ask --title "<the decision, as a question>" --body-file <path>
 ```
 
-It prints the Question's **code**, such as `op-asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn as a diagram, folded under a *Diagram* fold that the operator opens, with a full-screen view. Use one for a flow, a sequence or a state machine the operator has to follow. A diagram Mermaid cannot parse shows its error and its source, so check the syntax. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. Otherwise prefer a pseudocode block, a file tree or a table.
+It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn as a diagram, folded under a *Diagram* fold that the operator opens, with a full-screen view. Use one for a flow, a sequence or a state machine the operator has to follow. A diagram Mermaid cannot parse shows its error and its source, so check the syntax. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. Otherwise prefer a pseudocode block, a file tree or a table.
 
 **The operator will read it cold, maybe days later, with nothing else open.** So each body holds:
 
@@ -81,8 +81,8 @@ An Inbox and each Question carry a metadata dictionary of named values, which th
 operator-inbox open --label "<title>" --meta repo=<owner>/<repo> --meta branch=main --meta session=<session id>
 operator-inbox ask --title "<question>" --body-file <path> --meta pr=https://github.com/<owner>/<repo>/pull/68
 operator-inbox meta                                      # print the Inbox's
-operator-inbox meta op-asv#3 --meta pr=69 --unset topic  # change op-asv#3's
-operator-inbox meta op-asv#3 --json                      # print op-asv#3's as JSON
+operator-inbox meta asv#3 --meta pr=69 --unset topic  # change asv#3's
+operator-inbox meta asv#3 --json                      # print asv#3's as JSON
 ```
 
 `--meta` on `open` sets the keys on an Inbox that already exists too. A change works on an archived Inbox and on a Question in any state; `answers` shows each Question's metadata as `meta key=value` lines.
@@ -104,19 +104,20 @@ operator-inbox meta op-asv#3 --json                      # print op-asv#3's as J
 
 ```sh
 operator-inbox ask --title "<question>" --body-file <path> --meta group=store  # ask in a group
-operator-inbox meta op-asv#3 --meta group=ui                                   # move op-asv#3 to another group
-operator-inbox meta op-asv#3 --unset group                                     # move op-asv#3 back to Default
+operator-inbox meta asv#3 --meta group=ui                                   # move asv#3 to another group
+operator-inbox meta asv#3 --unset group                                     # move asv#3 back to Default
 ```
 
 ### Question codes
 
-Every Question has a code: its Inbox's code, then `#` and its number, such as `op-asv#3`. The Inbox's code is two letters from its name and three random letters, set once when the Inbox is opened, and a rename never changes it. The operator sees the code on each card in the app, and clicking it copies the Question for this session.
+Every Question has a code: its Inbox's code, then `#` and its number, such as `asv#3`. The Inbox's code is three random lower-case letters, unique on this machine, set once when the Inbox is opened, and a rename never changes it. The operator sees the code on each card in the app, and clicking it copies the Question for this session.
 
-- **Quote the code whenever you mention a Question**, in the session and in a Question's body: `op-asv#3`, not `#3`. The operator may have many Inboxes open, and the code says which one.
-- **Every command that takes a question number takes the code too**: `done`, `edit`, `withdraw`, `meta`, `highlight`, `unhighlight` and `move`. A code names its Inbox, so it needs neither this session nor `--inbox`: `operator-inbox done op-asv#3` works from any session. When the operator pastes a code, use it as it is.
+- **Quote the code whenever you mention a Question**, in the session and in a Question's body: `asv#3`, not `#3`. The operator may have many Inboxes open, and the code says which one.
+- **Every command that takes a question number takes the code too**: `done`, `edit`, `withdraw`, `meta`, `highlight`, `unhighlight` and `move`. A code names its Inbox, so it needs neither this session nor `--inbox`: `operator-inbox done asv#3` works from any session. When the operator pastes a code, use it as it is.
 - A plain number (`operator-inbox done 3`) still works, in this session's Inbox or the one `--inbox` names. Give every Question in one command as a code or every one as a number, from one Inbox.
-- `--inbox` and `move --to` take an Inbox's code (`op-asv`) as well as its id.
+- `--inbox` and `move --to` take an Inbox's code (`asv`) as well as its id.
 - `open` prints the Inbox's code in brackets after its name, `list` prints it after each id, and `answers` names each Question by its code (`"code"` under `--json`). An Inbox opened before codes gets its code when `operator-inbox serve` next starts; until then it shows `#3`, and its numbers work as before.
+- Codes once had two letters from the Inbox's name in front (`op-asv#3`). `serve` moves each such Inbox to its three letters when it next starts (`asv#3`, or a fresh three when another Inbox already has them), and every command still takes the older form, so a code quoted in an older transcript still finds its Question. Quote the current form from then on.
 
 ### Linking to a Question
 
@@ -127,8 +128,8 @@ To point the operator at one Question, link to the Question itself, not just its
 When the operator asks you to show them the questions about something ("show me the questions relating to this"), find them and highlight them. A highlighted Question keeps its place in time order, in its own Inbox and in the All view, and carries a yellow dot beside it, on the minimap and on its Inbox in the sidebar. The operator steps between highlighted Questions with a key. Only a Question waiting for the operator can be highlighted. A new highlight leaves the others in place. A highlight stays until the operator dismisses it in the app or you remove it, even after the Question is answered.
 
 ```sh
-operator-inbox highlight op-asv#2 op-asv#5 --note "about the store"  # the note shows above the title
-operator-inbox unhighlight op-asv#2                                  # remove its highlight
+operator-inbox highlight asv#2 asv#5 --note "about the store"  # the note shows above the title
+operator-inbox unhighlight asv#2                                  # remove its highlight
 operator-inbox unhighlight                                           # remove every highlight in the Inbox
 ```
 
@@ -139,7 +140,7 @@ Add `--inbox <id>` to highlight in another session's Inbox. Remove highlights th
 A Question asked in the wrong Inbox, or one that belongs with another session's work, moves whole: its text, answer, state, metadata and highlight go with it, in any state. It takes the next number in the Inbox it joins, and so that Inbox's code: `move` prints the new one. Its old number stays used here, and an answer or a change to it is refused with where it went.
 
 ```sh
-operator-inbox move op-asv#2 op-asv#5 --to <inbox id or code>  # from the Inbox the codes name
+operator-inbox move asv#2 asv#5 --to <inbox id or code>  # from the Inbox the codes name
 operator-inbox move 3 --inbox <from id> --to <id>               # by number, from another Inbox
 ```
 
@@ -172,10 +173,10 @@ Keep working on anything that does not depend on an answer while it waits.
 For each answer: act on it, then mark it processed. There is no other step: no "processing" mark, nothing to set while you work. Think and act, then run `done`.
 
 ```sh
-operator-inbox done op-asv#3
+operator-inbox done asv#3
 ```
 
-It takes more than one (`operator-inbox done op-asv#3 op-asv#4`), and plain numbers in this session's Inbox (`operator-inbox done 3 4`). A processed Question moves to the **Processed** queue of the operator's page, with their answer under it, and leaves your `answers`. If the answer opens a new question, ask a **new** Question, and quote what you need from the old one in its body: nothing else links them. If the answer closes the line of inquiry, you are done with it.
+It takes more than one (`operator-inbox done asv#3 asv#4`), and plain numbers in this session's Inbox (`operator-inbox done 3 4`). A processed Question moves to the **Processed** queue of the operator's page, with their answer under it, and leaves your `answers`. If the answer opens a new question, ask a **new** Question, and quote what you need from the old one in its body: nothing else links them. If the answer closes the line of inquiry, you are done with it.
 
 Do not mark a Question done before you have acted on it. Until you do, it stays in the operator's **With the agent** queue.
 
@@ -199,7 +200,7 @@ The Processed queue shows it as "You deferred to the agent:", so deferrals can b
 If a Question you asked becomes moot or wrong before the operator answers it, withdraw it with a reason. A reason is required: you may not take anything out of the operator's inbox without saying why.
 
 ```sh
-operator-inbox withdraw op-asv#3 --reason "Settled by the test run; Postgres it is."
+operator-inbox withdraw asv#3 --reason "Settled by the test run; Postgres it is."
 ```
 
 Withdrawing marks the Question processed. It moves to the operator's Processed queue with "Withdrawn by the agent:" and your reason. Write the reason for the operator, reading cold. You can withdraw only a Question the operator has not answered yet; once they have, act on the answer and run `done`.
@@ -209,7 +210,7 @@ Withdrawing marks the Question processed. It moves to the operator's Processed q
 If a Question is still right but its wording or context is wrong, edit it instead:
 
 ```sh
-operator-inbox edit op-asv#3 --title "<new title>" --body-file <path>
+operator-inbox edit asv#3 --title "<new title>" --body-file <path>
 ```
 
 Either flag may be left out to keep that field. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.

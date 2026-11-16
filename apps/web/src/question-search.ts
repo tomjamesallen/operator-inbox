@@ -3,6 +3,7 @@ import type {
   InboxId,
   InboxViewDto,
 } from '@operator-inbox/core/api';
+import { questionCode } from '@operator-inbox/core/api';
 import { Atom } from 'effect/reactivity';
 import Fuse from 'fuse.js';
 import {
@@ -11,15 +12,20 @@ import {
   linkTargetAtom,
   selectedInboxAtom,
   selectSidebarAtom,
+  sidebarPinnedOnlyAtom,
   TARGET_PARAM,
   writeTargetHash,
 } from './inbox';
+import { inboxReaderAtoms } from './inbox-reader-machine';
 
 // --- the question search: ⌘P / Ctrl+P ---------------------------------------------
 
 // A ⌘P search menu. It matches a question number exactly when the input
-// starts with `#` (`#330`), and is otherwise a text search over the title and
-// body. It searches what the
+// starts with `#` (`#330`), and Inbox codes when it starts with `@`: `@to`
+// lists the Inboxes whose code starts so, `@toe` is that Inbox and its
+// questions, `@toe#14` that one question, and `@toe words` a text search in
+// that Inbox. Anything else is a text search over the title and body. It
+// searches what the
 // board already holds: every Inbox's waiting questions and the newest
 // `PROCESSED_VIEW_CAP` processed ones, archived Inboxes too. An older
 // processed question has no card to open, so it is not offered.
@@ -33,13 +39,26 @@ export const SEARCH_COLUMNS: ReadonlyArray<SearchColumn> = [
   'processed',
 ];
 
-export const SEARCH_HEADINGS: Record<SearchColumn, string> = {
+export const SEARCH_HEADINGS: Record<SearchColumn | 'inboxes', string> = {
+  inboxes: 'Inboxes',
   operator: 'Your inbox',
   agent: 'With the agent',
   processed: 'Processed',
 };
 
+/** An Inbox an `@` query matched by its code. */
+export interface InboxHit {
+  readonly kind: 'inbox';
+  readonly key: string;
+  readonly inboxId: InboxId;
+  readonly label: string;
+  readonly code: string;
+  readonly machine?: string;
+  readonly archived: boolean;
+}
+
 export interface SearchEntry {
+  readonly kind: 'question';
   readonly key: string;
   readonly inboxId: InboxId;
   readonly label: string;
@@ -48,16 +67,26 @@ export interface SearchEntry {
   readonly archived: boolean;
   readonly column: SearchColumn;
   readonly number: number;
+  // Its code, `toe#14`, while its Inbox has one.
+  readonly code?: string;
   readonly title: string;
   readonly body: string;
   readonly group: string;
 }
 
-export interface SearchSection {
-  readonly column: SearchColumn;
-  readonly heading: string;
-  readonly items: ReadonlyArray<SearchEntry>;
-}
+export type SearchHit = InboxHit | SearchEntry;
+
+export type SearchSection =
+  | {
+      readonly column: 'inboxes';
+      readonly heading: string;
+      readonly items: ReadonlyArray<InboxHit>;
+    }
+  | {
+      readonly column: SearchColumn;
+      readonly heading: string;
+      readonly items: ReadonlyArray<SearchEntry>;
+    };
 
 // How many matches each column lists, at most.
 export const SEARCH_SECTION_CAP = 20;
@@ -78,6 +107,7 @@ export const searchEntriesOf = (
   ) => {
     for (const q of questions)
       entries.push({
+        kind: 'question',
         key: `${view.inboxId}#${q.number}`,
         inboxId: view.inboxId,
         label: view.label,
@@ -85,6 +115,9 @@ export const searchEntriesOf = (
         archived: view.archived,
         column,
         number: q.number,
+        ...(view.code === undefined
+          ? {}
+          : { code: questionCode(view.code, q.number) }),
         title: q.title,
         body: q.body,
         group: groupOf(q),
@@ -111,14 +144,113 @@ const fuseOf = (entries: ReadonlyArray<SearchEntry>): Fuse<SearchEntry> =>
     includeScore: true,
   });
 
+/** Every Inbox on the board that has a code, one hit each. */
+export const inboxHitsOf = (board: InboxBoardDto): ReadonlyArray<InboxHit> =>
+  board.views.flatMap((view) =>
+    view.code === undefined
+      ? []
+      : [
+          {
+            kind: 'inbox' as const,
+            key: `inbox:${view.inboxId}`,
+            inboxId: view.inboxId,
+            label: view.label,
+            code: view.code,
+            ...(view.machine === undefined
+              ? {}
+              : { machine: view.machine.label }),
+            archived: view.archived,
+          },
+        ],
+  );
+
 export interface SearchIndex {
   readonly entries: ReadonlyArray<SearchEntry>;
+  readonly inboxes: ReadonlyArray<InboxHit>;
   readonly fuse: Fuse<SearchEntry>;
 }
 
 export const searchIndexOf = (board: InboxBoardDto): SearchIndex => {
   const entries = searchEntriesOf(board);
-  return { entries, fuse: fuseOf(entries) };
+  return { entries, inboxes: inboxHitsOf(board), fuse: fuseOf(entries) };
+};
+
+// An `@` query: the code's letters (any case; none for a bare `@`), then a
+// question's number, or words to search for in that Inbox. The older named
+// form of a code is not read here: the board shows codes as they are now.
+const AT_QUERY = /^@([a-z]{0,3})(?:#(\d+)|(?:\s+(.*)))?$/i;
+
+const archivedLast = <T extends { readonly archived: boolean }>(
+  found: ReadonlyArray<T>,
+): ReadonlyArray<T> => [
+  ...found.filter((e) => !e.archived),
+  ...found.filter((e) => e.archived),
+];
+
+const byColumn = (
+  found: ReadonlyArray<SearchEntry>,
+): ReadonlyArray<SearchSection> =>
+  SEARCH_COLUMNS.flatMap((column) => {
+    const items = found
+      .filter((e) => e.column === column)
+      .slice(0, SEARCH_SECTION_CAP);
+    return items.length === 0
+      ? []
+      : [{ column, heading: SEARCH_HEADINGS[column], items }];
+  });
+
+/**
+ * The matches for an `@` query: the Inboxes whose code starts with its
+ * letters, under Inboxes, and, once the letters are a whole code, that
+ * Inbox's questions (or the one numbered, or those the words match) under
+ * the columns. A code is unique on its machine, so two machines' Inboxes may
+ * share one, and both are shown.
+ */
+const searchByCode = (
+  index: SearchIndex,
+  text: string,
+): ReadonlyArray<SearchSection> => {
+  const match = AT_QUERY.exec(text);
+  if (match === null) return [];
+  const letters = (match[1] ?? '').toLowerCase();
+  const number = match[2];
+  const words = match[3]?.trim() ?? '';
+  const exact = index.inboxes.filter((i) => i.code === letters);
+  const held = new Set(exact.map((i) => i.inboxId));
+  if (number !== undefined) {
+    const n = Number(number);
+    return byColumn(
+      archivedLast(
+        index.entries.filter((e) => held.has(e.inboxId) && e.number === n),
+      ),
+    );
+  }
+  if (words !== '')
+    return byColumn(
+      archivedLast(
+        index.fuse
+          .search(words)
+          .map((r) => r.item)
+          .filter((e) => held.has(e.inboxId)),
+      ),
+    );
+  const inboxes = archivedLast(
+    [...index.inboxes]
+      .filter((i) => i.code.startsWith(letters))
+      .sort((x, y) => x.code.localeCompare(y.code)),
+  ).slice(0, SEARCH_SECTION_CAP);
+  return [
+    ...(inboxes.length === 0
+      ? []
+      : [
+          {
+            column: 'inboxes' as const,
+            heading: SEARCH_HEADINGS.inboxes,
+            items: inboxes,
+          },
+        ]),
+    ...byColumn(archivedLast(index.entries.filter((e) => held.has(e.inboxId)))),
+  ];
 };
 
 /**
@@ -135,6 +267,7 @@ export const searchQuestions = (
 ): ReadonlyArray<SearchSection> => {
   const text = query.trim();
   if (text === '') return [];
+  if (text.startsWith('@')) return searchByCode(index, text);
   let found: ReadonlyArray<SearchEntry>;
   if (text.startsWith('#')) {
     const digits = text.slice(1).trim();
@@ -153,18 +286,7 @@ export const searchQuestions = (
     found = index.fuse.search(text).map((r) => r.item);
   }
   // Archived last; otherwise the order above is kept.
-  const ordered = [
-    ...found.filter((e) => !e.archived),
-    ...found.filter((e) => e.archived),
-  ];
-  return SEARCH_COLUMNS.flatMap((column) => {
-    const items = ordered
-      .filter((e) => e.column === column)
-      .slice(0, SEARCH_SECTION_CAP);
-    return items.length === 0
-      ? []
-      : [{ column, heading: SEARCH_HEADINGS[column], items }];
-  });
+  return byColumn(archivedLast(found));
 };
 
 // Whether the search is open, and what it holds. A fresh open starts empty.
@@ -220,6 +342,18 @@ export const openSearchEntryAtom = Atom.writable<void, SearchEntry>(
       target: { inboxId: entry.inboxId, number: entry.number },
       scrolled: false,
     });
+  },
+);
+
+// Open an Inbox an `@` query matched: it is picked in the sidebar, which
+// shows every Inbox so the pick is in view, as a click on its row would.
+export const openSearchInboxAtom = Atom.writable<void, InboxHit>(
+  () => undefined,
+  (ctx, hit) => {
+    ctx.set(questionSearchOpenAtom, false);
+    ctx.set(sidebarPinnedOnlyAtom, false);
+    ctx.set(selectSidebarAtom, { inboxId: hit.inboxId, groups: [] });
+    ctx.set(inboxReaderAtoms.send, { type: 'RailDismissed' });
   },
 );
 

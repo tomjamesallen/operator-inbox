@@ -8,6 +8,7 @@ What is here:
 
 - `inbox-events.jsonl`: every `InboxEvent` variant as the inbox log stores it, one encoded event per line.
 - `inbox-code-events.jsonl`: `InboxCodeAssigned`, which came after `inbox-events.jsonl` was pinned and so has its own file.
+- `inbox-code-change-events.jsonl`: `InboxCodeChanged`, and an `InboxCodeAssigned` in the current three-letter form, which came after `inbox-code-events.jsonl` was pinned and so have their own file.
 - `dto-inbox-board.json`, `dto-inbox-index.json`: the inbox API's two read DTOs.
 - `dto-inbox-board-coded.json`: the board read with an Inbox's `code` on its row and its view, pinned apart for the same reason.
 - `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, rename).

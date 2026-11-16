@@ -28,7 +28,7 @@ export const answerKey = (inboxId: InboxId, number: number): string =>
   `${inboxId}/${number}`;
 
 // `inboxCode` is the Inbox's code, when it has one: with the question's
-// number it makes the code the card shows (`ab-xyz#12`).
+// number it makes the code the card shows (`xyz#12`).
 const queueItem = <Q extends Schema.Top>(question: Q) =>
   Schema.Struct({
     key: Schema.String,

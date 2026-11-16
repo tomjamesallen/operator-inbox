@@ -1,3 +1,4 @@
+import { Button } from '@base-ui/react/button';
 import { ContextMenu } from '@base-ui/react/context-menu';
 import { Input } from '@base-ui/react/input';
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react';
@@ -22,6 +23,7 @@ import {
   highlightedGroups,
   inboxPath,
   muteOutcomeAtom,
+  pinAtom,
   pinKey,
   pinnedFirst,
   pinOutcomeAtom,
@@ -77,6 +79,36 @@ export const PinIcon = ({ filled }: { readonly filled: boolean }) => (
   </svg>
 );
 
+// A pinned row's pin: a click unpins it, as Unpin in the row's menu does. A
+// button beside the row's link, not in it, so the click never picks the row.
+const UnpinButton = ({
+  inboxId,
+  group,
+  name,
+}: PinPlace & { readonly name: string }) => {
+  const [result, pin] = useAtom(pinAtom(pinKey(inboxId, group)));
+  const label = `Unpin ${name}`;
+  return (
+    <Button
+      title={label}
+      aria-label={label}
+      disabled={result.waiting}
+      data-pinned-mark
+      data-unpin={group ?? ''}
+      onClick={() =>
+        pin({
+          inboxId,
+          pinned: false,
+          ...(group === undefined ? {} : { group }),
+        })
+      }
+      className="flex shrink-0 cursor-pointer items-center text-fg/45 hover:text-fg focus-visible:text-fg disabled:cursor-default disabled:opacity-50"
+    >
+      <PinIcon filled />
+    </Button>
+  );
+};
+
 /** A plain click: anything else opens the link as the browser would. */
 export const plainClick = (e: MouseEvent<HTMLAnchorElement>): boolean =>
   !(e.metaKey || e.ctrlKey || e.altKey || e.button !== 0);
@@ -99,8 +131,11 @@ interface RowProps {
   readonly fresh?: ReadonlyArray<FreshMark>;
   // The key a waiting prefix would take to reach this row.
   readonly badge?: ReactNode;
-  // Drawn as a mark: pinning is in the row's menu.
+  // Drawn as a pin, which unpins the row when clicked; pinning is in the
+  // row's menu.
   readonly pinned?: boolean;
+  // What the pin unpins, and the name its label gives it.
+  readonly pin?: PinPlace & { readonly name: string };
   // The row's menu, opened by a right-click or a long press on the row. On a
   // touch screen the selected Inbox's is over the box too (`InboxMenuButton`).
   readonly menu?: ReactNode;
@@ -125,6 +160,7 @@ export const RailRow = ({
   fresh = [],
   badge,
   pinned = false,
+  pin,
   menu,
   editing,
   hooks,
@@ -150,15 +186,18 @@ export const RailRow = ({
           />
         </a>
       )}
-      {pinned && (
-        <span
-          title="Pinned"
-          data-pinned-mark
-          className="flex shrink-0 items-center text-fg/45"
-        >
-          <PinIcon filled />
-        </span>
-      )}
+      {pinned &&
+        (pin === undefined ? (
+          <span
+            title="Pinned"
+            data-pinned-mark
+            className="flex shrink-0 items-center text-fg/45"
+          >
+            <PinIcon filled />
+          </span>
+        ) : (
+          <UnpinButton {...pin} />
+        ))}
       <span
         className={`w-4 shrink-0 text-right text-11 tabular-nums ${nested ? 'text-fg/25' : 'text-fg/50'}`}
       >
@@ -355,6 +394,7 @@ const GroupRowLink = ({
         lit={lit}
         hooks={{ 'data-rail-group': group.group, 'data-inbox': inboxId }}
         pinned={pinned}
+        pin={{ inboxId, group: group.group, name: `the group ${name}` }}
         {...(pinnable
           ? {
               menu: (
@@ -430,7 +470,7 @@ export const InboxRows = ({
       <RailRow
         href={inboxPath(inboxId)}
         label={label}
-        title={`${label} · ${inboxId}${muted ? ' · muted' : ''}${seen === undefined ? '' : `\nLast seen ${seen}`}`}
+        title={`${label}${row.code === undefined ? '' : ` · ${row.code}`} · ${inboxId}${muted ? ' · muted' : ''}${seen === undefined ? '' : `\nLast seen ${seen}`}`}
         count={row.awaitingOperator}
         on={here && inForce.length === 0}
         top={top.has(sidebarKey(inboxId))}
@@ -440,6 +480,7 @@ export const InboxRows = ({
         hooks={{ 'data-rail-inbox': inboxId }}
         badge={<InboxKeyBadge inboxId={inboxId} />}
         pinned={row.pinned}
+        pin={{ inboxId, name: label }}
         menu={
           <InboxMenuItems
             inboxId={inboxId}

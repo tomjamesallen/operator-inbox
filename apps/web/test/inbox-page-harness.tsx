@@ -135,6 +135,7 @@ export const summary = (
 ) => ({
   inboxId: view.inboxId,
   label: view.label,
+  ...(view.code === undefined ? {} : { code: view.code }),
   archived: view.archived,
   pinned: false,
   ...(view.muted === true ? { muted: true } : {}),

@@ -65,10 +65,10 @@ export const HerdrMachineId = Schema.String.pipe(
 );
 export type HerdrMachineId = typeof HerdrMachineId.Type;
 
-// An Inbox's code, `ab-xyz`: two letters from its name when it was assigned,
-// a hyphen, and three random letters (`inbox-code.ts`). Assigned once by the
-// app, unique across a machine's Inboxes, and quoted with a Question's
-// number as its code (`ab-xyz#12`). Unrefined, like the ids above, so a log
+// An Inbox's code, `xyz`: three random lower-case letters (`inbox-code.ts`),
+// or `ab-xyz` in a log written before codes lost their name part. Assigned
+// by the app, unique across a machine's Inboxes, and quoted with a
+// Question's number as its code (`xyz#12`). Unrefined, like the ids above, so a log
 // written by a later build with a longer code still decodes here; the app's
 // own codes are built and parsed in `inbox-code.ts`.
 export const InboxCode = Schema.String.pipe(Schema.brand('InboxCode'));

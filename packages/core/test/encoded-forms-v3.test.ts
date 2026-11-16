@@ -223,9 +223,10 @@ describe('InboxEvent as stored in the log', () => {
   it('covers every tag of the union', () => {
     // A `Record` over the tag union, so tsc fails when a variant is added.
     // Inbox mode's two events and the mutes are not in the v3 encoding, so
-    // they have no v3 golden. `InboxCodeAssigned` came after this golden was
-    // pinned, so it has its own (`inbox-code-events.jsonl`, below) and this
-    // one stays byte for byte as it was.
+    // they have no v3 golden. `InboxCodeAssigned` and `InboxCodeChanged` came
+    // after this golden was pinned, so they have their own
+    // (`inbox-code-events.jsonl` and `inbox-code-change-events.jsonl`, below)
+    // and this one stays byte for byte as it was.
     const every: Record<
       Exclude<
         InboxEventTag,
@@ -234,6 +235,7 @@ describe('InboxEvent as stored in the log', () => {
         | 'InboxMuted'
         | 'InboxUnmuted'
         | 'InboxCodeAssigned'
+        | 'InboxCodeChanged'
       >,
       true
     > = {
@@ -296,6 +298,34 @@ describe('InboxCodeAssigned as stored in the log', () => {
     expectGolden('inbox-code-events.jsonl', lines);
     const read = golden('inbox-code-events.jsonl').split('\n').filter(Boolean);
     expect(read.map((l) => decodeEvent(l))).toStrictEqual(CODE_EVENTS);
+  });
+});
+
+// `InboxCodeChanged`, which came after `InboxCodeAssigned` was pinned, so it
+// has its own golden and that one stays as it was. The current form of an
+// assignment (three letters) is pinned beside it.
+const CODE_CHANGE_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'InboxCodeChanged',
+    inboxId: INBOX_A,
+    from: InboxCode.make('ex-abc'),
+    code: InboxCode.make('abc'),
+  },
+  {
+    _tag: 'InboxCodeAssigned',
+    inboxId: INBOX_B,
+    code: InboxCode.make('xyz'),
+  },
+];
+
+describe('InboxCodeChanged as stored in the log', () => {
+  it('encodes to its golden JSON line and decodes back', () => {
+    const lines = CODE_CHANGE_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-code-change-events.jsonl', lines);
+    const read = golden('inbox-code-change-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(CODE_CHANGE_EVENTS);
   });
 });
 

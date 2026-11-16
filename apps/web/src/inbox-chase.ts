@@ -63,7 +63,7 @@ export interface ChaseToast {
   readonly inboxId: string;
   readonly label: string;
   // The Inbox's code, when it has one: with a number it makes the question's
-  // code (`ab-xyz#12`), as the card shows it.
+  // code (`xyz#12`), as the card shows it.
   readonly inboxCode?: string;
   readonly numbers: ReadonlyArray<number>;
   // The keys a dismissal records, one per question.
@@ -110,7 +110,7 @@ export const chaseToastsOf = (
 
 /**
  * A toast's line: what has waited, and for how long. Each question goes by its
- * code (`ab-xyz#12`), or by `#12` while its Inbox has none.
+ * code (`xyz#12`), or by `#12` while its Inbox has none.
  */
 export const chaseLine = (toast: ChaseToast): string => {
   const refs = toast.numbers.map((n) => questionRef(toast.inboxCode, n));
