@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@effect/vitest';
+import { Marked } from 'marked';
 import {
   renderQuestionMarkdown,
   renderQuestionParts,
@@ -42,6 +43,19 @@ describe('renderQuestionMarkdown — constructs', () => {
     expect(table).toContain('<th>a</th>');
     expect(table).toContain('<td>2</td>');
     expect(r('---')).toBe('<hr>\n');
+  });
+
+  // The page scrolls a wide table sideways in this div; its text, which a
+  // comment's place is counted in, is what marked's bare table gives.
+  it('wraps a table in a scroll box that adds no text', () => {
+    const md = '| a | b |\n|---|---|\n| 1 | 2 |\n\nafter';
+    const html = r(md);
+    expect(html).toMatch(
+      /^<div data-table-scroll><table>[\s\S]*<\/table><\/div>\n<p>after<\/p>\n$/,
+    );
+    const bare = new Marked({ gfm: true, async: false }).parse(md) as string;
+    const text = (h: string) => h.replace(/<[^>]*>/g, '');
+    expect(text(html)).toBe(text(bare));
   });
 
   it('keeps a fence language as class="language-x"', () => {

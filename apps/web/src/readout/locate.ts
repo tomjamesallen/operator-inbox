@@ -165,7 +165,9 @@ export const boxesOf = (
  * part's box into the margin, so the box is the union of the element's and
  * of what it draws (an svg, an image, a canvas, a table, a code block), each
  * cut to any scrolling or clipping box between it and the element, so a part
- * scrolled away never widens it.
+ * scrolled away never widens it. The element's own box is cut across, to any
+ * such box between it and the origin, so a table wider than the box it
+ * scrolls in is drawn as wide as what shows.
  */
 export const drawnBoxOf = (
   el: Element,
@@ -173,6 +175,16 @@ export const drawnBoxOf = (
 ): ReadonlyArray<Box> => {
   let { left, top, right, bottom } = el.getBoundingClientRect();
   const view = el.ownerDocument.defaultView;
+  for (let a = el.parentElement; a !== null && a !== origin; ) {
+    const cs = view?.getComputedStyle(a);
+    if (cs === undefined) break;
+    if (cs.overflowX !== 'visible') {
+      const c = a.getBoundingClientRect();
+      left = Math.max(left, c.left);
+      right = Math.min(right, c.right);
+    }
+    a = a.parentElement;
+  }
   for (const d of el.querySelectorAll('svg, img, canvas, table, pre')) {
     const b = d.getBoundingClientRect();
     let r = { left: b.left, top: b.top, right: b.right, bottom: b.bottom };

@@ -86,4 +86,21 @@ describe('the stylesheet', () => {
       /\[data-fade-bottom\][\s\S]*--tw-mask-bottom-from-position: var\(--fade-from\)/,
     );
   });
+
+  // A question's table scrolls sideways in core's `data-table-scroll` div,
+  // and on a phone its columns keep a minimum width rather than breaking
+  // words mid-word to fit the screen.
+  it('scrolls a wide table in its box, with readable columns on a phone', async () => {
+    const css = await build([]);
+    expect(css).toMatch(
+      /\[data-question-body\] \[data-table-scroll\] \{\s*overflow-x: auto;/,
+    );
+    expect(css).toMatch(
+      /@media \(width < 48rem\) \{\s*\[data-question-body\] :is\(th, td\) \{\s*min-width: var\(--container-cell\);/,
+    );
+    expect(css).toContain('--container-cell: 12ch');
+    expect(css).not.toMatch(
+      /\[data-question-body\] table \{[^}]*overflow-wrap: anywhere/,
+    );
+  });
 });

@@ -25,6 +25,10 @@
 //   language `code-highlight.ts` colours carries its coloured spans, and one
 //   in any other language, or none, stays plain.
 //
+// A table is marked's own, inside a `<div data-table-scroll>`: a table's box
+// cannot both stretch to the column and scroll its overflow, so the div is
+// the box that scrolls sideways when the table is wider than the page.
+//
 // A ```mermaid fence is code in `renderQuestionMarkdown`'s HTML. The page
 // draws it from `renderQuestionParts` instead, which splits the body at each
 // mermaid fence: the markdown around it is HTML as above, and the fence is
@@ -32,7 +36,13 @@
 // An `<Excalidraw id="…"/>` line on its own is split out the same way, as the
 // id of a drawing the Question carries; the tag never becomes HTML either.
 
-import { Marked, type Token, type Tokens, type TokensList } from 'marked';
+import {
+  Marked,
+  Renderer,
+  type Token,
+  type Tokens,
+  type TokensList,
+} from 'marked';
 import { highlightCode } from './code-highlight';
 import { escapeHtml } from './html-escape';
 
@@ -159,6 +169,12 @@ const marked: Marked = new Marked({
       if (!IMAGE_SRC.test(href)) return escapeHtml(text);
       const t = title ? ` title="${escapeHtml(title)}"` : '';
       return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${t} loading="lazy">`;
+    },
+    table(token: Tokens.Table) {
+      const table = Renderer.prototype.table.call(this, token);
+      // The table's own newline goes after the div, so the body's text, which
+      // a comment's place is counted in, is the same as without it.
+      return `<div data-table-scroll>${table.trimEnd()}</div>\n`;
     },
     checkbox({ checked }: Tokens.Checkbox) {
       return `<input type="checkbox" disabled${checked ? ' checked' : ''}> `;

@@ -152,6 +152,10 @@
      here, while code, tables and diagrams take the full width. `ch` is the
      element's own, so each block counts characters at its own size. */
   --container-measure: 60ch;
+  /* The narrowest a table's column is drawn on a phone: about a short phrase
+     at the table's size, so its words wrap between columns rather than
+     inside them. Past what the screen holds, the table scrolls sideways. */
+  --container-cell: 12ch;
   /* How far a wide block may run in the inbox reader: from the column's left
      edge to the right edge of the `@container` around it. `%` is the column,
      `cqw` the room. */
@@ -485,7 +489,7 @@
  * `prose` is a new dependency with its own design to undo.
  */
 @layer components {
-  [data-question-body] :is(p, ul, ol, table, pre, blockquote) {
+  [data-question-body] :is(p, ul, ol, [data-table-scroll], pre, blockquote) {
     @apply my-s2;
   }
   [data-question-body] ul {
@@ -560,11 +564,24 @@
   [data-question-body] hr {
     @apply border-0 border-t border-fg/12;
   }
+  /* A table fills its box, core's `data-table-scroll` div, and when its
+     columns need more room than that the div scrolls sideways rather than
+     the table squashing them or widening the page. */
+  [data-question-body] [data-table-scroll] {
+    @apply overflow-x-auto;
+  }
   [data-question-body] table {
     @apply w-full border-collapse text-11.5;
   }
   [data-question-body] :is(th, td) {
     @apply border border-fg/12 px-1.5 py-0.75 text-left align-top;
+  }
+  /* On a phone a column keeps a readable width, so a table too wide for the
+     screen scrolls in its box instead. */
+  [data-question-body] :is(th, td) {
+    @variant compact {
+      @apply min-w-cell;
+    }
   }
   [data-question-body] th {
     @apply font-medium text-fg/50;
@@ -603,16 +620,11 @@
      drawing's or a Mermaid diagram's figure does the same, to the same edge,
      with utilities on the element (`drawing-block.tsx`,
      `mermaid-diagram.tsx`); images do not grow. */
-  [data-zen-flow] [data-question-body] > :is(pre, table) {
+  [data-zen-flow] [data-question-body] > :is(pre, [data-table-scroll]) {
     @apply w-max max-w-bleed min-w-full;
   }
   [data-zen-flow] [data-question-body] table code {
     @apply wrap-anywhere;
-  }
-  [data-zen-flow] [data-question-body] table {
-    @variant compact {
-      @apply wrap-anywhere;
-    }
   }
   [data-question-body] small {
     @apply text-small text-fg/55;
