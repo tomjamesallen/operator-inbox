@@ -14,6 +14,7 @@ import {
   groupOf,
   questionClipText,
 } from '../../inbox';
+import { pickCrumbAtom } from '../../inbox-rail';
 import {
   answerOf,
   followUpsOf,
@@ -28,6 +29,7 @@ import {
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { QuestionBody } from '../question-body';
+import { focusRing } from '../styles';
 import { Colophon } from './colophon';
 import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
 import { HIGHLIGHT, type Mark, MarkStack, SELECTED } from './marks';
@@ -92,9 +94,12 @@ const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
 };
 
 // `desktop · atlas › group`: Local is not named, and one machine names nothing.
+// Each crumb picks what it names, as its sidebar row would: the Inbox, or the
+// Inbox narrowed to the group. The reader stays on this question.
 const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
   const board = useAtomValue(drawnBoardAtom);
   const heldKey = useAtomValue(heldKeyAtom);
+  const pick = useAtomSet(pickCrumbAtom);
   const held = item.key === heldKey;
   const greyed = board?.greyed.has(item.machine) === true;
   const machine =
@@ -107,8 +112,18 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
     // On a narrow screen the inbox takes the first line and the rest the next.
     // `relative`: the code's gutter place is measured from here.
     <div className="relative flex items-center gap-s1 text-11 text-fg/40 compact:flex-wrap">
-      {/* Short of room the inbox's name gives way, so the group still shows. */}
-      <span className="min-w-0 truncate compact:w-full" data-zen-eyebrow>
+      {/* Short of room the inbox's name gives way, so the group still shows.
+          A crumb's click is its own: the card's would light the question. */}
+      <button
+        type="button"
+        data-zen-eyebrow
+        title={`Show only ${item.inboxLabel}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          pick({ key: item.key, inboxId: item.inboxId });
+        }}
+        className={`min-w-0 cursor-pointer truncate text-left hover:text-fg compact:w-full ${focusRing}`}
+      >
         {machine !== undefined && (
           <>
             {(greyed || held) && (
@@ -123,13 +138,22 @@ const Eyebrow = ({ item }: { readonly item: ReaderItem }) => {
           </>
         )}
         {item.inboxLabel}
-      </span>
+      </button>
       {group !== DEFAULT_GROUP && (
         <>
           <span className="shrink-0 compact:hidden">›</span>
-          <span data-zen-group className="shrink-0 text-fg/60">
+          <button
+            type="button"
+            data-zen-group
+            title={`Show only ${group} in ${item.inboxLabel}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              pick({ key: item.key, inboxId: item.inboxId, group });
+            }}
+            className={`shrink-0 cursor-pointer text-fg/60 hover:text-fg ${focusRing}`}
+          >
             {group}
-          </span>
+          </button>
         </>
       )}
       {note !== undefined && (

@@ -4,6 +4,7 @@ import {
   useAtomSet,
 } from '@effect/atom-react';
 import { InboxId, InboxMachineKey } from '@operator-inbox/core/api';
+import { keysLabel, resolveKeymap } from '@operator-inbox/core/keymap';
 import {
   act,
   cleanup,
@@ -501,6 +502,108 @@ describe('the rows', () => {
     await railIs('drawer');
     expect(decodeURIComponent(location.hash)).toContain('alpha');
     expect(decodeURIComponent(location.hash)).toContain('beta');
+  });
+});
+
+describe('the crumbs over a question', () => {
+  const grouped = () =>
+    boardOf([
+      view({
+        awaitingOperator: [
+          question(4),
+          question(5, { metadata: { group: 'alpha' } }),
+        ],
+      }),
+      nightly,
+    ]);
+  const itemOf = (n: number) =>
+    [...document.querySelectorAll<HTMLElement>('[data-zen-item]')].find((i) =>
+      i.dataset.zenItem?.endsWith(`/${n}`),
+    ) as HTMLElement;
+  const crumbs = (n: number) => within(itemOf(n));
+  const litKey = () =>
+    document
+      .querySelector('[data-zen-lit]')
+      ?.closest<HTMLElement>('[data-zen-item]')?.dataset.zenItem;
+
+  it('are buttons, one for the inbox and one for a group', async () => {
+    board = grouped();
+    await mount();
+    expect(
+      crumbs(4)
+        .getAllByRole('button', { name: /^grove$|^alpha$/ })
+        .map((b) => b.textContent),
+    ).toEqual(['grove']);
+    expect(
+      crumbs(5)
+        .getAllByRole('button', { name: /^grove$|^alpha$/ })
+        .map((b) => b.textContent),
+    ).toEqual(['grove', 'alpha']);
+  });
+
+  it('selects the inbox, and the reader stays on the question', async () => {
+    board = grouped();
+    await mount();
+    fireEvent.click(crumbs(5).getByRole('button', { name: 'grove' }));
+    await waitFor(() => expect(location.pathname).toBe(`/inbox/${GROVE}`));
+    expect(decodeURIComponent(location.hash)).not.toContain('alpha');
+    await waitFor(() => expect(litKey()).toBe(itemOf(5).dataset.zenItem));
+  });
+
+  it('narrows the inbox to the group', async () => {
+    board = grouped();
+    await mount();
+    fireEvent.click(crumbs(5).getByRole('button', { name: 'alpha' }));
+    await waitFor(() => expect(location.pathname).toBe(`/inbox/${GROVE}`));
+    expect(decodeURIComponent(location.hash)).toContain('alpha');
+    await waitFor(() =>
+      expect(document.querySelector('[data-zen-scope]')?.textContent).toBe(
+        'grove › alpha',
+      ),
+    );
+    expect(itemOf(4)).toBeUndefined();
+  });
+});
+
+describe('the scope over the box', () => {
+  const scopeMenu = async () => {
+    const scope = await waitFor(() => {
+      const el = document.querySelector('[data-zen-scope]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    fireEvent.contextMenu(scope, { clientX: 10, clientY: 10 });
+    return screen.findByRole('menu');
+  };
+
+  it('goes back to All from its menu, which shows the key', async () => {
+    board = boardOf([grove, nightly]);
+    await mount(`/inbox/${GROVE}`);
+    const item = within(await scopeMenu()).getByRole('menuitem', {
+      name: /All inboxes/,
+    });
+    const keys = keysLabel(resolveKeymap(undefined), 'all_inboxes', 1);
+    expect(keys).toBeDefined();
+    expect(item.textContent).toBe(`All inboxes${keys}`);
+    fireEvent.click(item);
+    await waitFor(() => expect(location.pathname).toBe('/inbox'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-zen-scope]')).toBeNull(),
+    );
+  });
+
+  it('has nothing to clear in All, pinned', async () => {
+    board = {
+      ...boardOf([grove, nightly]),
+      inboxes: [row(grove, true), row(nightly)],
+    };
+    await mount();
+    await openDrawer();
+    click('Show only pinned');
+    const item = within(await scopeMenu()).getByRole('menuitem', {
+      name: /All inboxes/,
+    });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
   });
 });
 

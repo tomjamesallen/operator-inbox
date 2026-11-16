@@ -447,6 +447,29 @@ export const pickRowAtom = Atom.writable<void, SidebarSelection>(
   },
 );
 
+/** A question's breadcrumb: its Inbox, or one of that Inbox's groups. */
+export interface CrumbPick {
+  readonly key: string;
+  readonly inboxId: InboxId;
+  readonly group?: string;
+}
+
+/**
+ * A crumb over a question picked: its Inbox, or the Inbox narrowed to the
+ * group, as from outside the sidebar. The reader stays on the question, which
+ * the narrowed view still holds.
+ */
+export const pickCrumbAtom = Atom.writable<void, CrumbPick>(
+  () => undefined,
+  (ctx, { key, inboxId, group }) => {
+    ctx.set(pickRowAtom, {
+      inboxId,
+      groups: group === undefined ? [] : [group],
+    });
+    ctx.set(inboxReaderAtoms.send, { type: 'MovedTo', key });
+  },
+);
+
 /**
  * A row picked in the sidebar itself: the view changes and the sidebar stays
  * out, drawer or docked, so the reader can pick again; the veil, Escape or
