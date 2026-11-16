@@ -108,7 +108,7 @@ export const QueueTabs = ({
           <Tabs.List
             aria-label="Queues"
             data-tauri-drag-region
-            className="flex items-center gap-s4 compact:gap-s2"
+            className="flex items-center gap-s4 compact:gap-s2 titlebar:translate-y-0.75"
           >
             {QUEUE_NAMES.map((q) => {
               const on = q === queue && !asking;
