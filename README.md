@@ -28,7 +28,7 @@ bash scripts/setup.sh
 2. links the `operator-inbox` bin globally (`pnpm link --global`), so your agent sessions can run it;
 3. writes a launch agent, `~/Library/LaunchAgents/com.operator-inbox.serve.plist`, that runs `operator-inbox serve` on http://127.0.0.1:7184 at login and keeps it running, and loads it. The plist is rendered for this machine (the absolute paths of your `node` and the built CLI) and is rewritten and reloaded only when it changes; otherwise the running server is restarted onto the new build. The server logs to `~/.local/state/operator-inbox/serve.log` (under `$XDG_STATE_HOME` when that is set);
 4. merges the app's Claude Code hooks into `~/.claude/settings.json` (`operator-inbox install-claude-hooks`, which backs the file up first);
-5. checks the server answers at http://127.0.0.1:7184/api/inboxes, and prints a summary.
+5. checks the server answers at http://127.0.0.1:7184/api/inboxes, and prints a summary, which also says whether the optional desktop window (below) is installed and current.
 
 Options:
 
@@ -37,6 +37,20 @@ Options:
 - `--dry-run` prints every action, and the plist it would write, and changes nothing.
 
 Anywhere but macOS the launch agent step is skipped: run `operator-inbox serve` yourself.
+
+## The desktop window
+
+Optionally, the app can have a window of its own: `~/Applications/Operator Inbox.app`, a [Pake](https://github.com/tw93/Pake) build onto http://127.0.0.1:7184. It needs Rust (`brew install rust`) and pake 3.17.4 or later (`npm install -g pake-cli`), and a build is a Rust compile of a few minutes, so `setup.sh` never builds it. Build it, or rebuild it, with:
+
+```sh
+bash scripts/desktop-app.sh build
+```
+
+It replaces an earlier build of the window, never another app at that name, and never launches it. If the window is open, quit it with ⌘Q (closing its window only hides it) and reopen it to load the new build. `--dry-run` prints the pake command and changes nothing.
+
+`bash scripts/desktop-app.sh check` says whether the window is installed and current, without changing anything; `setup.sh` runs it at the end. A window is stale when it was built from another version of the script, or with another icon. The icon, `scripts/desktop-app/operator-inbox.icns`, is made from the web app's favicon with the macOS rounded mask by `node scripts/desktop-app/make-icon.mjs`, and committed.
+
+## Stopping the server
 
 To stop the server and remove the launch agent:
 
