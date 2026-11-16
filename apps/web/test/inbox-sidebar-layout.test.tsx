@@ -113,4 +113,42 @@ describe('the sidebar never moves the question', () => {
     await railShut();
     still();
   });
+
+  // The question's code is inside the flow, so `frame` does not see it. Over
+  // the page the sidebar is passing, and the code keeps its place; pinned, the
+  // sidebar holds the gutter, and the code goes back to the eyebrow.
+  it('moves the question’s code only for a pin, never for a peek or a drawer', async () => {
+    await mount();
+    const code = () => {
+      const el = document.querySelector<HTMLElement>(
+        '[data-zen-flow] [data-question-code-place]',
+      );
+      if (el === null) throw new Error('no code');
+      return el;
+    };
+    const look = () => ({
+      place: code().dataset.questionCodePlace,
+      classes: code().className,
+    });
+    const shut = look();
+    const shutFrame = frame();
+    expect(shut.place).toBe('gutter');
+    fireEvent.mouseEnter(burger());
+    await railIs('peeking');
+    expect(look()).toEqual(shut);
+    expect(frame()).toBe(shutFrame);
+    fireEvent.focus(screen.getByLabelText('Search inboxes and groups'));
+    await railIs('drawer');
+    expect(look()).toEqual(shut);
+    expect(frame()).toBe(shutFrame);
+    fireEvent.click(screen.getByLabelText('Close the inbox sidebar'));
+    await railShut();
+    fireEvent.click(burger());
+    await railIs('docked');
+    expect(look().place).toBe('eyebrow');
+    expect(look().classes).not.toBe(shut.classes);
+    fireEvent.click(burger());
+    await railShut();
+    expect(look()).toEqual(shut);
+  });
 });

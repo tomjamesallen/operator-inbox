@@ -196,7 +196,7 @@ describe('question codes', () => {
     );
   });
 
-  it('may go to the gutter with the sidebar shut, and stays in the eyebrow while it is open', async () => {
+  it('may go to the gutter with the sidebar shut, and stays there under a sidebar over the page', async () => {
     serve.board = coded();
     await mounted();
     const place = () =>
@@ -204,9 +204,12 @@ describe('question codes', () => {
         .querySelector('[data-question-code-place]')
         ?.getAttribute('data-question-code-place');
     await waitFor(() => expect(place()).toBe('gutter'));
+    // Nothing measured, so the burger opens a drawer: over the page, not pinned.
     fireEvent.click(burger());
-    await waitFor(() => expect(aside()).not.toBeNull());
-    await waitFor(() => expect(place()).toBe('eyebrow'));
+    await waitFor(() =>
+      expect(aside()?.getAttribute('data-inbox-sidebar')).toBe('drawer'),
+    );
+    expect(place()).toBe('gutter');
   });
 });
 

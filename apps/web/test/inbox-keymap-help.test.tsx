@@ -54,6 +54,22 @@ describe('the key bindings sheet', () => {
     );
   });
 
+  it('opens from the sidebar foot’s ? button, which names its key', async () => {
+    await mounted();
+    await openRail();
+    const help = screen.getByRole('button', {
+      name: 'Keyboard shortcuts and help',
+    });
+    expect(help.textContent).toBe('?');
+    expect(help.getAttribute('title')).toMatch(
+      /^Keyboard shortcuts and help \(.*Space.*\?\)$/,
+    );
+    fireEvent.click(help);
+    await screen.findByTestId('keymap-help');
+    press({ key: 'Escape' });
+    await closed();
+  });
+
   it('puts the focus in its search box when it opens', async () => {
     await mounted();
     await openHelp();
