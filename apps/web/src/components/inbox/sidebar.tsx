@@ -31,6 +31,7 @@ import {
 } from '../../inbox-rail';
 import { railStateAtom } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
+import { inParens, keyHintAtom, keymapHelpOpenAtom } from '../../keymap';
 import { INSIDE_END, KeyBadge } from '../keymap-help';
 import { ArchivedFold, MachineFold } from './rail-folds';
 import { InboxRows, PinIcon, plainClick, RailRow } from './rail-rows';
@@ -177,6 +178,25 @@ const List = () => {
   );
 };
 
+// The key binding sheet, by the pointer: the same Atom the key's action flips.
+const HelpButton = () => {
+  const setHelpOpen = useAtomSet(keymapHelpOpenAtom);
+  const hint = useAtomValue(keyHintAtom('show_help'));
+  return (
+    <button
+      type="button"
+      aria-label="Keyboard shortcuts and help"
+      aria-keyshortcuts={hint.aria}
+      title={`Keyboard shortcuts and help${inParens(hint.all)}`}
+      data-sidebar-help
+      onClick={() => setHelpOpen(true)}
+      className="ml-auto cursor-pointer px-s1 text-fg/30 hover:text-fg/70 focus-visible:text-fg/70"
+    >
+      ?
+    </button>
+  );
+};
+
 const Foot = () => (
   <div className="flex shrink-0 flex-wrap items-baseline justify-start gap-x-s3 px-s3 py-s2">
     <a
@@ -189,6 +209,7 @@ const Foot = () => (
       {/* Brighter than its words: at the same faintness it goes muddy. */}
       Made by Tom <span className="text-fg/70">👨‍💻</span>
     </a>
+    <HelpButton />
   </div>
 );
 

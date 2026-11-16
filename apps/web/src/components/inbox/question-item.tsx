@@ -44,15 +44,17 @@ export const useMarks = (item: ReaderItem): ReadonlyArray<Mark> => {
 // the code underlined, and ✓ or ✗ beside it for a moment once clicked, in a
 // slot kept empty until then, so the click shifts nothing.
 //
-// It sits at the end of the eyebrow. With the sidebar shut and room in the
-// reader's column (`@code-gutter:`, a container query on the flow), it moves
-// out to the gutter left of the question's first line, past its dots. Open,
-// the sidebar covers that gutter, so the code stays in the eyebrow.
+// It sits at the end of the eyebrow. With room in the reader's column
+// (`@code-gutter:`, a container query on the flow), it moves out to the gutter
+// left of the question's first line, past its dots. Pinned, the sidebar holds
+// that gutter, so the code stays in the eyebrow. Over the page (a hover's peek,
+// or a drawer) the sidebar is passing, and the code stays where it was: moving
+// it would reflow the question under the pointer.
 const CodeCopy = ({ item }: { readonly item: ReaderItem }) => {
   const mark = useAtomValue(copyMarkAtom(item.key));
   const copy = useAtomSet(copyQuestionAtom(item.key));
   const hint = useAtomValue(keyHintAtom('copy_question'));
-  const gutter = useAtomValue(railStateAtom) === 'shut';
+  const gutter = useAtomValue(railStateAtom) !== 'docked';
   const code = questionRef(item.inboxCode, item.question.number);
   return (
     <span
