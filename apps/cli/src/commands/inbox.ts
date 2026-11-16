@@ -29,6 +29,8 @@ import {
   type InboxState,
   inboxState,
   loadMetadataRules,
+  type MacroInvoked,
+  type MacrosInvoked,
   type Metadata,
   newId,
   parseInboxCode,
@@ -751,6 +753,9 @@ export interface AnswerLine {
   // The drawings the operator changed, by id: each the whole edited scene,
   // parsed, as the answer sent it.
   readonly drawings?: Readonly<Record<string, unknown>>;
+  // The macros the operator invoked, in order: each its name, the
+  // instruction it carried and its arguments, an empty one `null`.
+  readonly macros?: MacrosInvoked;
 }
 
 // A scene the event holds as JSON text, parsed for `--json`. Text that will
@@ -789,6 +794,7 @@ const answersOf = (state: InboxState): ReadonlyArray<AnswerLine> =>
             ]),
           ),
         }),
+    ...(q.macros === undefined ? {} : { macros: q.macros }),
   }));
 
 /** A dictionary as `key=value` lines, sorted by key; a list or object as JSON. */
@@ -814,6 +820,25 @@ export const drawingChangedLine = (
 ): string =>
   `DRAWING CHANGED: ${id} (${sceneElementCount(typeof scene === 'string' ? scene : JSON.stringify(scene))} elements); read it with: operator-inbox drawing ${ref} ${id} --compact`;
 
+// One block per macro, after the response: what to carry out, in order. An
+// argument is printed as JSON, so text, a number, a list and `null` (left
+// empty) read apart.
+export const macroLines = (
+  macros: ReadonlyArray<MacroInvoked>,
+): ReadonlyArray<string> =>
+  macros.flatMap((m, i) => {
+    const [first = '', ...rest] = m.instruction.trim().split('\n');
+    const args = Object.entries(m.args);
+    return [
+      `MACRO ${i + 1} of ${macros.length}: /${m.macro}`,
+      `  instruction: ${first}`,
+      ...rest.map((line) => `    ${line}`),
+      ...(args.length === 0
+        ? ['  (no parameters)']
+        : args.map(([name, value]) => `  ${name} = ${JSON.stringify(value)}`)),
+    ];
+  });
+
 export const renderAnswers = (
   answers: ReadonlyArray<AnswerLine>,
   json: boolean,
@@ -834,7 +859,10 @@ export const renderAnswers = (
           ...(a.highlightReply === true ? [HIGHLIGHT_REPLY_LINE] : []),
           ...(a.deferred === true && a.response === ''
             ? []
-            : a.response.split('\n')),
+            : a.macros !== undefined && a.response.trim() === ''
+              ? []
+              : a.response.split('\n')),
+          ...macroLines(a.macros ?? []),
         ]
           .map((line) => `  ${line}`)
           .join('\n')}`,

@@ -227,6 +227,8 @@ export const serve: {
   // Answers a board read in place of `board`, to hold or fail it.
   read: ((signal: AbortSignal | undefined) => Promise<Response>) | undefined;
   keybindings: string | null;
+  // The macros file's text, `null` for no file.
+  macros: string | null;
   config: unknown;
   posts: Array<Posted>;
   reads: number;
@@ -235,6 +237,7 @@ export const serve: {
   post: () => json(VIEW_A),
   read: undefined,
   keybindings: null,
+  macros: null,
   config: NO_CHASE,
   posts: [],
   reads: 0,
@@ -255,6 +258,11 @@ const fetchStub: typeof fetch = async (input, init) => {
     return serve.post(url.pathname);
   }
   if (url.pathname === '/api/inbox-config') return json(serve.config);
+  if (url.pathname === '/api/macros')
+    return json({
+      path: '/c/operator-inbox/macros.json',
+      text: serve.macros,
+    });
   if (url.pathname === '/api/keybindings')
     return json({
       path: '/c/operator-inbox/keybindings',
@@ -274,6 +282,7 @@ export const useInboxPage = (): void => {
       post: () => json(VIEW_A),
       read: undefined,
       keybindings: null,
+      macros: null,
       config: NO_CHASE,
       posts: [],
       reads: 0,

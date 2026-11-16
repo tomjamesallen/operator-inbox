@@ -25,6 +25,7 @@ import {
   type LocalInboxIndex,
   type MachineRead,
   type MachineResult,
+  type MacrosInvoked,
   type MergedInboxBoard,
   type MergedInboxIndex,
   machineRef,
@@ -176,6 +177,7 @@ export const toInboxView = (
       ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
       ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
       ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+      ...(q.macros === undefined ? {} : { macros: q.macros }),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
@@ -200,6 +202,7 @@ export const toInboxView = (
     ...(q.deferred === undefined ? {} : { deferred: q.deferred }),
     ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
+    ...(q.macros === undefined ? {} : { macros: q.macros }),
   })),
 });
 
@@ -242,6 +245,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
   deferred?: true,
   highlightReply?: true,
   drawings?: Drawings,
+  macros?: MacrosInvoked,
 ) {
   const decided = yield* decideAndAppend(inboxId, (state) =>
     Result.map(
@@ -253,6 +257,7 @@ export const answerQuestion = Effect.fnUntraced(function* (
         ...(deferred === undefined ? {} : { deferred }),
         ...(highlightReply === undefined ? {} : { highlightReply }),
         ...(drawings === undefined ? {} : { drawings }),
+        ...(macros === undefined ? {} : { macros }),
       }),
       (event) => ({
         events: [event],
@@ -940,6 +945,7 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.deferred,
             payload.highlightReply,
             payload.drawings,
+            payload.macros,
           ),
         ),
       )

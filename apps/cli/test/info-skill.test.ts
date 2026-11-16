@@ -6,6 +6,7 @@ import {
   CONFIG_DIR_NAME,
   CONFIG_FILE,
   KEYBINDINGS_FILE,
+  MACROS_FILE,
   METADATA_FILE,
   STATE_DIR_NAME,
 } from '@operator-inbox/core';
@@ -47,6 +48,7 @@ describe('operator-inbox info', () => {
         configFile: path.join(CONFIG, CONFIG_DIR_NAME, CONFIG_FILE),
         metadataFile: path.join(CONFIG, CONFIG_DIR_NAME, METADATA_FILE),
         keybindingsFile: path.join(CONFIG, CONFIG_DIR_NAME, KEYBINDINGS_FILE),
+        macrosFile: path.join(CONFIG, CONFIG_DIR_NAME, MACROS_FILE),
         stateDir: path.join(STATE, STATE_DIR_NAME),
         databasePath: path.join(STATE, STATE_DIR_NAME, 'inbox.sqlite'),
         databaseSource: 'default',
@@ -115,6 +117,7 @@ describe('operator-inbox info', () => {
         'configFile',
         'metadataFile',
         'keybindingsFile',
+        'macrosFile',
         'stateDir',
         'databasePath',
         'databaseSource',

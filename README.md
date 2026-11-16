@@ -68,6 +68,29 @@ Nothing is needed to start. To change anything, edit the files in `~/.config/ope
 - `config.json`: this machine's settings, such as `databasePath` to move the store, `serve.tailnet` to reach the app from your other devices through `tailscale serve`, and `inboxMachines` to show another machine's Inboxes here.
 - `metadata.json`: the metadata keys your Inboxes and Questions carry. `operator-inbox keys` shows the rules in force.
 - `keybindings`: your own key bindings for the page.
+- `macros.json`: your macros, slash commands for the answer box. Each has a name, a line saying what it is for, an instruction for the agent and its parameters, each a closed list of options (one of them, or with `"multiple": true` any of them), text or a number; every parameter is required unless it says `"required": false`. Type `/` at the start of a word in the answer box to pick one. `operator-inbox macros` checks the file and prints what it offers.
+
+```json
+{
+  "macros": [
+    {
+      "name": "todo",
+      "description": "Add a to-do for me",
+      "instruction": "Add this to the operator's to-do list, tied to this question's work, at the given priority (1 is the highest).",
+      "params": [
+        { "name": "text", "type": "text", "placeholder": "what to do" },
+        { "name": "priority", "type": "number", "min": 1, "max": 4, "default": 2, "required": false }
+      ]
+    },
+    {
+      "name": "park",
+      "description": "Park this thread",
+      "instruction": "Stop work on this thread. Write down where it stands, and pick it up only when the operator asks.",
+      "params": []
+    }
+  ]
+}
+```
 
 `operator-inbox info` prints where everything is.
 

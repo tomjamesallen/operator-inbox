@@ -240,6 +240,24 @@ The operator can answer **Defer to agent** instead of choosing. `answers` opens 
 
 The Processed queue shows it as "You deferred to the agent:", so deferrals can be found and counted later.
 
+### An answer that carries macros
+
+The operator can add **macros** to an answer or a deferral: short commands they configured, such as `/todo` or `/park`, each with an instruction written for you and the values they filled in. `answers` prints one block per macro after the answer's text, in the order the operator added them:
+
+```text
+  MACRO 1 of 2: /todo
+    instruction: Add this to the operator's to-do list, tied to this Question's work.
+    text = "Book the room"
+    priority = null
+```
+
+Under `--json` they are `"macros": [{ "macro", "instruction", "args" }]`. An answer may be macros alone, with no text.
+
+1. **Carry out each macro, in order, as its instruction says**, with its arguments. The instruction is the whole of what the macro means: never ask the operator what a macro means or what it is for. A `null` argument is one the operator left empty: fill it from the Question's context, or leave it out where the instruction allows.
+2. **Read the answer's text with them.** The text and the macros are one answer; where the text narrows or contradicts a macro, the text is the operator's more specific word.
+3. **Say in the session what you did for each macro**, one line each: `/todo: added "Book the room" at priority 2`. If one cannot be done, say why, and carry on with the rest.
+4. Run `operator-inbox done <code>` once they are all carried out, as for any answer.
+
 ### An answer that asks for your reply highlighted
 
 The operator can mark an answer, or a Question they ask you, **Highlight reply**. `answers` then opens it with `HIGHLIGHT YOUR RESPONSE: ask your follow-up with --highlight` (`"highlightReply": true` under `--json`). It means the operator will look for your reply among many: **the Question you ask in response must be highlighted.** Ask it with `--highlight`, which highlights it as it is asked:

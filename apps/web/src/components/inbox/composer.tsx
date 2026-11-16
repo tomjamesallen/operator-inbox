@@ -49,8 +49,15 @@ import {
   inboxReaderAtoms,
 } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
+import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { InboxActions, LitActions } from './colophon';
 import { Icon, Tip } from './icon';
+import {
+  firstCardStop,
+  MacroCards,
+  MacroMenuList,
+  useMacroMenu,
+} from './macro-cards';
 import { InboxMenuButton } from './row-menu';
 
 // The box at the foot. It belongs to the lit question, and the machine says how
@@ -94,21 +101,36 @@ const Box = ({
   disabled = false,
   onChange,
   onKeyDown,
+  onSelect,
   combobox,
+  boxRef,
 }: {
   readonly value: string;
   readonly placeholder: string;
   readonly disabled?: boolean;
-  readonly onChange: (text: string) => void;
+  readonly onChange: (text: string, el: HTMLTextAreaElement) => void;
   readonly onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
-  readonly combobox?: { readonly active: string | undefined };
+  // The caret moved: the macro menu reads where it is.
+  readonly onSelect?: (el: HTMLTextAreaElement) => void;
+  readonly combobox?: {
+    readonly active: string | undefined;
+    // The list it controls, and whether it shows: the Inbox list by default,
+    // which shows the whole time the box is picking.
+    readonly expanded?: boolean;
+    readonly controls?: string;
+  };
+  readonly boxRef?: { current: HTMLTextAreaElement | null };
 }) => {
   const self = useRef<HTMLTextAreaElement | null>(null);
   // Stable, or each render would run it and take the focus back.
-  const attach = useCallback((el: HTMLTextAreaElement | null) => {
-    self.current = el;
-    takeFocus(el);
-  }, []);
+  const attach = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      self.current = el;
+      if (boxRef !== undefined) boxRef.current = el;
+      takeFocus(el);
+    },
+    [boxRef],
+  );
   // A key asks for the caret from anywhere, another field included.
   useAtomSubscribe(boxFocusAskedAtom, () =>
     self.current?.focus({ preventScroll: true }),
@@ -129,12 +151,15 @@ const Box = ({
         : {
             role: 'combobox',
             'aria-autocomplete': 'list',
-            'aria-expanded': true,
-            'aria-controls': PICK_LIST_ID,
+            'aria-expanded': combobox.expanded ?? true,
+            'aria-controls': combobox.controls ?? PICK_LIST_ID,
             'aria-activedescendant': combobox.active,
           })}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => onChange(e.target.value, e.target)}
       onKeyDown={onKeyDown}
+      {...(onSelect === undefined
+        ? {}
+        : { onSelect: (e) => onSelect(e.currentTarget) })}
       placeholder={placeholder}
       className="field-sizing-content max-h-body w-full resize-none bg-transparent py-s1 font-reading text-14 leading-card text-fg outline-none placeholder:text-fg/30 pointer-coarse:text-field"
     />
@@ -216,6 +241,8 @@ const Frame = ({
   );
 };
 
+// The answer, with its macros: `/` at a word's start opens the menu over the
+// box, and each macro picked is a card under it (`macro-cards.tsx`).
 const AnswerBox = ({
   item,
   held,
@@ -224,28 +251,71 @@ const AnswerBox = ({
   readonly held: boolean;
 }) => {
   const [draft, setDraft] = useAtom(responseDraftAtom(item.key));
+  const cards = useAtomValue(macroCardsAtom(item.key));
+  const askFocus = useAtomSet(askMacroFocusAtom);
+  const self = useRef<HTMLTextAreaElement | null>(null);
   // A drawing waiting on the operator's choice holds both sends.
   const free = useAtomValue(answerDrawingConflictsAtom).length === 0;
+  const setText = (text: string) =>
+    setDraft({ inboxId: item.inboxId, number: item.question.number, text });
+  const menu = useMacroMenu({
+    key: item.key,
+    inboxId: item.inboxId,
+    number: item.question.number,
+    text: draft,
+    setText,
+  });
   return (
-    <Frame place={answerPlaceOf(item.key)}>
-      <Box
-        value={draft}
-        placeholder="Write your answer"
-        onChange={(text) =>
-          setDraft({
-            inboxId: item.inboxId,
-            number: item.question.number,
-            text,
-          })
-        }
+    <div className="relative">
+      {menu.open && (
+        <MacroMenuList
+          items={menu.items}
+          active={menu.active}
+          failed={menu.failed}
+          onPick={(m) => menu.pick(m, self.current)}
+        />
+      )}
+      <Frame place={answerPlaceOf(item.key)}>
+        <Box
+          boxRef={self}
+          value={draft}
+          placeholder="Write your answer"
+          combobox={menu.combobox}
+          onChange={(text, el) => {
+            setText(text);
+            menu.refresh(el);
+          }}
+          onSelect={menu.refresh}
+          onKeyDown={(e) => {
+            if (menu.onKeyDown(e)) return;
+            // Tab goes from the text into the cards, while there are any.
+            const first = firstCardStop(cards);
+            if (
+              e.key === 'Tab' &&
+              !e.shiftKey &&
+              !e.metaKey &&
+              !e.ctrlKey &&
+              !e.altKey &&
+              first !== undefined
+            ) {
+              e.preventDefault();
+              askFocus({ key: item.key, to: first });
+            }
+          }}
+        />
+        <Actions
+          label="Send"
+          ready={!held && free && (draft.trim() !== '' || cards.length > 0)}
+          deferrable={!held}
+          deferReady={free}
+        />
+      </Frame>
+      <MacroCards
+        itemKey={item.key}
+        inboxId={item.inboxId}
+        number={item.question.number}
       />
-      <Actions
-        label="Send"
-        ready={!held && free && draft.trim() !== ''}
-        deferrable={!held}
-        deferReady={free}
-      />
-    </Frame>
+    </div>
   );
 };
 

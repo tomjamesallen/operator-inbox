@@ -20,6 +20,7 @@ import {
   InboxNotFound,
   InboxUnavailable,
   KeybindingsUnreadable,
+  MacrosUnreadable,
   MuteRefused,
   OpenSessionRefused,
   OperatorInboxApi,
@@ -462,6 +463,77 @@ describe('drawings as stored in the log', () => {
   });
 });
 
+// Macros: on an answer, on a deferral with no note, and carried by a move,
+// which came after the event goldens above were pinned and so have their own
+// file.
+const AGENDA = {
+  macro: 'agenda',
+  instruction:
+    'Add the item to the named person’s agenda. Do not message them.',
+  args: { person: 'Mira', item: 'Confirm the opening date' },
+};
+const LABEL = {
+  macro: 'label',
+  instruction: 'Apply these labels to the work this question belongs to.',
+  args: { labels: ['blocked', 'quick-win'], note: null, weight: 2 },
+};
+const PARK = {
+  macro: 'park',
+  instruction: 'Stop work on this thread until the operator asks.',
+  args: {},
+};
+
+const MACRO_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(1),
+    response: 'Go ahead with the rota first.',
+    macros: [AGENDA, LABEL],
+  },
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(2),
+    response: '',
+    deferred: true,
+    macros: [PARK],
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(1),
+    toInboxId: INBOX_B,
+    toNumber: q(1),
+    question: {
+      title: 'Moved question',
+      body: '',
+      revision: rev(1),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: 'Go ahead with the rota first.',
+      withdrawn: false,
+      macros: [AGENDA],
+    },
+  },
+];
+
+describe('macros as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = MACRO_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-macro-events.jsonl', lines);
+    const read = golden('inbox-macro-events.jsonl').split('\n').filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(MACRO_EVENTS);
+  });
+
+  it('reads an answer logged before macros with none', () => {
+    const decoded = decodeEvent(
+      `{"_tag":"QuestionAnswered","inboxId":"${INBOX_A}","number":1,"response":"Yes"}`,
+    );
+    expect(decoded).not.toHaveProperty('macros');
+  });
+});
+
 // ================================================================================
 // Frontmatter — what the `plan*` builders hand `serialiseFrontmatter`, the
 // production write path of every `new-*` command, and what `parseFrontmatter`
@@ -640,6 +712,11 @@ const DTOS = [
     seenRevision: rev(2),
     drawings: { layout: EDITED_SCENE },
   }),
+  dtoCase('dto-payload-answer-macros.json', AnswerPayload, {
+    response: '',
+    seenRevision: rev(1),
+    macros: [AGENDA, PARK],
+  }),
   dtoCase('dto-payload-ask-highlight-reply.json', AskPayload, {
     text: 'Can you check X?',
     highlightReply: true,
@@ -730,6 +807,12 @@ const ERRORS = [
     KeybindingsUnreadable,
     new KeybindingsUnreadable({
       message: 'Could not read /c/operator-inbox/keybindings.',
+    }),
+  ),
+  errorCase(
+    MacrosUnreadable,
+    new MacrosUnreadable({
+      message: 'Could not read /c/operator-inbox/macros.json.',
     }),
   ),
 ];

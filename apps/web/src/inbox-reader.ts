@@ -5,6 +5,7 @@ import {
   type InboxMachineKey,
   type InboxMetadataRules,
   type InboxViewDto,
+  type MacroInvoked,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/reactivity';
@@ -76,6 +77,14 @@ import {
   type ReaderSnapshot,
   readerQueuesOf,
 } from './inbox-reader-machine';
+import {
+  askMacroFocusAtom,
+  firstMissingOf,
+  macroCardsAtom,
+  macroHeldAtom,
+  macrosToSend,
+  missingKeyOf,
+} from './macros';
 
 // The zen inbox reader's Atoms: what joins the board, the machine and the
 // writes. The board and the drafts live in `inbox.ts`, the flow in the machine;
@@ -462,15 +471,18 @@ export const headOf = (item: ReaderItem): Head => {
 export interface Answer {
   readonly label: string;
   readonly text: string;
+  // The macros the operator invoked with it, in order.
+  readonly macros: ReadonlyArray<MacroInvoked>;
 }
 
 /** What was said to a question, under its body. */
 export const answerOf = (item: ReaderItem): Answer | undefined => {
   if (isSending(item)) {
-    const { deferred, response } = item.sending;
+    const { deferred, response, macros } = item.sending;
     return {
       label: answerLabel(false, false, deferred),
-      text: deferred ? deferralText(response) : response,
+      text: macroText(deferred, response, macros),
+      macros,
     };
   }
   const q = item.question;
@@ -479,14 +491,28 @@ export const answerOf = (item: ReaderItem): Answer | undefined => {
     return {
       label: answerLabel(true, false),
       text: withdrawalReason(q.reason),
+      macros: [],
     };
   if (!('response' in q) || q.response === undefined) return undefined;
   const deferred = q.deferred === true;
+  const macros = 'macros' in q ? (q.macros ?? []) : [];
   return {
     label: answerLabel(false, false, deferred),
-    text: deferred ? deferralText(q.response) : q.response,
+    text: macroText(deferred, q.response, macros),
+    macros,
   };
 };
+
+// An answer of macros alone has no text to show, and a deferral's "no note"
+// line is not wanted when its macros say what to do.
+const macroText = (
+  deferred: boolean,
+  response: string,
+  macros: ReadonlyArray<MacroInvoked>,
+): string =>
+  deferred && !(macros.length > 0 && response.trim() === '')
+    ? deferralText(response)
+    : response;
 
 export interface FollowUp {
   readonly key: string;
@@ -641,9 +667,14 @@ interface AnswerWrite {
   readonly highlightReply: boolean;
   // The drawings the operator changed, by id, each the whole edited scene.
   readonly drawings: Readonly<Record<string, string>> | undefined;
+  // The macros the operator invoked, in order.
+  readonly macros: ReadonlyArray<MacroInvoked>;
 }
 
 // --- highlight your reply ---------------------------------------------------------
+
+const isNonEmpty = <A>(as: ReadonlyArray<A>): as is readonly [A, ...Array<A>] =>
+  as.length > 0;
 
 /** The box's place for its "Highlight reply" switch: one per box that sends to an agent. */
 export const highlightPlaceOf = (composer: Composer): string | undefined => {
@@ -721,6 +752,7 @@ const answerWriteAtom = Atom.family((key: string) =>
                 ...(req.drawings === undefined
                   ? {}
                   : { drawings: req.drawings }),
+                ...(isNonEmpty(req.macros) ? { macros: req.macros } : {}),
               },
             }),
             () => {
@@ -733,6 +765,13 @@ const answerWriteAtom = Atom.family((key: string) =>
                 text: '',
               });
               registry.set(highlightReplyAtom(answerPlaceOf(key)), false);
+              // The macros went with it too; a failed send keeps their cards.
+              registry.set(macroCardsAtom(key), {
+                inboxId,
+                number: question.number,
+                cards: [],
+              });
+              registry.set(macroHeldAtom(key), undefined);
               const { target } = registry.get(linkTargetAtom);
               if (
                 target?.inboxId === inboxId &&
@@ -910,19 +949,38 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       const write = answerWriteAtom(item.key);
       const response = ctx.get(responseDraftAtom(item.key));
       const drawings = ctx.get(questionDrawingDraftsAtom(item.key));
+      const cards = ctx.get(macroCardsAtom(item.key));
       if (
-        (response.trim() === '' && !deferred) ||
+        (response.trim() === '' && cards.length === 0 && !deferred) ||
         ctx.get(write).waiting ||
         // A drawing the agent changed since the operator's edit waits on
         // their choice (`answerDrawingConflictsAtom`).
         drawingConflicts(drawings, item.question).length > 0
       )
         return;
+      // A required macro field left empty holds the send once, on that
+      // field; the same fields still empty at the next send go as `null`.
+      const missing = missingKeyOf(cards);
+      const first = firstMissingOf(cards);
+      if (
+        missing !== undefined &&
+        first !== undefined &&
+        ctx.get(macroHeldAtom(item.key)) !== missing
+      ) {
+        ctx.set(macroHeldAtom(item.key), missing);
+        ctx.set(askMacroFocusAtom, {
+          key: item.key,
+          to: { _tag: 'Field', ...first },
+        });
+        return;
+      }
+      const macros = macrosToSend(cards);
       ctx.set(inboxReaderAtoms.send, {
         type: 'AnswerSent',
         key: item.key,
         response,
         deferred,
+        macros,
       });
       ctx.set(write, {
         item,
@@ -930,6 +988,7 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
         deferred,
         highlightReply: ctx.get(highlightReplyAtom(answerPlaceOf(item.key))),
         drawings: drawingsToSend(drawings, item.question),
+        macros,
       });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;

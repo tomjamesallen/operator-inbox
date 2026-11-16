@@ -4,6 +4,7 @@ import { formatSchemaIssues } from '../schema-issues';
 import { InboxApiGroup } from './inbox-api';
 import { InboxConfigApiGroup } from './inbox-config-api';
 import { KeybindingsApiGroup } from './keybindings-api';
+import { MacrosApiGroup } from './macros-api';
 
 // The local app's HTTP contract: the `HttpApi` that `operator-inbox serve`
 // implements and the web client derives its Atoms from (`AtomHttpApi`).
@@ -97,5 +98,6 @@ export class OperatorInboxApi extends HttpApi.make('operator-inbox')
   .add(InboxApiGroup)
   .add(InboxConfigApiGroup)
   .add(KeybindingsApiGroup)
+  .add(MacrosApiGroup)
   .middleware(RequestDecodeErrors)
   .prefix('/api') {}
