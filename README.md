@@ -2,7 +2,17 @@
 
 A local inbox for the questions your agent sessions ask you. Each session posts its questions to an Inbox, you answer them in a local web app, and the session picks the answers up.
 
+It runs on your machine only: a CLI, an event log on one SQLite file, and a web app on http://127.0.0.1:7184. It is built for Claude Code sessions, and works from any agent that can run a command.
+
 Work in progress.
+
+## How it works
+
+An agent session opens an Inbox (`operator-inbox open`) and asks each question there (`operator-inbox ask`), with enough context to answer cold. You answer in the app at http://127.0.0.1:7184. The session runs `operator-inbox watch` once, which wakes it when an answer lands. It acts on the answer, then marks the Question done (`operator-inbox done`). Turn on inbox mode (`operator-inbox mode on`) and the app's Claude Code hooks keep every question for you in the Inbox, not the chat.
+
+`operator-inbox skill` prints the full instructions an agent follows. Point your agent at them, or install them as a skill. `operator-inbox --help` lists every command.
+
+`docs/architecture.md` describes how it is built: an event log on one SQLite file, a CLI that is also the server, and a web app.
 
 ## Set up
 
@@ -36,3 +46,30 @@ rm ~/Library/LaunchAgents/com.operator-inbox.serve.plist
 ```
 
 `launchctl bootout` on its own stops it until the next login or the next `setup.sh`.
+
+## Configure
+
+Nothing is needed to start. To change anything, edit the files in `~/.config/operator-inbox/` (under `$XDG_CONFIG_HOME` when that is set):
+
+- `config.json`: this machine's settings, such as `databasePath` to move the store, `serve.tailnet` to reach the app from your other devices through `tailscale serve`, and `inboxMachines` to show another machine's Inboxes here.
+- `metadata.json`: the metadata keys your Inboxes and Questions carry. `operator-inbox keys` shows the rules in force.
+- `keybindings`: your own key bindings for the page.
+
+`operator-inbox info` prints where everything is.
+
+## Develop
+
+```sh
+pnpm install
+pnpm verify
+```
+
+`pnpm verify` runs Biome, the type check, the Effect check, every test and the build. `AGENTS.md` holds the codebase's rules, and `GLOSSARY.md` its words.
+
+## Issues
+
+Bug reports and ideas are welcome as issues. Pull requests from outside are not taken for now.
+
+## Licence
+
+BSD-3-Clause. See `LICENSE`.
