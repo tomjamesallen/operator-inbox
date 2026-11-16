@@ -272,7 +272,7 @@ const focusRail = (get: Atom.AtomContext, at: RailFocus): boolean => {
   return send(get, { type: 'RailFocused' });
 };
 
-// Along the views as a swipe goes, so Ask sits left of the queues.
+// Along the views as a finger swipe goes, so Ask sits left of the queues.
 // Landing on Your inbox while it shows the empty state's list, the list takes
 // the focus.
 const stepView = (get: Atom.AtomContext, by: 1 | -1): boolean => {

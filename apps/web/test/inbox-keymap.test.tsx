@@ -166,19 +166,11 @@ const prefix = (key: string, more: KeyboardEventInit = {}) => {
   press({ key, ...more });
 };
 
-const swipe = (deltaX: number, target?: Element) => {
+// A finger pushing the page left steps right, as `by` 1.
+const swipe = (by: 1 | -1, target?: Element) => {
   const flow = target ?? document.querySelector('[data-zen-flow]');
   if (flow === null) throw new Error('no flow');
-  act(() => {
-    fireEvent.wheel(flow, { deltaX, deltaY: 0 });
-    fireEvent.wheel(flow, { deltaX, deltaY: 0 });
-    fireEvent.wheel(flow, { deltaX, deltaY: 0 });
-  });
-};
-
-const touch = (fromX: number, toX: number) => {
-  const flow = document.querySelector('[data-zen-flow]');
-  if (flow === null) throw new Error('no flow');
+  const [fromX, toX] = by === 1 ? [300, 100] : [100, 300];
   act(() => {
     fireEvent.touchStart(flow, {
       touches: [{ clientX: fromX, clientY: 100 }],
@@ -186,6 +178,14 @@ const touch = (fromX: number, toX: number) => {
     fireEvent.touchEnd(flow, {
       changedTouches: [{ clientX: toX, clientY: 104 }],
     });
+  });
+};
+
+const trackpadSwipe = (deltaX: number) => {
+  const flow = document.querySelector('[data-zen-flow]');
+  if (flow === null) throw new Error('no flow');
+  act(() => {
+    for (let i = 0; i < 10; i++) fireEvent.wheel(flow, { deltaX, deltaY: 0 });
   });
 };
 
@@ -200,30 +200,30 @@ describe('swiping the middle panel', () => {
 
   it('goes Ask, Your inbox, With the agent, Processed, and stops at each end', async () => {
     await mount();
-    swipe(60);
+    swipe(1);
     await waitFor(() => expect(on(/With the agent/)).toBe('true'));
     await settle();
-    swipe(60);
+    swipe(1);
     await waitFor(() => expect(on(/Processed/)).toBe('true'));
     await settle();
-    swipe(60);
+    swipe(1);
     await settle();
     expect(on(/Processed/)).toBe('true');
-    swipe(-60);
+    swipe(-1);
     await waitFor(() => expect(on(/With the agent/)).toBe('true'));
     await settle();
-    swipe(-60);
+    swipe(-1);
     await waitFor(() => expect(on(/Your inbox/)).toBe('true'));
     await settle();
-    swipe(-60);
+    swipe(-1);
     await screen.findByRole('heading', { name: 'Ask the agent' });
     await settle();
-    swipe(-60);
+    swipe(-1);
     await settle();
     expect(screen.queryByRole('heading', { name: 'Ask the agent' })).not.toBe(
       null,
     );
-    swipe(60);
+    swipe(1);
     await waitFor(() =>
       expect(
         screen.queryByRole('heading', { name: 'Ask the agent' }),
@@ -234,22 +234,25 @@ describe('swiping the middle panel', () => {
 
   it('comes out of an ask to Your inbox, wherever the ask began', async () => {
     await mount();
-    swipe(60);
+    swipe(1);
     await waitFor(() => expect(on(/With the agent/)).toBe('true'));
     prefix('a');
     await screen.findByRole('heading', { name: 'Ask the agent' });
     await settle();
-    swipe(60);
+    swipe(1);
     await waitFor(() => expect(on(/Your inbox/)).toBe('true'));
     expect(screen.queryByRole('heading', { name: 'Ask the agent' })).toBeNull();
   });
 
-  it('steps on a finger too, the way the finger pushes the page', async () => {
+  it('steps nothing on a trackpad, whose sideways scroll is too easily made', async () => {
     await mount();
-    touch(300, 100);
-    await waitFor(() => expect(on(/With the agent/)).toBe('true'));
-    touch(100, 300);
-    await waitFor(() => expect(on(/Your inbox/)).toBe('true'));
+    trackpadSwipe(200);
+    await settle();
+    expect(on(/Your inbox/)).toBe('true');
+    trackpadSwipe(-200);
+    await settle();
+    expect(on(/Your inbox/)).toBe('true');
+    expect(screen.queryByRole('heading', { name: 'Ask the agent' })).toBeNull();
   });
 
   it('leaves a block that scrolls sideways to scroll', async () => {
@@ -260,13 +263,13 @@ describe('swiping the middle panel', () => {
     Object.defineProperty(wide, 'scrollWidth', { value: 900 });
     Object.defineProperty(wide, 'clientWidth', { value: 300 });
     flow?.append(wide);
-    swipe(60, wide);
+    swipe(1, wide);
     await settle();
     expect(on(/Your inbox/)).toBe('true');
     wide.remove();
   });
 
-  it('keeps the browser from taking the swipe as back or forward', async () => {
+  it('keeps the browser from taking a trackpad swipe as back or forward', async () => {
     // A registry lets go of its nodes a moment after the last reader leaves.
     const root = document.documentElement.classList;
     await waitFor(() => expect(root).not.toContain('overscroll-x-none'));
