@@ -82,6 +82,27 @@ describe('the toasts', () => {
     );
   });
 
+  it('names each question by its code once its Inbox has one', () => {
+    const coded = { ...VIEW_A, code: 'or-chd' };
+    expect(
+      chaseLine(
+        chaseToastsOf(drawn([coded]), at('11:20'), FIVE, new Set())[0] as never,
+      ),
+    ).toBe(
+      '2 questions (or-chd#2, or-chd#6) in orchard have sat with the agent for 9m.',
+    );
+    expect(
+      chaseLine(
+        chaseToastsOf(
+          drawn([coded]),
+          at('11:20'),
+          FIVE,
+          new Set([`${A}/2`]),
+        )[0] as never,
+      ),
+    ).toBe('or-chd#6 in orchard has sat with the agent for 9m.');
+  });
+
   it('leaves out a dismissed question, and an Inbox muted or archived', () => {
     expect(
       chaseToastsOf(drawn([VIEW_A]), at('11:20'), FIVE, new Set([`${A}/2`]))[0]
@@ -144,6 +165,12 @@ describe('on the page', () => {
     serve.board = board([linkedA, VIEW_B]);
     const view = mount(`/inbox/${B}`, [[clockAtom, await clockAt('11:20')]]);
     await waitFor(() => expect(toast()).not.toBeNull());
+    // In the reader's foot, beside or above the answer box, never over it.
+    expect(
+      toast()
+        ?.closest('[data-chase-toasts]')
+        ?.parentElement?.contains(document.querySelector('[data-zen-answer]')),
+    ).toBe(true);
     expect(toast()?.textContent).toContain('#2, #6');
     expect(
       toast()?.querySelector('[data-chase="here"]')?.getAttribute('href'),

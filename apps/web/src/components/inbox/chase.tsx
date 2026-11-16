@@ -161,20 +161,26 @@ const ChaseToastList = () => {
   return toasts.map((t) => <ChaseToastItem key={t.id} toast={t} />);
 };
 
-/** The chase toasts, top right, under the tabs, over everything but the dialogs. */
+/**
+ * The chase toasts, in the reader's foot. Mounted inside the foot, the box the
+ * answer sits in, so they are placed against it whatever its height: in the
+ * bottom right corner while the column has room for them beside the centred
+ * answer box (`@chase-beside:`, a container query on the foot), and stacked
+ * on top of the foot otherwise, full width on a phone. A new toast goes above
+ * the ones already up, so the first stays in the corner and none moves under
+ * the pointer.
+ */
 export const ChaseToasts = () => {
   useAtomMount(chaseToastSyncAtom);
   // Every stale Inbox shows: a chase hidden behind a limit is no chase.
   return (
     <Toast.Provider toastManager={manager} limit={Number.POSITIVE_INFINITY}>
-      <Toast.Portal>
-        <Toast.Viewport
-          data-chase-toasts
-          className="pointer-events-none fixed inset-x-s4 top-header z-20 ml-auto flex max-w-subtitle flex-col gap-s2"
-        >
-          <ChaseToastList />
-        </Toast.Viewport>
-      </Toast.Portal>
+      <Toast.Viewport
+        data-chase-toasts
+        className="pointer-events-none absolute inset-x-s5 bottom-full z-20 ml-auto flex max-w-chase flex-col gap-s2 @chase-beside:right-s4 @chase-beside:bottom-s4"
+      >
+        <ChaseToastList />
+      </Toast.Viewport>
     </Toast.Provider>
   );
 };
