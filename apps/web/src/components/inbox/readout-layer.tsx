@@ -198,7 +198,12 @@ const Cursor = ({
 const OWN_CLICK =
   'a, button, input, textarea, [role="button"], [data-zen-eyebrow], [data-zen-group], [data-copy]';
 
-/** In each Question's item; draws only in the lit one, while its audio is made. */
+/**
+ * In each Question's item; draws only in the lit one, while its audio is
+ * made. `z-1`, over the body's own positioned blocks; the reader's foot and
+ * header sit over it in turn (`z-2`, `z-10`), so a line scrolled under either
+ * never shows its band there.
+ */
 export const ReadoutLayer = ({ item }: { readonly item: ReaderItem }) => {
   const lit = useAtomValue(litReadyAtom);
   const seek = useAtomSet(seekAtom);

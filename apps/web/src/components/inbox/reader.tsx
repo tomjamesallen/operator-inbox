@@ -38,8 +38,12 @@ export const InboxReader = () => {
         <QuestionFlow header={header} foot={foot} />
         {asking ? <Asking /> : <Minimap />}
         {/* `@container`: the chase button, inside it, places itself by the
-            column's width (`@chase-beside:`). */}
-        <div ref={foot} className="@container absolute inset-x-0 bottom-0">
+            column's width (`@chase-beside:`). `z-2`: over the read-aloud
+            band (`z-1` in the list, `readout-layer.tsx`), so a line read
+            under the foot is hidden by it as its text is. Not `isolate` on
+            the list instead: its stuck breadcrumb must still rise over the
+            header. Under the minimap's `z-10`, as before. */}
+        <div ref={foot} className="@container absolute inset-x-0 bottom-0 z-2">
           <Composer />
           <FootAlerts>
             <PriorityButton />

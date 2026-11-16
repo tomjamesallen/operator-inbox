@@ -1,9 +1,11 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
+import { priorityCountAtom, priorityInfoAtom } from '../../inbox-priority';
 import { attentionAtom, freshElsewhereAtom } from '../../inbox-rail';
 import { railStateAtom, readerIntroAtom } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { inParens, keyHintAtom } from '../../keymap';
 import { freshMark, MarkShape } from './marks';
+import { BurgerPriorityDot, priorityDotWords } from './priority';
 
 // The burger and the wordmark, top left, sidebar open or shut.
 
@@ -77,6 +79,9 @@ const ATTENTION = { red: 'bg-red', orange: 'bg-orange' } as const;
 
 // A hover peeks and a click keeps. Shut, it carries what the sidebar would say:
 // the top corner for a new question elsewhere, the foot for something wrong.
+// On a phone, open or shut, its top left carries the priority Inbox's dot, in
+// place of the flag the wider layout floats over the foot; its label says so
+// at any width, since a screen reader has no breakpoint.
 const Burger = () => {
   const rail = useAtomValue(railStateAtom);
   const attention = useAtomValue(attentionAtom);
@@ -85,14 +90,18 @@ const Burger = () => {
   const send = useAtomSet(inboxReaderAtoms.send);
   const shut = rail === 'shut';
   const mark = newest === undefined ? undefined : freshMark(newest);
+  const priority = priorityDotWords(
+    useAtomValue(priorityCountAtom),
+    useAtomValue(priorityInfoAtom)?.label,
+  );
   return (
     <button
       type="button"
-      aria-label={
-        attention === undefined
-          ? 'Sidebar'
-          : 'Sidebar, something needs attention'
-      }
+      aria-label={[
+        'Sidebar',
+        ...(attention === undefined ? [] : ['something needs attention']),
+        ...(priority === undefined ? [] : [priority]),
+      ].join(', ')}
       aria-expanded={!shut}
       aria-keyshortcuts={hint.aria}
       title={`Sidebar${inParens(hint.all)}`}
@@ -108,6 +117,7 @@ const Burger = () => {
       >
         <path d="M1 3.5h14M1 8h14M1 12.5h14" />
       </svg>
+      <BurgerPriorityDot />
       {shut && attention !== undefined && (
         <span
           data-zen-attention={attention}
