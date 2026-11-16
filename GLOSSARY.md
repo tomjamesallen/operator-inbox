@@ -12,6 +12,8 @@ The words this codebase uses for its domain. Use them as defined here, in code, 
 
 **With the agent**: the queue of Questions the operator has answered, deferred or asked, which the agent has not yet marked done.
 
+**Chase**: nudging the session that holds a Question which has sat in **With the agent** too long, chiefly one that is stuck or has dropped its Inbox. Past `config.json`'s `chaseAfterMinutes` (five by default) the page marks the Question's time with a **Chase** link to the session, and raises a toast per Inbox that stays until the operator dismisses it. An Inbox with no **session link** gets the mark and the toast, without the link.
+
 **Processed**: the queue of Questions the agent has marked done or withdrawn, each shown with its answer or the agent's reason. The operator can still read them there.
 
 **Inbox mode**: a per-session switch on a session's **Inbox**. While it is on, the app's Claude Code hooks route every question for the operator to the Inbox: a question asked in chat, in the next-step box or with AskUserQuestion is refused. When the operator types in the session, inline questions are allowed for that one reply (a *pause*). Recorded as `InboxModeOn` and `InboxModeOff` on the log. _Avoid_: inbox lock.

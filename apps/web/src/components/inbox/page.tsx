@@ -12,6 +12,7 @@ import { readerSwipeAtom } from '../../inbox-swipe';
 import { keymapKeyAtom } from '../../keymap';
 import { KeymapHelp, PendingKeys } from '../keymap-help';
 import { QuestionSearch } from '../question-search';
+import { ChaseToasts } from './chase';
 import { InboxMetaCard } from './colophon';
 import { GoToSession } from './go-to-session';
 import { Masthead } from './masthead';
@@ -92,6 +93,7 @@ export const InboxPage = () => {
       <QuestionSearch />
       <GoToSession />
       <InboxMetaCard />
+      <ChaseToasts />
       <KeymapHelp />
       <PendingKeys />
     </div>

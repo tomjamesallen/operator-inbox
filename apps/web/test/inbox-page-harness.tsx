@@ -210,6 +210,14 @@ export interface Posted {
   readonly body: unknown;
 }
 
+// The fixtures' answers are stamped in the past, so on the live clock every one
+// would need chasing: the harness holds the chase off, and its own tests set
+// the threshold back (`inbox-chase.test.tsx`).
+export const NO_CHASE = {
+  metadata: { extras: 'allow', keys: [] },
+  chaseAfterMinutes: 1e9,
+};
+
 // What serve answers. A test moves these; each is put back before the next.
 export const serve: {
   board: unknown;
@@ -225,7 +233,7 @@ export const serve: {
   post: () => json(VIEW_A),
   read: undefined,
   keybindings: null,
-  config: { metadata: { extras: 'allow', keys: [] } },
+  config: NO_CHASE,
   posts: [],
   reads: 0,
 };
@@ -264,7 +272,7 @@ export const useInboxPage = (): void => {
       post: () => json(VIEW_A),
       read: undefined,
       keybindings: null,
-      config: { metadata: { extras: 'allow', keys: [] } },
+      config: NO_CHASE,
       posts: [],
       reads: 0,
     });
