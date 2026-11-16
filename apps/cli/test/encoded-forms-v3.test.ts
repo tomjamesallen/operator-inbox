@@ -482,7 +482,7 @@ const EXPECTED_LIST: unknown = [
 
 describe('the inbox event log, as kairos-es writes it in the v3 encoding', () => {
   it.effect(
-    'this build writes the golden DDL plus the one deliberate change: a metadata column',
+    'this build writes the golden DDL plus two deliberate changes: a metadata column and the blob table',
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -500,7 +500,11 @@ describe('the inbox event log, as kairos-es writes it in the v3 encoding', () =>
           "occurred_at TEXT NOT NULL,\n       metadata TEXT NOT NULL DEFAULT '{}'\n     );",
         );
         expect(withMetadata).not.toBe(goldenDdl);
-        expect(readDdl(file)).toBe(withMetadata);
+        // The app's own blob table (`inbox-blobs.ts`), made after the event
+        // tables on every open, is the second: a new table, so a file
+        // written before it gains it on its next open and nothing else moves.
+        const withBlobs = `${withMetadata}\nCREATE TABLE "operator_inbox_blobs" (sha TEXT PRIMARY KEY, kind TEXT NOT NULL, bytes INTEGER NOT NULL, doc BLOB NOT NULL);\n`;
+        expect(readDdl(file)).toBe(withBlobs);
         expect(readColumns(file)).toEqual([...GOLDEN_COLUMNS, 'metadata']);
       }).pipe(Effect.provide(NodeServices.layer)),
   );

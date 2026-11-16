@@ -3,6 +3,7 @@ import {
   awaitingAgent,
   awaitingOperator,
   CODE_COUNT,
+  checkHtmlDocument,
   codeAt,
   type Drawings,
   decideAdopt,
@@ -23,6 +24,8 @@ import {
   decideWithdraw,
   drawingFileToScene,
   evolveInbox,
+  HTML_BLOCK_BLOB_KIND,
+  type HtmlBlocks,
   type InboxCode,
   type InboxEvent,
   InboxId,
@@ -80,6 +83,7 @@ import {
 import { Argument, Command, Flag } from 'effect/cli';
 import { InputError } from '../errors';
 import { readHome } from '../home-dir';
+import { sha256Hex } from '../inbox-blobs';
 import {
   dispatchMode,
   dispatchPreToolHook,
@@ -700,6 +704,42 @@ export const dispatchGroupArchive = Effect.fnUntraced(function* (opts: {
     : `unarchived group "${event.group}" in inbox ${opts.inboxId} — ${state.label}`;
 });
 
+// --- HTML blocks -------------------------------------------------------------------
+
+/** An HTML block as `ask` and `edit` take it: its document's hash, size and bytes. */
+export interface HtmlBlockInput {
+  readonly sha: string;
+  readonly bytes: number;
+  readonly doc: Uint8Array;
+}
+export type HtmlBlockInputs = Readonly<Record<string, HtmlBlockInput>>;
+
+/**
+ * Keep each block's document in the blob table, then give back the refs the
+ * event carries. The blobs go FIRST, before anything is decided or appended:
+ * an event never names a document the store does not hold. An append that
+ * then fails or is refused leaves blobs no event names, which costs only
+ * their bytes; a blob is never updated or deleted.
+ */
+const keepHtmlBlocks = Effect.fnUntraced(function* (
+  htmls: HtmlBlockInputs | undefined,
+) {
+  if (htmls === undefined) return undefined;
+  const log = yield* InboxLog;
+  const refs: Record<string, { sha: string; bytes: number }> = {};
+  for (const [id, block] of Object.entries(htmls)) {
+    yield* log.putBlob({
+      sha: block.sha,
+      kind: HTML_BLOCK_BLOB_KIND,
+      bytes: block.bytes,
+      doc: block.doc,
+    });
+    refs[id] = { sha: block.sha, bytes: block.bytes };
+  }
+  const kept: HtmlBlocks = refs;
+  return kept;
+});
+
 // --- ask ---------------------------------------------------------------------------
 
 export const dispatchAsk = Effect.fnUntraced(function* (opts: {
@@ -714,8 +754,11 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
   readonly highlight?: boolean;
   // Scenes by id, for the body's `<Excalidraw id="…"/>` lines.
   readonly drawings?: Drawings;
+  // Documents by id, for the body's `<Html id="…"/>` lines.
+  readonly htmls?: HtmlBlockInputs;
 }) {
   const given = opts.metadata ?? emptyMetadata;
+  const htmls = yield* keepHtmlBlocks(opts.htmls);
   const asked = yield* decideOrFail(opts.inboxId, (state) => {
     // A key already on the Inbox counts as present: the question inherits it.
     const refusal =
@@ -733,6 +776,7 @@ export const dispatchAsk = Effect.fnUntraced(function* (opts: {
         body: opts.body,
         ...(opts.metadata === undefined ? {} : { metadata: opts.metadata }),
         ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
+        ...(htmls === undefined ? {} : { htmls }),
       }),
       (event) => {
         const asked: ReadonlyArray<InboxEvent> = askEvents(state, event);
@@ -1033,18 +1077,22 @@ export const dispatchEdit = Effect.fnUntraced(function* (opts: {
   readonly body?: string;
   // Drawings to set, by id; the Question's others stay.
   readonly drawings?: Drawings;
+  // HTML blocks to set, by id; the Question's others stay.
+  readonly htmls?: HtmlBlockInputs;
 }) {
   if (!Number.isInteger(opts.number) || opts.number < 1)
     return yield* new InputError({
       message: `inbox edit: a question number is a whole number from 1, got ${opts.number}`,
     });
   const number = QuestionNumber.make(opts.number);
+  const htmls = yield* keepHtmlBlocks(opts.htmls);
   const input: Parameters<typeof decideEdit>[1] = {
     inboxId: opts.inboxId,
     number,
     ...(opts.title === undefined ? {} : { title: opts.title }),
     ...(opts.body === undefined ? {} : { body: opts.body }),
     ...(opts.drawings === undefined ? {} : { drawings: opts.drawings }),
+    ...(htmls === undefined ? {} : { htmls }),
   };
   const edited = yield* decideOrFail(opts.inboxId, (state) =>
     Result.map(decideEdit(state, input), (e) => ({
@@ -1392,6 +1440,54 @@ export const drawingsOf = Effect.fnUntraced(function* (
   return out;
 });
 
+// `--html id=file`, repeatable: an HTML document the body shows with
+// `<Html id="id"/>`, run in a sandboxed frame.
+const htmlOpt = Flag.KeyValuePair('html').pipe(
+  Flag.withDescription(
+    'An HTML block as id=file, for a body line <Html id="id"/> (width="constrain|wide|full" optional); repeat it for more than one. The file is a whole HTML document, UTF-8, at most 512 KiB; it runs sandboxed, with no network, and may load only three.js and d3 from the app (see `operator-inbox skill`)',
+  ),
+  Flag.optional,
+);
+
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true });
+
+// Each `--html` file read and checked: UTF-8, within the size cap, and its
+// `oi-block` meta parsing (core's `checkHtmlDocument`), with its hash.
+// Undefined when none was given. Nothing is sanitised: the frame's sandbox
+// and policy are what keep a block from the page.
+export const htmlBlocksOf = Effect.fnUntraced(function* (
+  verb: string,
+  given: Option.Option<Record<string, string>>,
+) {
+  if (Option.isNone(given)) return undefined;
+  const fs = yield* FileSystem.FileSystem;
+  const out: Record<string, HtmlBlockInput> = {};
+  for (const [id, file] of Object.entries(given.value)) {
+    const bytes = yield* fs.readFile(file).pipe(
+      Effect.mapError(
+        () =>
+          new InputError({
+            message: `inbox ${verb}: cannot read the HTML block ${id} at ${file}`,
+          }),
+      ),
+    );
+    const doc = yield* Effect.try({
+      try: () => strictUtf8.decode(bytes),
+      catch: () =>
+        new InputError({
+          message: `inbox ${verb}: HTML block ${id} (${file}) is not UTF-8 text`,
+        }),
+    });
+    const checked = checkHtmlDocument(id, doc, bytes.byteLength);
+    if (Result.isFailure(checked))
+      return yield* new InputError({
+        message: `inbox ${verb}: ${checked.failure} (${file})`,
+      });
+    out[id] = { sha: sha256Hex(bytes), bytes: bytes.byteLength, doc: bytes };
+  }
+  return out;
+});
+
 // The flags as one dictionary; undefined when neither was given.
 const metadataOf = Effect.fnUntraced(function* (
   meta: Option.Option<Record<string, string>>,
@@ -1588,14 +1684,16 @@ const askCommand = Command.make(
       Flag.withDefault(false),
     ),
     drawing: drawingOpt,
+    html: htmlOpt,
   },
-  ({ title, bodyFile, inbox, meta, metaJson, highlight, drawing }) =>
+  ({ title, bodyFile, inbox, meta, metaJson, highlight, drawing, html }) =>
     print(
       Effect.gen(function* () {
         const inboxId = yield* resolved(inbox);
         const body = yield* readBody('ask', bodyFile);
         yield* refuseInvalidMermaid('ask', body);
         const drawings = yield* drawingsOf('ask', drawing);
+        const htmls = yield* htmlBlocksOf('ask', html);
         const rules = yield* readMetadataRules;
         const metadata = yield* metadataOf(meta, metaJson, rules);
         const asked = yield* dispatchAsk({
@@ -1603,6 +1701,7 @@ const askCommand = Command.make(
           title,
           body,
           ...(drawings === undefined ? {} : { drawings }),
+          ...(htmls === undefined ? {} : { htmls }),
           ...(metadata === undefined ? {} : { metadata }),
           ...(rules === undefined ? {} : { rules }),
           ...(highlight ? { highlight: true } : {}),
@@ -1821,8 +1920,9 @@ const editCommand = Command.make(
     ),
     inbox: inboxOpt,
     drawing: drawingOpt,
+    html: htmlOpt,
   },
-  ({ number, title, bodyFile, inbox, drawing }) =>
+  ({ number, title, bodyFile, inbox, drawing, html }) =>
     print(
       Effect.gen(function* () {
         const {
@@ -1835,18 +1935,20 @@ const editCommand = Command.make(
           Option.isNone(bodyFile) && read.length === 0 ? undefined : read;
         if (body !== undefined) yield* refuseInvalidMermaid('edit', body);
         const drawings = yield* drawingsOf('edit', drawing);
+        const htmls = yield* htmlBlocksOf('edit', html);
         return yield* dispatchEdit({
           inboxId,
           number: n,
           ...(Option.isSome(title) ? { title: title.value } : {}),
           ...(body === undefined ? {} : { body }),
           ...(drawings === undefined ? {} : { drawings }),
+          ...(htmls === undefined ? {} : { htmls }),
         });
       }),
     ),
 ).pipe(
   Command.withDescription(
-    'Rewrite a question the operator has not answered yet (title, body, drawings)',
+    'Rewrite a question the operator has not answered yet (title, body, drawings, HTML blocks)',
   ),
 );
 

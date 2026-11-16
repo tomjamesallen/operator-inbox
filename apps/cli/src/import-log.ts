@@ -22,6 +22,7 @@ import {
   Schema,
 } from 'effect';
 import { InputError } from './errors';
+import { InboxBlobsInMemory, sha256Hex } from './inbox-blobs';
 import { STORE_CONFIG } from './inbox-database';
 import {
   connectInboxLog,
@@ -44,7 +45,9 @@ import {
 //     `checkEncodedForm`);
 // (c) the app's read model folds the same Inboxes, with the same number of
 //     Questions in each, over the source and over the copy;
-// (d) the tag rows the copy's trigger fanned out equal the source's.
+// (d) the tag rows the copy's trigger fanned out equal the source's;
+// (e) the blob table's rows (`inbox-blobs.ts`), when the source has one, are
+//     copied too, each its hash's own bytes, and equal the source's.
 //
 // The source is opened read-only and never written. The store file must not
 // exist yet: an import never merges into or replaces a log.
@@ -79,10 +82,23 @@ interface TagRow {
   readonly main_id: number;
 }
 
-/** A log as read: its event rows in id order, its tag rows, its sequence. */
+/** One row of the blob table. */
+interface BlobRow {
+  readonly sha: string;
+  readonly kind: string;
+  readonly bytes: number;
+  readonly doc: Uint8Array;
+}
+
+/** The blob table's columns, in the order this copies and compares them. */
+const BLOB_COLUMNS = ['sha', 'kind', 'bytes', 'doc'] as const;
+
+/** A log as read: its event rows in id order, its tag rows, its blobs by key, its sequence. */
 interface LogRows {
   readonly events: ReadonlyArray<EventRow>;
   readonly tags: ReadonlyArray<TagRow>;
+  /** The blob table's rows in key order; none when the log has no such table. */
+  readonly blobs: ReadonlyArray<BlobRow>;
   /** `sqlite_sequence`'s value for the event table and its SQLite type. */
   readonly sequence: typeof StoredSequence.Type | undefined;
 }
@@ -99,6 +115,12 @@ const StoredEventRow = Schema.Struct({
 const StoredTagRow = Schema.Struct({
   tag: Schema.String,
   main_id: Schema.Number,
+});
+const StoredBlobRow = Schema.Struct({
+  sha: Schema.String,
+  kind: Schema.String,
+  bytes: Schema.Number,
+  doc: Schema.Uint8Array,
 });
 const StoredName = Schema.Struct({ name: Schema.String });
 const StoredSequence = Schema.Struct({
@@ -270,9 +292,52 @@ const readLogRows = (db: DatabaseSync, prefix: string, describe: string) =>
     const tags = yield* Effect.forEach(tagRows, (r) =>
       decodeRow(StoredTagRow, r, `a tag row of ${describe}`),
     );
+    const blobs = yield* readBlobRows(db, `${prefix}_blobs`, describe);
     const sequence = yield* readSequence(db, prefix, describe);
-    return { events, tags, sequence } satisfies LogRows;
+    return { events, tags, blobs, sequence } satisfies LogRows;
   });
+
+/**
+ * The blob table's rows, in key order, when the log has the table; none when
+ * it has not (a log from before blobs). A table with other columns is
+ * refused, since this would not copy it whole.
+ */
+const readBlobRows = (db: DatabaseSync, table: string, describe: string) =>
+  Effect.gen(function* () {
+    const columns = yield* columnsOf(db, table);
+    if (columns.length === 0) return [];
+    const known: ReadonlyArray<string> = BLOB_COLUMNS;
+    if (
+      columns.length !== BLOB_COLUMNS.length ||
+      columns.some((c) => !known.includes(c))
+    )
+      return yield* fail(
+        `${describe}'s blob table "${table}" has the columns ${columns.join(', ')}, not ${BLOB_COLUMNS.join(', ')}`,
+      );
+    const rows = yield* sqlite(`could not read ${describe}'s blobs`, () =>
+      db
+        .prepare(
+          `SELECT ${BLOB_COLUMNS.join(', ')} FROM ${quote(table)} ORDER BY sha`,
+        )
+        .all(),
+    );
+    return yield* Effect.forEach(rows, (r, i) =>
+      decodeRow(StoredBlobRow, r, `${describe}'s blob row ${i + 1}`),
+    );
+  });
+
+/** (e) every blob is its hash's own bytes, and the size it says. */
+const checkBlobs = (rows: ReadonlyArray<BlobRow>, describe: string) =>
+  Effect.forEach(
+    rows,
+    (row) =>
+      sha256Hex(row.doc) === row.sha && row.bytes === row.doc.byteLength
+        ? Effect.void
+        : fail(
+            `${describe}'s blob ${row.sha} is not the SHA-256 of its ${row.doc.byteLength} bytes, or not the ${row.bytes} bytes it says`,
+          ),
+    { discard: true },
+  );
 
 /** `sqlite_sequence`'s value for `table`, when the file has one. */
 const readSequence = (db: DatabaseSync, table: string, describe: string) =>
@@ -440,6 +505,7 @@ const foldRows = (rows: ReadonlyArray<EventRow>, describe: string) =>
     Effect.provide(
       Layer.effect(InboxLog, makeInboxLog).pipe(
         Layer.provideMerge(DcbEventStoreInMemory),
+        Layer.provide(InboxBlobsInMemory),
       ),
     ),
   );
@@ -508,6 +574,21 @@ const compareRows = (source: LogRows, target: LogRows) =>
           `tag row ${i + 1} differs: the source has ${JSON.stringify(from)}, the copy ${JSON.stringify(to)}`,
         );
     }
+    if (source.blobs.length !== target.blobs.length)
+      return yield* fail(
+        `the copy holds ${target.blobs.length} blobs, the source ${source.blobs.length}`,
+      );
+    for (const [i, from] of source.blobs.entries()) {
+      const to = target.blobs[i];
+      if (
+        to === undefined ||
+        to.sha !== from.sha ||
+        to.kind !== from.kind ||
+        to.bytes !== from.bytes ||
+        !sameBytes(to.doc, from.doc)
+      )
+        return yield* fail(`blob ${from.sha} differs in the copy`);
+    }
     const sequenceOf = (rows: LogRows) =>
       rows.sequence === undefined
         ? 'none'
@@ -539,6 +620,12 @@ const copyRows = (db: DatabaseSync, rows: LogRows) =>
           r.occurred_at,
           r.metadata,
         );
+      if (rows.blobs.length > 0) {
+        const blobs = db.prepare(
+          `INSERT INTO ${quote(`${STORE_CONFIG.tablePrefix}_blobs`)} (${BLOB_COLUMNS.join(', ')}) VALUES (?, ?, ?, ?)`,
+        );
+        for (const b of rows.blobs) blobs.run(b.sha, b.kind, b.bytes, b.doc);
+      }
       // The explicit ids moved the sequence to the highest; a source whose
       // sequence ran past it (an append rolled back after taking an id) keeps
       // its own, so the next position is the one the source would have used.
@@ -588,6 +675,8 @@ export interface ImportLogSummary {
   readonly questions: number;
   /** Events kept in an older encoded form (see `onlyAddsKeys`). */
   readonly olderForms: number;
+  /** Rows of the blob table. */
+  readonly blobs: number;
 }
 
 /** The name every temporary copy beside the store starts with. */
@@ -676,6 +765,7 @@ const readSource = (options: ImportLogOptions) =>
         const describe = options.from;
         const rows = yield* readLog(db, options.fromPrefix, describe);
         const olderForms = yield* checkEncodedForms(rows.events, describe);
+        yield* checkBlobs(rows.blobs, describe);
         const folded = yield* foldRows(rows.events, describe);
         return { rows, olderForms, folded };
       }),
@@ -695,6 +785,7 @@ export const importLog = (options: ImportLogOptions) =>
       inboxes: source.folded.size,
       questions: totalQuestions(source.folded),
       olderForms: source.olderForms,
+      blobs: source.rows.blobs.length,
     };
     if (options.dryRun) return summary;
 
@@ -792,7 +883,7 @@ export const describeImport = (
   options: ImportLogOptions,
   summary: ImportLogSummary,
 ) => {
-  const counts = `${summary.events} events, ${summary.inboxes} Inboxes, ${summary.questions} Questions`;
+  const counts = `${summary.events} events, ${summary.inboxes} Inboxes, ${summary.questions} Questions${summary.blobs === 0 ? '' : `, ${summary.blobs} blobs`}`;
   const older =
     summary.olderForms === 0
       ? ''

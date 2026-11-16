@@ -3,13 +3,15 @@ import type {
   QuestionBodyPartDto,
 } from '@operator-inbox/core/api';
 import { DrawingBlock, type DrawingHost } from './drawing-block';
+import { HtmlBlock } from './html-block';
 import { MermaidDiagram } from './mermaid-diagram';
 import { RenderedBody } from './rendered-body';
 
 // An inbox question's body. The server sends it as parts (core's
 // `renderQuestionParts`): rendered markdown, each ```mermaid fence as its
-// source, and each `<Excalidraw id="…"/>` line as the id of one of the
-// Question's drawings. Without parts, the body is its HTML alone.
+// source, each `<Excalidraw id="…"/>` line as the id of one of the
+// Question's drawings, and each `<Html id="…"/>` line as the id of one of its
+// HTML blocks. Without parts, the body is its HTML alone.
 
 type AnyQuestion =
   | InboxViewDto['awaitingOperator'][number]
@@ -67,6 +69,15 @@ const BodyPart = ({
               ? question.sentDrawings?.[part.id]
               : undefined
           }
+        />
+      );
+    case 'html-block':
+      return (
+        <HtmlBlock
+          id={part.id}
+          width={part.width ?? 'constrain'}
+          host={host}
+          refs={question.htmls}
         />
       );
   }

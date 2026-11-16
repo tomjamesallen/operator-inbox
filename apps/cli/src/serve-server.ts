@@ -23,6 +23,7 @@ import { makeKeybindingsApiLive } from './serve-keybindings-api';
 import { makeMacrosApiLive } from './serve-macros-api';
 import { makeReadoutApiLive, readoutAudioRouteLive } from './serve-readout-api';
 import { staticRoutesLive } from './serve-static';
+import { vendorRoutesLive } from './serve-vendor';
 
 // The HTTP server behind `operator-inbox serve`: the `OperatorInboxApi`
 // contract, its groups' live layers, the web build's static routes, and a
@@ -306,6 +307,7 @@ export const makeServeLayer = (
     Layer.mergeAll(
       OperatorInboxApiLive,
       readoutAudioRouteLive,
+      vendorRoutesLive,
       staticRoutesLive(webDist),
     ),
     {

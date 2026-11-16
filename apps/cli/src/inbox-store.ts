@@ -51,6 +51,13 @@ import {
 import { SqlClient, type SqlError } from 'effect/sql';
 import { InputError } from './errors';
 import {
+  ensureBlobTable,
+  InboxBlobs,
+  InboxBlobsInMemory,
+  makeInboxBlobsSql,
+  type StoredBlob,
+} from './inbox-blobs';
+import {
   ensureInboxFolder,
   resolveInboxDatabaseEdge,
   STORE_CONFIG,
@@ -238,6 +245,15 @@ export class InboxLog extends Context.Service<
       events: Arr.NonEmptyReadonlyArray<InboxEvent>,
       guard: InboxGuard,
     ) => Effect.Effect<void, AppendConditionFailed | InputError>;
+    /**
+     * Keep a document in the blob table (`inbox-blobs.ts`), before the event
+     * that names it is appended. A blob already kept is left as it is.
+     */
+    readonly putBlob: (blob: StoredBlob) => Effect.Effect<void, InputError>;
+    /** The blobs kept under these keys; a key with none is left out. */
+    readonly readBlobs: (
+      shas: ReadonlyArray<string>,
+    ) => Effect.Effect<ReadonlyMap<string, StoredBlob>, InputError>;
   }
 >()('operator-inbox/InboxLog') {}
 
@@ -334,8 +350,10 @@ const isQuietEvent = (event: InboxEvent) =>
   event._tag === 'InboxPriorityMarked' ||
   event._tag === 'InboxPriorityCleared';
 
-/** `InboxLog` over whatever `DcbEventStore` is provided. */
-export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
+/** `InboxLog` over whatever `DcbEventStore` and `InboxBlobs` are provided. */
+export const makeInboxLog = Effect.gen(function* () {
+  const store = yield* DcbEventStore;
+  const blobs = yield* InboxBlobs;
   const collectSequenced = (q: ReturnType<typeof query.all>) =>
     Effect.gen(function* () {
       const response = yield* store.read(q);
@@ -351,6 +369,8 @@ export const makeInboxLog = Effect.map(DcbEventStore, (store) => {
       return { events: stamped.map((e) => e.event), stamped, head };
     });
   return InboxLog.of({
+    putBlob: blobs.put,
+    readBlobs: blobs.get,
     read: (inboxId) => collect(query.tags([inboxTag(inboxId)])),
     readNamed: (inboxId, label, codes = []) =>
       Effect.map(
@@ -850,11 +870,21 @@ export const connectInboxLog = (
       ({ clientLayer, ensureSchema, SqliteClient, layer: storeLayer }) => {
         const migrated = Layer.effectDiscard(
           Effect.andThen(addMetadataColumn, ensureSchema(STORE_CONFIG)).pipe(
+            Effect.andThen(ensureBlobTable),
+            Effect.provideServiceEffect(SqlClient.SqlClient, SqliteClient),
+          ),
+        );
+        // The blob table on the store's own client, so a blob and the event
+        // that names it are written through one connection to one file.
+        const blobs = Layer.effect(
+          InboxBlobs,
+          makeInboxBlobsSql.pipe(
             Effect.provideServiceEffect(SqlClient.SqlClient, SqliteClient),
           ),
         );
         return Layer.effect(InboxLog, makeInboxLog).pipe(
           Layer.provide(storeLayer(STORE_CONFIG)),
+          Layer.provide(blobs),
           Layer.provide(migrated),
           Layer.provide(clientLayer({ filename: resolved.path })),
         );
@@ -881,11 +911,11 @@ export const inboxLogLive: Layer.Layer<
   FileSystem.FileSystem
 > = Layer.unwrap(Effect.map(resolveInboxDatabaseEdge, connectInboxLog));
 
-/** The in-memory log, for tests: kairos-es's own in-memory store. */
+/** The in-memory log, for tests: kairos-es's own in-memory store, and blobs in memory. */
 export const InboxLogInMemory: Layer.Layer<InboxLog> = Layer.effect(
   InboxLog,
   makeInboxLog,
-).pipe(Layer.provide(DcbEventStoreInMemory));
+).pipe(Layer.provide(DcbEventStoreInMemory), Layer.provide(InboxBlobsInMemory));
 
 // --- lazy acquisition --------------------------------------------------------------
 
@@ -1023,6 +1053,8 @@ export const makeInboxLogLazy = <R>(
           bounded((log) => log.readSession(sessionId)),
         listAll: () => bounded((log) => log.listAll()),
         append: (events, guard) => bounded((log) => log.append(events, guard)),
+        putBlob: (blob) => bounded((log) => log.putBlob(blob)),
+        readBlobs: (shas) => bounded((log) => log.readBlobs(shas)),
       });
     }),
   );

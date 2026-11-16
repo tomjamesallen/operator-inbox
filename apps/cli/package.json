@@ -23,8 +23,10 @@
     "@kairos-es/core": "catalog:",
     "@kairos-es/store-sqlite": "catalog:",
     "effect": "catalog:",
+    "d3": "catalog:",
     "happy-dom": "catalog:",
-    "mermaid": "catalog:"
+    "mermaid": "catalog:",
+    "three": "catalog:"
   },
   "devDependencies": {
     "@operator-inbox/typescript-config": "workspace:*",

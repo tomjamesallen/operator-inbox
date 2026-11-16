@@ -62,7 +62,7 @@ Once the Inbox is open, every question you would have asked the operator in the 
 operator-inbox ask --title "<the decision, as a question>" --body-file <path>
 ```
 
-It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text, except `<small>…</small>`, which renders as small, muted text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn inline as a picture, never larger than its own size, scaled down to fit the page (a wide one may run into the margins either side of the text; at most about 600 px tall), with a full-screen view one click away. Use one for a flow, a sequence or a state machine the operator has to follow. `ask` and `edit` parse each fence with Mermaid and refuse a body holding a diagram it cannot parse, naming the fence and the line, so nothing reaches the operator broken. Keep every statement on one line: a label never carries on onto the next line (write `<br/>` for a line break inside it), and in a sequence diagram a `;` ends the statement, so write one inside a label as `#59;`. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. For a layout the operator should rearrange, use a **drawing** (*Drawings* below). Otherwise prefer a pseudocode block, a file tree or a table.
+It prints the Question's **code**, such as `asv#3` (see *Question codes* below). Write the body to a scratch file first (or pipe it on stdin). Add `--inbox <id>` to ask in an Inbox this session has not opened. The body is GitHub-flavoured markdown: headings, lists, task lists, tables, strikethrough, images and code fences render (raw HTML shows as text, except `<small>…</small>`, which renders as small, muted text). **Mermaid diagrams are supported:** a ```mermaid fence is drawn inline as a picture, never larger than its own size, scaled down to fit the page (a wide one may run into the margins either side of the text; at most about 600 px tall), with a full-screen view one click away. Use one for a flow, a sequence or a state machine the operator has to follow. `ask` and `edit` parse each fence with Mermaid and refuse a body holding a diagram it cannot parse, naming the fence and the line, so nothing reaches the operator broken. Keep every statement on one line: a label never carries on onto the next line (write `<br/>` for a line break inside it), and in a sequence diagram a `;` ends the statement, so write one inside a label as `#59;`. A ```svg fence renders as a diagram too, shown as an image, which suits a small hand-drawn sketch. For a layout the operator should rearrange, use a **drawing** (*Drawings* below). For a chart, a 3D scene or an interactive diagram the operator explores, use an **HTML block** (*HTML blocks* below). Otherwise prefer a pseudocode block, a file tree or a table.
 
 **The operator will read it cold, maybe days later, with nothing else open.** So each body holds:
 
@@ -117,6 +117,37 @@ A drawing is an Excalidraw scene the operator sees as a picture in the body and 
    ```
 
    It prints the operator's drawing, one line per element (shapes nested in the shapes that hold them, each with its label, position and size; then the arrows, by what they join), about a twentieth of the scene's size. Without `--compact` it prints the whole scene, which `answers --json` carries too; read that only when you need an arrow's points. With no change from the operator it prints your own. An id means the same shape as before: a shape the operator moved, relabelled or restyled keeps your id, one they deleted is gone, and anything they added, a duplicate of one of your shapes included, has a new long id of its own, wherever they dragged it.
+
+### HTML blocks
+
+An HTML block is a whole HTML document you write, which the page runs in a sandboxed frame inside the body: a d3 chart with a tooltip, a three.js scene the operator can turn, a flow diagram they can click through. It sits in the text like a paragraph, its height following its content. Use one when the operator should explore something, not just look at it; for a picture they only read, a Mermaid or svg fence is lighter. Blocks are read-only: the operator's answer never changes one.
+
+1. **Write the document** to a file: plain HTML, CSS and inline `<script>`, UTF-8, at most 512 KiB. It may declare its size, read from its text before it runs, so the page reserves the room and nothing jumps:
+
+   ```html
+   <title>Latency, two runs</title>
+   <meta name="oi-block" content="width=900; height=420; aspect=16/9">
+   ```
+
+   Every key is optional: `width` (its natural width in px: how far a `wide` block grows), `height` (px, at most 2400, its height before it reports one), `aspect` (width over height, as `16/9` or `1.5`, for a scene sized by its width). A meta with any other key, or a value that is not a size, is refused at `ask`. The `<title>` names the frame for a screen reader. Past 2400 px tall the document scrolls inside its frame.
+
+2. **Know the sandbox.** The frame has no network at all: no `fetch`, no WebSocket, no external images, fonts or stylesheets, no forms, no popups, and no access to the page, its storage or the API. Images and fonts only as `data:` or `blob:` URLs. Scripts run inline, and the only libraries are the two the app serves itself:
+   - **three.js** as ES modules: `<script type="module">import * as THREE from 'three'; import { OrbitControls } from 'three/addons/controls/OrbitControls.js';</script>`. Nothing else under `three/addons/` is there.
+   - **d3**, as a classic build that sets `window.d3` when imported: `<script type="module">import 'd3'; const d3 = window.d3; …</script>`.
+
+   The page hands the frame only the libraries whose names appear quoted in your document (`'three'`, `'three/addons/controls/OrbitControls.js'`, `'d3'`), so a block that imports none stays small. Import them by exactly these names. Nothing else loads: a `<script src>` or an `import` of any URL is refused by the frame's policy. Write everything else inline.
+
+   `window.oi` carries `scheme` (`light` or `dark`) and `tokens`, and the page's colours are CSS variables: `--fg`, `--bg`, `--blue`, `--orange`, `--purple`, `--green`, `--red`, `--yellow`, and the faces `--font` and `--mono`. Use them, so a block matches the page in either scheme; the frame is drawn again when the scheme changes. The body starts with no margin on the page's own ground. A `wide` or `full` block runs past the text column, so the frame also sets `--oi-column-left` (px from the frame's left edge to the text column's, 0 for `constrain`) and `--oi-column-width`, kept up to date as the layout moves: align captions and overlays with the text, as `left: var(--oi-column-left)`.
+
+   The wheel scrolls the page until the reader clicks into the block; from then until they leave it (or press Escape), the wheel is the block's, so a scene that zooms on the wheel works and never traps the page. Hover, drag and a trackpad pinch (ctrl+wheel) always reach the block. Say so in a hint when the wheel does something, as "drag to orbit · click, then scroll to zoom". Full screen, the wheel is always the block's.
+
+3. **Reference it in the body** with a line of its own, exactly `<Html id="chart"/>`, or with a width: `<Html id="chart" width="wide"/>`. `constrain` (the default) keeps to the text column; `wide` grows past it as a table does, as far as its declared `width`; `full` takes the reader's full width. The id is lower-case letters, digits and hyphens, at most 40. **Pass the file with `--html <id>=<file>`**, once per block:
+
+   ```sh
+   operator-inbox ask --title "Which run should we ship?" --body-file body.md --html chart=chart.html --html scene=scene.html
+   ```
+
+   At most 8 blocks per Question. A tag naming an id the Question does not carry shows a "no HTML block named …" box. `edit` takes `--html` too, and replaces that block only. A script that throws shows the operator one line under the block, "A script in this block failed", and the browser hides why, so keep a block's script small and check it draws before you ask.
 
 ### Metadata
 
@@ -298,7 +329,7 @@ If a Question is still right but its wording or context is wrong, edit it instea
 operator-inbox edit asv#3 --title "<new title>" --body-file <path>
 ```
 
-Either flag may be left out to keep that field, and `--drawing <id>=<file>` sets one drawing (§2, *Drawings*). If the operator had already changed that drawing, the app asks them to keep theirs or take yours before they can send. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
+Either flag may be left out to keep that field, `--drawing <id>=<file>` sets one drawing (§2, *Drawings*), and `--html <id>=<file>` one HTML block (§2, *HTML blocks*). If the operator had already changed that drawing, the app asks them to keep theirs or take yours before they can send. Like withdrawing, editing works only before the operator answers. If the operator was typing an answer to the old text, their Send is refused with "#3 changed after you opened it", so they read the new text first.
 
 ## 5. Archive the Inbox when the work is finished
 

@@ -23,6 +23,7 @@ import { TestConsole } from 'effect/testing';
 import { importLogCommand } from '../src/commands/import-log';
 import { envProvider } from '../src/env-config';
 import { importLog, readLog } from '../src/import-log';
+import { sha256Hex } from '../src/inbox-blobs';
 import { connectInboxLog, InboxLog } from '../src/inbox-store';
 
 // `import-log`: another kairos-es inbox log, under its own table prefix, copied
@@ -177,6 +178,7 @@ describe('import-log', () => {
           inboxes: 2,
           questions: 4,
           olderForms: 0,
+          blobs: 0,
         });
         // The store file alone: the temporary copy and its sidecars are gone.
         expect(listDir(targetDir)).toEqual(['inbox.sqlite']);
@@ -617,6 +619,42 @@ describe('import-log', () => {
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect(
+    'copies the blob table with the events, each blob its own hash',
+    () =>
+      Effect.gen(function* () {
+        const doc = Buffer.from('<p>a chart</p>', 'utf8');
+        const sha = sha256Hex(doc);
+        const { target, run } = yield* setUp({
+          after: `CREATE TABLE "${PREFIX}_blobs" (sha TEXT PRIMARY KEY, kind TEXT NOT NULL, bytes INTEGER NOT NULL, doc BLOB NOT NULL); INSERT INTO "${PREFIX}_blobs" VALUES ('${sha}', 'html', ${doc.byteLength}, X'${doc.toString('hex')}');`,
+        });
+        const summary = yield* run(false);
+        expect(summary.blobs).toBe(1);
+        const kept = yield* Effect.gen(function* () {
+          const log = yield* InboxLog;
+          return yield* log.readBlobs([sha]);
+        }).pipe(
+          Effect.provide(connectInboxLog({ source: 'env', path: target })),
+          Effect.scoped,
+        );
+        expect(Buffer.from(kept.get(sha)?.doc ?? []).equals(doc)).toBe(true);
+        expect(kept.get(sha)?.kind).toBe('html');
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    'refuses a blob whose bytes are not its hash, and writes nothing',
+    () =>
+      Effect.gen(function* () {
+        const { targetDir, run } = yield* setUp({
+          after: `CREATE TABLE "${PREFIX}_blobs" (sha TEXT PRIMARY KEY, kind TEXT NOT NULL, bytes INTEGER NOT NULL, doc BLOB NOT NULL); INSERT INTO "${PREFIX}_blobs" VALUES ('${'0'.repeat(64)}', 'html', 2, X'6869');`,
+        });
+        const error = yield* Effect.flip(run(false));
+        expect(error.message).toContain('is not the SHA-256');
+        expect(listDir(targetDir)).toEqual([]);
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect('refuses a store that already exists, and leaves it alone', () =>
     Effect.gen(function* () {
       const { target, run } = yield* setUp();
@@ -673,6 +711,7 @@ describe('import-log', () => {
         inboxes: 2,
         questions: 4,
         olderForms: 0,
+        blobs: 0,
       });
       expect(listDir(targetDir)).toEqual([]);
       expect(readFileSync(from).equals(before)).toBe(true);

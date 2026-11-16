@@ -14,6 +14,7 @@ import {
   decidePriority,
   decideRename,
   decideUnarchive,
+  HTML_BLOCK_BLOB_KIND,
   heldClaims,
   type InboxEvent,
   type InboxId,
@@ -22,6 +23,7 @@ import {
   type InboxMachinePort,
   type InboxRefusal,
   type InboxState,
+  inboxState,
   inboxStateStamped,
   type LocalInboxBoard,
   type LocalInboxIndex,
@@ -65,6 +67,7 @@ import {
   type OperatorInboxApi,
   PinRefused,
   PriorityRefused,
+  type QuestionHtmlBlocksDto,
   RenameRefused,
 } from '@operator-inbox/core/api';
 import { Effect, Predicate, Result, SubscriptionRef } from 'effect';
@@ -76,6 +79,7 @@ import {
   fetchMachineBoard,
   fetchMachineIndex,
   forwardInboxCall,
+  forwardInboxRead,
   type MachineApi,
   type MachineCallKind,
 } from './inbox-machine-client';
@@ -161,6 +165,7 @@ export const toInboxView = (
           },
         }),
     ...(q.drawings === undefined ? {} : { drawings: q.drawings }),
+    ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
   })),
   // Oldest answered first: the order the agent will probably process them in.
   awaitingAgent: [...awaitingAgent(state)]
@@ -188,6 +193,7 @@ export const toInboxView = (
       ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
       ...(q.macros === undefined ? {} : { macros: q.macros }),
       ...(q.comments === undefined ? {} : { comments: q.comments }),
+      ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
     })),
   processed: recentlyProcessed(state).map((q) => ({
     number: q.number,
@@ -214,6 +220,7 @@ export const toInboxView = (
     ...(q.sentDrawings === undefined ? {} : { sentDrawings: q.sentDrawings }),
     ...(q.macros === undefined ? {} : { macros: q.macros }),
     ...(q.comments === undefined ? {} : { comments: q.comments }),
+    ...(q.htmls === undefined ? {} : { htmls: q.htmls }),
   })),
 });
 
@@ -227,6 +234,88 @@ const readView = Effect.fnUntraced(function* (inboxId: InboxId) {
 
 // GET /api/inbox/:inboxId
 export const inboxView = (inboxId: InboxId) => readView(inboxId);
+
+const utf8 = new TextDecoder();
+
+// GET /api/inbox/:inboxId/questions/:number/html-blocks: the documents of
+// one Question's HTML blocks, read from the blob table by the hashes its
+// events carry. Only this reads blobs: the board and every list carry the
+// hashes alone. A Question with no such number, or no blocks, has none; a
+// hash the table does not hold (a log copied without its blobs) is left out,
+// and the page shows that block as missing.
+export const questionHtmlBlocks = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  number: QuestionNumber,
+) {
+  const log = yield* InboxLog;
+  const { events } = yield* unavailable(log.read(inboxId));
+  const state = inboxState(events);
+  if (!state.opened) return yield* notFound(inboxId);
+  const refs = state.questions.find((q) => q.number === number)?.htmls ?? {};
+  const shas = Object.values(refs).map((r) => r.sha);
+  const kept =
+    shas.length === 0
+      ? new Map<string, never>()
+      : yield* unavailable(log.readBlobs(shas));
+  const blocks: Record<string, { sha: string; doc: string }> = {};
+  for (const [id, ref] of Object.entries(refs)) {
+    const blob = kept.get(ref.sha);
+    if (blob !== undefined && blob.kind === HTML_BLOCK_BLOB_KIND)
+      blocks[id] = { sha: ref.sha, doc: utf8.decode(blob.doc) };
+  }
+  const dto: QuestionHtmlBlocksDto = { blocks };
+  return dto;
+});
+
+// The same read for the page, which goes to the machine that owns the Inbox
+// when Local's log does not have it. The owner is the machine the latest
+// board or index read recorded as claiming the Inbox (`ownersOfClaims`):
+// the page reads the board before it shows a Question, so its owner is
+// known by then. With no machine, two, or one that cannot be called, the
+// Inbox is not found, or the clash or the unreachable machine is said.
+const routedHtmlBlocks = (
+  inboxId: InboxId,
+  number: QuestionNumber,
+  query: InboxReadQuery,
+) =>
+  Effect.gen(function* () {
+    const local = questionHtmlBlocks(inboxId, number);
+    if (query.local === 'true') return yield* local;
+    const served = yield* ServedInboxMachines;
+    const { entries } = yield* served.machines;
+    if (entries.length === 0) return yield* local;
+    return yield* local.pipe(
+      Effect.catchIf(
+        (e) => Predicate.isTagged(e, 'InboxNotFound'),
+        (lacked) =>
+          Effect.gen(function* () {
+            const { claims } = yield* SubscriptionRef.get(served.lastOwners);
+            const keys = ownersOfClaims(claims, entries).get(inboxId) ?? [];
+            const machines = yield* machinesAmong(entries, keys);
+            const [owner, second] = machines;
+            if (second !== undefined)
+              return yield* Effect.fail(
+                new InboxUnavailable({
+                  message: inboxClashSentence(inboxId, machines),
+                  clashedOn: machines.map(machineRef),
+                }),
+              );
+            if (owner === undefined) return yield* Effect.fail(lacked);
+            if (Result.isFailure(owner.resolved))
+              return yield* Effect.fail(neverCalled(inboxId, [owner]));
+            return yield* forwardInboxRead(
+              owner,
+              (api) =>
+                api.inbox.htmlBlocks({
+                  params: { inboxId, number },
+                  query: {},
+                }),
+              served.callOptions,
+            );
+          }),
+      ),
+    );
+  });
 
 // A write's view, read back after its append. A read-back that fails says
 // the change may have been made, never that it was not: `mayHaveLanded`, which the page words as unconfirmed, as
@@ -944,7 +1033,7 @@ export const priorityInbox = Effect.fnUntraced(function* (
 // (`routeByOwner`).
 type OwnedEndpoint = Exclude<
   keyof MachineApi['inbox'],
-  'index' | 'board' | 'openSession'
+  'index' | 'board' | 'openSession' | 'htmlBlocks'
 >;
 const OWNED_KIND: Record<OwnedEndpoint, MachineCallKind> = {
   view: 'read',
@@ -1014,6 +1103,9 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
     handlers
       .handle('index', ({ query }) => inboxIndex(query))
       .handle('board', ({ query }) => inboxBoard(query))
+      .handle('htmlBlocks', ({ params, query }) =>
+        routedHtmlBlocks(params.inboxId, params.number, query),
+      )
       .handle(
         'view',
         owned('view', ({ params }) => inboxView(params.inboxId)),

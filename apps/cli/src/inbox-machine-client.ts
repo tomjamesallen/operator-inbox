@@ -597,6 +597,37 @@ export type ForwardedCall<E extends InboxRefusal> = (
 //   forwardInboxCall(machine, 'write', (api) =>
 //     api.inbox.answer({ ...request, query: {} }),
 //   )
+// A read keyed by an Inbox id whose answer is not a view (a Question's HTML
+// blocks' documents), sent to the machine that owns the Inbox: the same
+// call, timeout and failures as a forwarded `read`, with its answer as the
+// machine gave it, since there is no body in it for Local to render again.
+export const forwardInboxRead = <A, E extends InboxRefusal>(
+  machine: Pick<InboxMachineName, 'key' | 'label' | 'port'>,
+  call: (api: MachineApi) => Effect.Effect<A, E | ClientFailure>,
+  options?: MachineCallOptions,
+): Effect.Effect<A, E | InboxUnavailable> => {
+  const timeout = readTimeout(options);
+  return callMachine(
+    machine.port,
+    call,
+    timeout,
+    options,
+    machineRef(machine),
+  ).pipe(
+    Effect.catchIf(isTransportFailure, (error) =>
+      Effect.fail(
+        unavailableOn(
+          machine,
+          'read',
+          error,
+          classifyMachineFailure(machine.port, error, timeout),
+          timeout,
+        ),
+      ),
+    ),
+  );
+};
+
 export const forwardInboxCall = <E extends InboxRefusal>(
   machine: Pick<InboxMachineName, 'key' | 'label' | 'port'>,
   kind: MachineCallKind,
