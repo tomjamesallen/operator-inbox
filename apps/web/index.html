@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en-GB" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The page's own bg token in each scheme (src/index.css), so the installed
+         app's title bar matches the page. The manifest can carry only one
+         theme colour; these two override it where the browser supports it. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fdfcfa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Operator Inbox</title>
+  </head>
+  <body
+    class="h-full bg-bg font-app text-13 leading-body text-fg/80 antialiased selection:bg-fg/16"
+  >
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "extends": "@operator-inbox/typescript-config/base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

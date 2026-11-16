@@ -1,0 +1,51 @@
+{
+  "InboxNotFound": {
+    "message": "No Inbox has this id.",
+    "_tag": "InboxNotFound"
+  },
+  "AnswerRefused": {
+    "message": "Question 1 is already answered.",
+    "_tag": "AnswerRefused"
+  },
+  "AskRefused": {
+    "message": "a question cannot be empty",
+    "_tag": "AskRefused"
+  },
+  "RenameRefused": {
+    "message": "Another Inbox holds that name.",
+    "conflictingInboxId": "01J00000000000000000000IB1",
+    "_tag": "RenameRefused"
+  },
+  "HighlightRefused": {
+    "message": "Question 4 is not highlighted.",
+    "_tag": "HighlightRefused"
+  },
+  "PinRefused": {
+    "message": "The Inbox is already pinned.",
+    "_tag": "PinRefused"
+  },
+  "ArchiveRefused": {
+    "message": "The Inbox is already archived.",
+    "_tag": "ArchiveRefused"
+  },
+  "MuteRefused": {
+    "message": "The Inbox is already muted.",
+    "_tag": "MuteRefused"
+  },
+  "OpenSessionRefused": {
+    "message": "the Claude app did not take the link",
+    "_tag": "OpenSessionRefused"
+  },
+  "InboxUnavailable": {
+    "message": "The inbox store could not be opened.",
+    "_tag": "InboxUnavailable"
+  },
+  "InboxConfigUnreadable": {
+    "message": "config.json at /c/operator-inbox/config.json is not valid JSON.",
+    "_tag": "InboxConfigUnreadable"
+  },
+  "KeybindingsUnreadable": {
+    "message": "Could not read /c/operator-inbox/keybindings.",
+    "_tag": "KeybindingsUnreadable"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "@operator-inbox/cli",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "bin": {
+    "operator-inbox": "./dist/index.js"
+  },
+  "scripts": {
+    "cli": "tsx src/index.ts",
+    "build": "tsup",
+    "check-types": "tsc --noEmit",
+    "check-effect": "effect-language-service diagnostics --project tsconfig.json --severity error --format github-actions",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@operator-inbox/core": "workspace:*",
+    "@effect/platform-node": "catalog:",
+    "@effect/sql-sqlite-node": "catalog:",
+    "@kairos-es/core": "catalog:",
+    "@kairos-es/store-sqlite": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@operator-inbox/typescript-config": "workspace:*",
+    "@operator-inbox/web": "workspace:*",
+    "@effect/language-service": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

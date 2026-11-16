@@ -1,0 +1,66 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Effect 4: every effect / @effect/* entry sits on one patch, since the
+# ecosystem shares a single version.
+catalog:
+  effect: ^4.0.5
+  "@effect/platform-node": ^4.0.5
+  "@effect/vitest": ^4.0.5
+  "@effect/language-service": 0.87.4
+
+  # The inbox's event log: kairos-es over a local SQLite file. store-sqlite
+  # peers effect ^4, @effect/sql-sqlite-node ^4 (node:sqlite, so no native
+  # module) and @kairos-es/core. Both packages are pinned exactly and move
+  # together: kairos-es is still pre-release, so a caret would take the next
+  # release's breaking changes on the next install.
+  "@effect/sql-sqlite-node": ^4.0.5
+  "@kairos-es/core": 1.0.0-alpha.5
+  "@kairos-es/store-sqlite": 1.0.0-alpha.5
+
+  # The web app. In Effect 4 the Atom core (Atom, AtomRegistry, AtomHttpApi,
+  # AsyncResult) lives in effect/reactivity; only the React hooks stay a
+  # package, @effect/atom-react, on effect's version.
+  "@effect/atom-react": ^4.0.5
+  react: ^19.3.0
+  react-dom: ^19.3.0
+  scheduler: ^0.28.0
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
+  # Base UI, the component layer.
+  "@base-ui/react": ^1.9.0
+  # The inbox page's interaction flow is an XState 6 machine bound through
+  # @xstate/effect. Both are pinned exactly and move together, for
+  # kairos-es's reason above.
+  xstate: 6.0.0-alpha.73
+  "@xstate/effect": 1.0.0-alpha.12
+  # Mermaid draws the ```mermaid fences in question bodies, in the browser
+  # only, loaded by a dynamic import when a diagram is first opened.
+  mermaid: ^12.1.0
+  # Fuse.js ranks the Cmd+P question search (title over body).
+  fuse.js: ^7.5.0
+  # vite 8 is a line vitest 5 accepts, so the app and the test runner share
+  # one vite.
+  vite: ^8.1.6
+  "@vitejs/plugin-react": ^6.1.2
+  tailwindcss: ^4.3.3
+  "@tailwindcss/vite": ^4.3.3
+  happy-dom: ^21.0.4
+  "@testing-library/react": ^16.3.3
+  "@testing-library/dom": ^10.4.2
+
+  typescript: ^5.9.0
+  vitest: ^5.0.5
+  tsx: ^4.20.6
+  tsup: ^8.5.1
+  "@biomejs/biome": 2.3.14
+  "@types/node": ^22.10.0
+
+  yaml: ^2.8.2
+  ulid: ^3.0.2
+  # A question's body is rendered as GitHub-flavoured markdown.
+  marked: ^18.1.0
+  # A fenced code block in a question body is coloured by highlight.js. Only
+  # its core and a few grammars are loaded.
+  highlight.js: ^11.12.0

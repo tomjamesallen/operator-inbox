@@ -1,0 +1,492 @@
+@import "tailwindcss";
+
+/* The tests are not the app: a class name a test spells out must not put a
+   rule in the stylesheet. */
+@source not "../test";
+
+/*
+ * The app's styles are Tailwind utilities on the elements. This file holds
+ * only what a utility cannot: the theme the utilities draw from, the dark
+ * scheme's values for it, two variants, two utilities
+ * (`overflow-anchor-none`, `scrollbar-none`), and one escape hatch. A value
+ * the design needs and the theme lacks is added here as a token, never
+ * written as a bracketed literal on an element.
+ *
+ * One foreground colour varied by alpha (`text-fg/40` … `text-fg`) carries
+ * the whole hierarchy, so the theme flips by swapping `fg` and `bg`. It
+ * follows `prefers-color-scheme`: no toggle, no stored preference, no flash.
+ *
+ * Tailwind's default colour, type-size, tracking and leading scales are
+ * cleared, so only this design's values exist to reach for.
+ */
+@theme {
+  --color-*: initial;
+  --color-fg: rgb(28 26 21);
+  --color-bg: rgb(253 252 250);
+  /* The ground of a surface that sits apart from the page: the modals
+     (`modalPanel`), and the sidebar once the page work gives it one. It is the
+     page's background until a design wants it to differ, and being a
+     reference it follows the dark scheme's `--color-bg` with no value of its
+     own. */
+  --color-rail: var(--color-bg);
+  --color-blue: #0b63c5;
+  --color-orange: #a8520a;
+  --color-purple: #7342c4;
+  --color-green: #16743a;
+  --color-red: #b32134;
+  /* A highlighted question in the inbox: its outline and bar. */
+  --color-yellow: #9a7400;
+
+  /* The app's face. Not `--font-mono`: Tailwind's preflight gives `code` and
+     `pre` that one, and the design leaves them on Tailwind's stack. */
+  --font-app:
+    "Commit Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  /* The inbox reader's face. Code keeps Tailwind's mono stack. */
+  --font-zen:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+    system-ui, sans-serif;
+
+  /* What a question is read in: on every Mac and iPhone. */
+  --font-reading: "Iowan Old Style", Georgia, serif;
+
+  /* Type sizes, named by the pixel size they are drawn at, before the scale
+     (`--ui-scale`, below) enlarges them. */
+  --text-*: initial;
+  --text-9: calc(9px * var(--ui-scale));
+  --text-10: calc(10px * var(--ui-scale));
+  --text-10\.5: calc(10.5px * var(--ui-scale));
+  --text-11: calc(11px * var(--ui-scale));
+  --text-11\.5: calc(11.5px * var(--ui-scale));
+  --text-12: calc(12px * var(--ui-scale));
+  --text-12\.5: calc(12.5px * var(--ui-scale));
+  --text-13: calc(13px * var(--ui-scale));
+  /* Larger than any line the app itself sets: only a question body's h1–h3
+     reach for these, so an agent's heading reads as one. */
+  --text-14: calc(14px * var(--ui-scale));
+  --text-16: calc(16px * var(--ui-scale));
+  --text-18: calc(18px * var(--ui-scale));
+  /* A field on a touch screen (`pointer-coarse:text-field`). iOS Safari zooms
+     the page into any field drawn under 16px, and does not zoom back, so this
+     one size is a fixed 16px, outside `--ui-scale`: the scale's steps either
+     side of it are 15.75px and 18px. */
+  --text-field: 16px;
+
+  --tracking-*: initial;
+  --tracking-button: calc(0.6px * var(--ui-scale));
+  --tracking-label: calc(1.1px * var(--ui-scale));
+
+  --leading-*: initial;
+  --leading-card: 1.4;
+  --leading-body: 1.5;
+  --leading-prose: 1.6;
+
+  /* Tailwind's spacing unit in pixels, not its default 0.25rem: the design
+     is drawn in pixels, so a reader's larger default font size must not
+     widen the padding while the text it pads stays the same size. */
+  --spacing: calc(4px * var(--ui-scale));
+
+  /* The design's spacing steps (`p-s3`, `gap-s1`), a 4.5px rhythm. A plain
+     pixel value off that rhythm uses Tailwind's 4px scale (`py-0.75` is 3px).
+     Every pixel value here is the drawn size, before `--ui-scale`. */
+  --spacing-s1: calc(4.5px * var(--ui-scale));
+  --spacing-s2: calc(9px * var(--ui-scale));
+  --spacing-s3: calc(13.5px * var(--ui-scale));
+  --spacing-s4: calc(18px * var(--ui-scale));
+  --spacing-s5: calc(27px * var(--ui-scale));
+  /* Fixed parts of the layout. */
+  --spacing-header: calc(42px * var(--ui-scale));
+  --spacing-rail: calc(218px * var(--ui-scale));
+
+  --max-height-body: 46vh;
+  /* A modal panel: tall enough for a long list,
+     never taller than the viewport it floats in. */
+  --max-height-dialog: 86dvh;
+  /* The question search and the key bindings sheet: the same height with one
+     result as with twenty, until the viewport is shorter than that. */
+  --min-height-search: min(calc(280px * var(--ui-scale)), 86dvh);
+
+  --container-subtitle: 46ch;
+  /* A question's line length: its prose, title, metadata, response box and answer stop
+     here, while code, tables and diagrams take the full width. `ch` is the
+     element's own, so each block counts characters at its own size. */
+  --container-measure: 60ch;
+  /* How far a wide block may run in the inbox reader: from the column's left
+     edge to the right edge of the `@container` around it. `%` is the column,
+     `cqw` the room. */
+  --container-bleed: calc(50cqw + 50%);
+  /* The question search's and the key bindings sheet's width: one result to
+     a line, title and inbox. */
+  --container-search: calc(480px * var(--ui-scale));
+
+  /* A new question's dot, its one-minute fade (`FRESH_MS`), and the fast one
+     once its question stops waiting (`SPENT_FADE_MS`). */
+  --color-hot: #ff4fa8;
+  --animate-fresh: fresh 60s linear forwards;
+  --animate-fresh-out: fresh 0.3s ease-out forwards;
+  @keyframes fresh {
+    to {
+      opacity: 0;
+    }
+  }
+  /* A stacked mark's bands, 4px each around the `size-1.5` dot. */
+  --spacing-mark-1: calc(var(--spacing) * 1.5 + 8px);
+  --spacing-mark-2: calc(var(--spacing) * 1.5 + 16px);
+  /* A letter or a line coming in or going out on the inbox reader's first
+     load. */
+  --ease-fade: cubic-bezier(0.37, 0, 0.63, 1);
+
+  /* The wordmark's yellow dots, in `em` so they follow its size. Measured from
+     Iowan's outlines, so they are off in the Georgia fallback: the O's counter
+     sits 0.022em above the line's middle, the i's dot 0.369em above it and
+     0.009em left of the stem's advance. */
+  --spacing-logo-dot: 0.2em;
+  --spacing-logo-lift: 0.022em;
+  --spacing-logo-tittle: 0.369em;
+  --spacing-logo-tittle-x: 0.009em;
+  /* The wordmark's letters fold away by their column's width. */
+  --transition-property-fold: grid-template-columns;
+  --ease-fold: cubic-bezier(0.76, 0, 0.24, 1);
+  --grid-template-columns-shut: 0fr;
+  --grid-template-columns-open: 1fr;
+
+  /* What the inbox sidebar keeps clear of the question: 48px at the reader's
+     scale. */
+  --spacing-rail-gutter: calc(32px * var(--ui-scale));
+  /* The widest the sidebar can be and stay open beside the question: the half
+     of the window the centred measure leaves, less the gutter. `ch` is the
+     element's own, so what reads this sits in the question's font. */
+  --spacing-rail-room: calc(
+    (100dvw - var(--container-measure)) /
+    2 -
+    var(--spacing-rail-gutter)
+  );
+  /* The widest the sidebar can be and take a column of its own: what the window
+     has left once the reader has the measure and its padding. */
+  --spacing-rail-push-room: calc(
+    100dvw -
+    var(--container-measure) -
+    2 *
+    var(--spacing-s5)
+  );
+  /* The most of a window the sidebar may take as a drawer. `RAIL_CAP_SHARE`
+     says the same, for the drag. */
+  --container-rail-cap: 85dvw;
+
+  /* The empty state's owl. Lengths are in its own viewBox units, so they follow
+     the drawing's size. A Z takes 16s of its 27s to rise and fade, and one
+     starts every 9s, so one or two show at a time. */
+  --animate-owl-z-1: owl-z 27s linear infinite;
+  --animate-owl-z-2: owl-z 27s linear -9s infinite;
+  --animate-owl-z-3: owl-z 27s linear -18s infinite;
+  @keyframes owl-z {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.7);
+    }
+    22%,
+    38% {
+      opacity: 0.55;
+    }
+    60%,
+    100% {
+      opacity: 0;
+      transform: translate(14px, -20px) scale(1.05);
+    }
+  }
+  --animate-owl-breathe: owl-breathe 6s ease-in-out infinite;
+  @keyframes owl-breathe {
+    0%,
+    100% {
+      transform: scaleY(1);
+    }
+    50% {
+      transform: scaleY(1.03);
+    }
+  }
+  /* Where the owl meets the tray's rim: it tips and breathes around this. */
+  --transform-origin-owl: 60px 66px;
+  /* A stir, as long as `STIR_MS` says: a tip each way, and two flutters. */
+  --animate-owl-tip: owl-tip 3.6s ease-in-out;
+  @keyframes owl-tip {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    28% {
+      transform: rotate(-2deg);
+    }
+    68% {
+      transform: rotate(2deg);
+    }
+  }
+  --animate-owl-stir-eye: owl-stir-eye 3.6s ease-in-out;
+  @keyframes owl-stir-eye {
+    0%,
+    24%,
+    38%,
+    50%,
+    64%,
+    100% {
+      transform: scaleY(0);
+    }
+    31%,
+    57% {
+      transform: scaleY(0.65);
+    }
+  }
+  --animate-owl-stir-lid: owl-stir-lid 3.6s ease-in-out;
+  @keyframes owl-stir-lid {
+    0%,
+    24%,
+    38%,
+    50%,
+    64%,
+    100% {
+      opacity: 1;
+    }
+    27%,
+    35%,
+    53%,
+    61% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Tailwind v4 wraps `hover:` in `@media (hover: hover)`, so on a touch
+   screen it never fires. The design's hover reveals a control, and a tap
+   must still reach it, so `hover:` is plain :hover. */
+@custom-variant hover (&:hover);
+
+/* A phone, either way up: narrower than Tailwind's `md`, or too short for the
+   wide layout, since a phone on its side is wider than `md` and only 390px
+   tall. Layout answers to this; what a finger needs answers to
+   `pointer-coarse:`. */
+@custom-variant compact {
+  @media (width < 48rem) {
+    @slot;
+  }
+  @media (height < 30rem) {
+    @slot;
+  }
+}
+
+/* Tailwind has no utility for this. The reader keeps its own place when the list
+   above it moves; the browser doing the same doubles every correction. */
+@utility overflow-anchor-none {
+  overflow-anchor: none;
+}
+
+/* Tailwind has no utility for hiding a scrollbar, and the inbox reader's
+   minimap stands in for it. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+}
+
+@layer base {
+  /* The whole design's size: every text, tracking, spacing and fixed-width
+     token above is its drawn pixel size times this. 1.125, not 1: a
+     browser zoom step up, as the default, for a browser with no zoom of
+     its own. Borders stay 1px. Outside @theme, so Tailwind does not drop it as an
+     unused token. */
+  :root {
+    --ui-scale: 1.125;
+  }
+
+  /* The dark scheme's values for the same tokens. A media query cannot be
+     written inside @theme, so the swap lives here. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-fg: rgb(241 239 232);
+      --color-bg: rgb(0 0 0);
+      --color-blue: #79b8ff;
+      --color-orange: #ffab70;
+      --color-purple: #b392f0;
+      --color-green: #56d364;
+      --color-red: #f97583;
+      --color-yellow: #e3b341;
+    }
+  }
+
+  /* The inbox reader's own scale and ground, while it is on the page. Larger
+     type, and an off black and off white softer than the theme's, so a long
+     read stays easy on the eyes (about 12:1 either way, not 17:1 or more).
+     `:root` and not the reader's element: `--text-*` and `--spacing-*` resolve
+     `--ui-scale` where they are declared, and a modal is portalled outside
+     the reader. */
+  :root:has([data-inbox-reader]) {
+    --ui-scale: 1.5;
+    --color-bg: rgb(245 243 238);
+    --color-rail: rgb(238 235 229);
+    --color-fg: rgb(46 44 40);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:has([data-inbox-reader]) {
+      --color-bg: rgb(27 27 25);
+      --color-rail: rgb(33 33 30);
+      --color-fg: rgb(222 219 210);
+    }
+  }
+}
+
+/*
+ * ESCAPE HATCH. An inbox question's body arrives as HTML rendered by core
+ * (`renderQuestionMarkdown`), so its headings, lists and tables carry no class
+ * this app wrote and a utility cannot be put on them. They are styled from
+ * their container, through @apply, so the values are still the theme's.
+ *
+ * The alternatives were weighed and are worse. A `@custom-variant` per
+ * element (`question-h3:text-14` on the container) is expressible, but it
+ * needs about seventeen variants here plus some sixty utilities on one
+ * element: as much CSS, moved, and harder to read. The typography plugin's
+ * `prose` is a new dependency with its own design to undo.
+ */
+@layer components {
+  [data-question-body] :is(p, ul, ol, table, pre, blockquote) {
+    @apply my-s2;
+  }
+  [data-question-body] ul {
+    @apply list-disc pl-s5;
+  }
+  [data-question-body] ol {
+    @apply list-decimal pl-s5;
+  }
+  [data-question-body] li {
+    @apply my-0.5;
+  }
+  [data-question-body] strong {
+    @apply font-medium text-fg/95;
+  }
+  [data-question-body] code {
+    @apply bg-fg/7 px-0.75 text-11.5;
+  }
+  [data-question-body] pre {
+    @apply overflow-x-auto bg-fg/5 p-s2;
+  }
+  [data-question-body] pre code {
+    @apply bg-transparent p-0;
+  }
+  /* A fenced block's colours. Core's `code-highlight.ts` (highlight.js) wraps
+     each token in a `hljs-…` span, so they join this hatch for the same
+     reason as the rest of the body. One accent per kind of token; what is
+     not named here keeps the block's own colour. */
+  [data-question-body]
+    :is(.hljs-keyword, .hljs-built_in, .hljs-literal, .hljs-type) {
+    @apply text-purple;
+  }
+  [data-question-body] :is(.hljs-string, .hljs-regexp, .hljs-code) {
+    @apply text-green;
+  }
+  [data-question-body]
+    :is(.hljs-number, .hljs-variable, .hljs-template-variable, .hljs-bullet) {
+    @apply text-orange;
+  }
+  [data-question-body]
+    :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-title, .hljs-link) {
+    @apply text-blue;
+  }
+  [data-question-body] :is(.hljs-comment, .hljs-meta, .hljs-quote) {
+    @apply text-fg/45;
+  }
+  [data-question-body] .hljs-section {
+    @apply font-semibold text-fg/95;
+  }
+  [data-question-body] .hljs-strong {
+    @apply font-semibold;
+  }
+  [data-question-body] .hljs-emphasis {
+    @apply italic;
+  }
+  /* A diff line is tinted across the block's whole width, not only under its
+     text, so an added or removed line reads as a band. */
+  [data-question-body] :is(.hljs-addition, .hljs-deletion) {
+    @apply inline-block min-w-full;
+  }
+  [data-question-body] .hljs-addition {
+    @apply bg-green/10 text-green;
+  }
+  [data-question-body] .hljs-deletion {
+    @apply bg-red/10 text-red;
+  }
+  [data-question-body] a {
+    @apply border-b border-fg/20 text-blue;
+  }
+  [data-question-body] blockquote {
+    @apply border-l-2 border-fg/20 pl-s2 text-fg/55;
+  }
+  [data-question-body] hr {
+    @apply border-0 border-t border-fg/12;
+  }
+  [data-question-body] table {
+    @apply w-full border-collapse text-11.5;
+  }
+  [data-question-body] :is(th, td) {
+    @apply border border-fg/12 px-1.5 py-0.75 text-left align-top;
+  }
+  [data-question-body] th {
+    @apply font-medium text-fg/50;
+  }
+
+  /* A question body's headings: a scale from h1 down to body size at h5 and
+     h6, in the body's own colour and case. */
+  [data-question-body] :is(h1, h2, h3, h4, h5, h6) {
+    @apply mt-s4 mb-s1 leading-card font-semibold text-inherit;
+  }
+  [data-question-body] h1 {
+    @apply mt-s5 mb-s2 text-18;
+  }
+  [data-question-body] h2 {
+    @apply mb-s2 text-16;
+  }
+  [data-question-body] h3 {
+    @apply text-14;
+  }
+  [data-question-body] h4 {
+    @apply text-13;
+  }
+  [data-question-body] :is(h5, h6) {
+    @apply mt-s3 text-12.5;
+  }
+  [data-question-body] > :is(h1, h2, h3, h4, h5, h6):first-child {
+    @apply mt-0;
+  }
+  /* A question's prose keeps to the measure; code, tables, images and
+     diagrams are not listed, so they take the full width. */
+  [data-question-body] > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
+    @apply max-w-measure;
+  }
+  /* In the one-question reading column, code and tables keep the column's
+     left edge and run right into the empty margin when they need it. Mermaid
+     and images do not grow. */
+  [data-zen-flow] [data-question-body] > :is(pre, table) {
+    @apply w-max max-w-bleed min-w-full;
+  }
+  [data-zen-flow] [data-question-body] table code {
+    @apply wrap-anywhere;
+  }
+  [data-zen-flow] [data-question-body] table {
+    @variant compact {
+      @apply wrap-anywhere;
+    }
+  }
+  [data-question-body] del {
+    @apply text-fg/45 line-through;
+  }
+  [data-question-body] img {
+    @apply my-s2 block h-auto max-w-full;
+  }
+  /* A loose list wraps each item in <p>, and a nested list sits in its item:
+     both keep the item rhythm, not the block one. */
+  [data-question-body] li > :is(p, ul, ol) {
+    @apply my-0.5;
+  }
+  /* A task item: no bullet, the checkbox where the bullet stood. */
+  [data-question-body]
+    li:has(> input[type="checkbox"], > p:first-child > input[type="checkbox"]) {
+    @apply -ml-s4 list-none;
+  }
+  [data-question-body] li input[type="checkbox"] {
+    @apply mr-s1 align-middle;
+  }
+}

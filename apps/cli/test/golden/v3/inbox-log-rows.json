@@ -1,0 +1,310 @@
+{
+  "operator_inbox": [
+    {
+      "id": 1,
+      "type": "InboxOpened",
+      "data": "{\"_tag\":\"InboxOpened\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"label\":\"Golden inbox A\",\"sessionId\":\"golden-session-a\",\"cwd\":\"/tmp/golden/a\",\"metadata\":{\"team\":\"golden-team\"}}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\",\"session:golden-session-a\",\"inbox-label:golden inbox a\"]",
+      "uuid": "da3ad00d-2b6a-462a-b67c-6422183bd6ed",
+      "occurred_at": "2026-10-16T09:01:00.000Z"
+    },
+    {
+      "id": 2,
+      "type": "InboxOpened",
+      "data": "{\"_tag\":\"InboxOpened\",\"inboxId\":\"01GOLDENINBOXB000000000000\",\"label\":\"Golden inbox B\"}",
+      "tags": "[\"inbox:01GOLDENINBOXB000000000000\",\"inbox-label:golden inbox b\"]",
+      "uuid": "60ae1f01-0dbb-41b3-b29f-6426428f8ea2",
+      "occurred_at": "2026-10-16T09:02:00.000Z"
+    },
+    {
+      "id": 3,
+      "type": "QuestionAsked",
+      "data": "{\"_tag\":\"QuestionAsked\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":1,\"title\":\"First question\",\"body\":\"- option one\\n- option two\",\"metadata\":{\"group\":\"alpha\"}}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "65991fda-63cf-48de-9366-34b35a8eab8c",
+      "occurred_at": "2026-10-16T09:03:00.000Z"
+    },
+    {
+      "id": 4,
+      "type": "QuestionAsked",
+      "data": "{\"_tag\":\"QuestionAsked\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":2,\"title\":\"Second question\",\"body\":\"Unicode survives: café, naïve, “quotes”.\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "63c60ab4-5fcc-4a91-8443-f45ee7f49a43",
+      "occurred_at": "2026-10-16T09:04:00.000Z"
+    },
+    {
+      "id": 5,
+      "type": "QuestionAsked",
+      "data": "{\"_tag\":\"QuestionAsked\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":3,\"title\":\"Third question\",\"body\":\"To be withdrawn\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "39a3581a-eb25-4acd-804d-0e2b3e69356f",
+      "occurred_at": "2026-10-16T09:05:00.000Z"
+    },
+    {
+      "id": 6,
+      "type": "QuestionEdited",
+      "data": "{\"_tag\":\"QuestionEdited\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":2,\"title\":\"Second question, edited\",\"body\":\"Edited body\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "1cf89e03-dfbe-4c5d-9e95-ee53cc6dad38",
+      "occurred_at": "2026-10-16T09:06:00.000Z"
+    },
+    {
+      "id": 7,
+      "type": "QuestionHighlighted",
+      "data": "{\"_tag\":\"QuestionHighlighted\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":2,\"note\":\"look here\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "0ec99e3d-f8a7-4ff7-998f-110043ab674b",
+      "occurred_at": "2026-10-16T09:07:00.000Z"
+    },
+    {
+      "id": 8,
+      "type": "QuestionHighlightDismissed",
+      "data": "{\"_tag\":\"QuestionHighlightDismissed\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":2,\"by\":\"operator\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "6470b12d-d1f8-42ab-aeaf-f1f97c873ea5",
+      "occurred_at": "2026-10-16T09:08:00.000Z"
+    },
+    {
+      "id": 9,
+      "type": "QuestionHighlighted",
+      "data": "{\"_tag\":\"QuestionHighlighted\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":1}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "e125e9b7-e8f2-4e40-ad9b-4091e502ed7d",
+      "occurred_at": "2026-10-16T09:09:00.000Z"
+    },
+    {
+      "id": 10,
+      "type": "QuestionAnswered",
+      "data": "{\"_tag\":\"QuestionAnswered\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":1,\"response\":\"option one\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "77677fd6-ca10-4479-abf2-d49a2e26bb49",
+      "occurred_at": "2026-10-16T09:10:00.000Z"
+    },
+    {
+      "id": 11,
+      "type": "AnswerProcessed",
+      "data": "{\"_tag\":\"AnswerProcessed\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":1}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "756cd2d6-2a95-4c41-b054-470f599c02b8",
+      "occurred_at": "2026-10-16T09:11:00.000Z"
+    },
+    {
+      "id": 12,
+      "type": "QuestionWithdrawn",
+      "data": "{\"_tag\":\"QuestionWithdrawn\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":3,\"reason\":\"no longer relevant\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "f63a1df2-58cf-4999-8e35-1bcd26a1b1b2",
+      "occurred_at": "2026-10-16T09:12:00.000Z"
+    },
+    {
+      "id": 13,
+      "type": "QuestionMetadataChanged",
+      "data": "{\"_tag\":\"QuestionMetadataChanged\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":1,\"set\":{\"kind\":\"decision\"},\"unset\":[\"group\"]}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "63be1d7f-11cb-4d3a-88e8-9f051fe02e36",
+      "occurred_at": "2026-10-16T09:13:00.000Z"
+    },
+    {
+      "id": 14,
+      "type": "InboxMetadataChanged",
+      "data": "{\"_tag\":\"InboxMetadataChanged\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"set\":{\"stage\":\"build\"},\"unset\":[\"team\"]}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "ec573393-cd66-49fc-babd-ff950f1df6df",
+      "occurred_at": "2026-10-16T09:14:00.000Z"
+    },
+    {
+      "id": 15,
+      "type": "InboxRenamed",
+      "data": "{\"_tag\":\"InboxRenamed\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"label\":\"Golden inbox A renamed\",\"previousLabel\":\"Golden inbox A\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\",\"inbox-label:golden inbox a renamed\",\"inbox-label:golden inbox a\"]",
+      "uuid": "5661a2e6-59f7-475d-8733-6d694f0e2aa3",
+      "occurred_at": "2026-10-16T09:15:00.000Z"
+    },
+    {
+      "id": 16,
+      "type": "InboxAdopted",
+      "data": "{\"_tag\":\"InboxAdopted\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"sessionId\":\"golden-session-b\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\",\"session:golden-session-b\"]",
+      "uuid": "60d9b8ce-3226-4d19-9046-9af20f5f6b12",
+      "occurred_at": "2026-10-16T09:16:00.000Z"
+    },
+    {
+      "id": 17,
+      "type": "QuestionMoved",
+      "data": "{\"_tag\":\"QuestionMoved\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"number\":2,\"toInboxId\":\"01GOLDENINBOXB000000000000\",\"toNumber\":1,\"question\":{\"title\":\"Second question, edited\",\"body\":\"Edited body\",\"revision\":2,\"metadata\":{},\"state\":\"awaiting-operator\",\"withdrawn\":false,\"askedStamp\":{\"seq\":4,\"at\":\"2026-10-16T09:04:00.000Z\"}}}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\",\"inbox:01GOLDENINBOXB000000000000\"]",
+      "uuid": "8251eba1-4956-40f6-8675-d572c5e3740b",
+      "occurred_at": "2026-10-16T09:17:00.000Z"
+    },
+    {
+      "id": 18,
+      "type": "InboxPinned",
+      "data": "{\"_tag\":\"InboxPinned\",\"inboxId\":\"01GOLDENINBOXA000000000000\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "8bfd6d58-7840-4354-9ef0-7abe96592e0e",
+      "occurred_at": "2026-10-16T09:18:00.000Z"
+    },
+    {
+      "id": 19,
+      "type": "GroupPinned",
+      "data": "{\"_tag\":\"GroupPinned\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"group\":\"alpha\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "5022c524-a23d-4799-b2be-95e78bb13ce5",
+      "occurred_at": "2026-10-16T09:19:00.000Z"
+    },
+    {
+      "id": 20,
+      "type": "GroupUnpinned",
+      "data": "{\"_tag\":\"GroupUnpinned\",\"inboxId\":\"01GOLDENINBOXA000000000000\",\"group\":\"alpha\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "5e110d26-dea9-4a12-b29c-e62839dd9379",
+      "occurred_at": "2026-10-16T09:20:00.000Z"
+    },
+    {
+      "id": 21,
+      "type": "InboxUnpinned",
+      "data": "{\"_tag\":\"InboxUnpinned\",\"inboxId\":\"01GOLDENINBOXA000000000000\"}",
+      "tags": "[\"inbox:01GOLDENINBOXA000000000000\"]",
+      "uuid": "5a3efd80-655f-454d-b89b-b35d7a41e03d",
+      "occurred_at": "2026-10-16T09:21:00.000Z"
+    },
+    {
+      "id": 22,
+      "type": "InboxArchived",
+      "data": "{\"_tag\":\"InboxArchived\",\"inboxId\":\"01GOLDENINBOXB000000000000\"}",
+      "tags": "[\"inbox:01GOLDENINBOXB000000000000\"]",
+      "uuid": "c687fa4c-e8da-4953-8f0d-4fa6642eb783",
+      "occurred_at": "2026-10-16T09:22:00.000Z"
+    },
+    {
+      "id": 23,
+      "type": "InboxUnarchived",
+      "data": "{\"_tag\":\"InboxUnarchived\",\"inboxId\":\"01GOLDENINBOXB000000000000\"}",
+      "tags": "[\"inbox:01GOLDENINBOXB000000000000\"]",
+      "uuid": "29c1cd8a-f66e-4995-a408-9315b26d29d2",
+      "occurred_at": "2026-10-16T09:23:00.000Z"
+    }
+  ],
+  "operator_inbox_tags": [
+    {
+      "tag": "inbox-label:golden inbox a",
+      "main_id": 1
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 1
+    },
+    {
+      "tag": "session:golden-session-a",
+      "main_id": 1
+    },
+    {
+      "tag": "inbox-label:golden inbox b",
+      "main_id": 2
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXB000000000000",
+      "main_id": 2
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 3
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 4
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 5
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 6
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 7
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 8
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 9
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 10
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 11
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 12
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 13
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 14
+    },
+    {
+      "tag": "inbox-label:golden inbox a",
+      "main_id": 15
+    },
+    {
+      "tag": "inbox-label:golden inbox a renamed",
+      "main_id": 15
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 15
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 16
+    },
+    {
+      "tag": "session:golden-session-b",
+      "main_id": 16
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 17
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXB000000000000",
+      "main_id": 17
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 18
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 19
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 20
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXA000000000000",
+      "main_id": 21
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXB000000000000",
+      "main_id": 22
+    },
+    {
+      "tag": "inbox:01GOLDENINBOXB000000000000",
+      "main_id": 23
+    }
+  ]
+}

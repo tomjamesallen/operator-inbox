@@ -1,0 +1,9 @@
+{
+  "extends": "@operator-inbox/typescript-config/base.json",
+  "include": [],
+  "references": [
+    { "path": "apps/cli" },
+    { "path": "apps/web" },
+    { "path": "packages/core" }
+  ]
+}
