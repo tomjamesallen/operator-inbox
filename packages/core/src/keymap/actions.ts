@@ -275,6 +275,11 @@ export const WIDGET_KEYS: ReadonlyArray<{
     where: 'Search, ask, sessions',
     what: 'Move through the matches and open one',
   },
+  {
+    keys: '↑ ↓ ↩ / Ctrl+↩',
+    where: 'Other inboxes, under the owl',
+    what: 'Move through them and open one / open its session',
+  },
   { keys: 'Esc', where: 'Any dialog', what: 'Close it' },
   {
     keys: '↩ / Esc',

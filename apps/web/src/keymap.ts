@@ -25,7 +25,7 @@ import {
   inboxRowOrder,
   isTextEntry,
   machineSectionsOf,
-  openSessionLinkAtom,
+  openInboxSessionAtom,
   pinAtom,
   pinKey,
   questionClipText,
@@ -454,7 +454,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (inboxId === undefined) return false;
     const target = sessionTargetOf(get.once(drawnBoardAtom), inboxId);
     if (target?._tag !== 'Here') return false;
-    get.set(openSessionLinkAtom, target.link);
+    get.set(openInboxSessionAtom, inboxId);
     return true;
   },
   dismiss_highlight: (get) => {

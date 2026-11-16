@@ -1530,6 +1530,19 @@ export const openSessionLinkAtom = Atom.writable<void, string>(
   },
 );
 
+/**
+ * Open the session working an Inbox, when this machine can: the one command
+ * behind the keymap's `open_session` and the empty state's Ctrl+Enter. An Inbox
+ * with no session link, or whose session is on another machine, opens nothing.
+ */
+export const openInboxSessionAtom = Atom.writable<void, string>(
+  () => undefined,
+  (ctx, inboxId) => {
+    const target = sessionTargetOf(ctx.get(drawnBoardAtom), inboxId);
+    if (target?._tag === 'Here') ctx.set(openSessionLinkAtom, target.link);
+  },
+);
+
 // Whether an Inbox's mute last asked to mute it or unmute it, for its
 // failure's words.
 const muteAskedAtom = Atom.family((_inboxId: InboxId) =>

@@ -1,5 +1,6 @@
 import { useAtomMount, useAtomSet, useAtomValue } from '@effect/atom-react';
 import { inboxVisibleRefreshAtom } from '../../inbox';
+import { elsewhereClearWatchAtom } from '../../inbox-elsewhere';
 import {
   greyedLineAtom,
   inboxTabTitleAtom,
@@ -82,6 +83,7 @@ export const InboxPage = () => {
   useAtomMount(inboxVisibleRefreshAtom);
   useAtomMount(keymapKeyAtom);
   useAtomMount(readerSwipeAtom);
+  useAtomMount(elsewhereClearWatchAtom);
   return (
     <div className="flex h-dvh overflow-hidden bg-bg font-zen text-fg">
       <Masthead />
