@@ -668,9 +668,10 @@
   }
 
   /* A question body's headings: a scale from h1 down to body size at h5 and
-     h6, in the body's own colour and case. */
+     h6, in the body's own colour and case. Balanced, so a heading that
+     wraps never leaves one word alone on its last line. */
   [data-question-body] :is(h1, h2, h3, h4, h5, h6) {
-    @apply mt-s4 mb-s1 leading-card font-semibold text-inherit;
+    @apply mt-s4 mb-s1 leading-card font-semibold text-balance text-inherit;
   }
   [data-question-body] h1 {
     @apply mt-s5 mb-s2 text-18;
