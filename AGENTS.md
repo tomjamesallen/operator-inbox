@@ -56,7 +56,7 @@ The `@effect/language-service` plugin (`packages/typescript-config/base.json`) m
 
 ## The gate
 
-`pnpm verify` runs Biome, the type check, the Effect check, every test and the build. Run it before you push: CI minutes are not free here.
+`pnpm verify` runs Biome, the type check, the Effect check, every test and the build. Run it before you push. No CI runs on PRs here: the full gate runs on the public repo, on each replayed PR (`.github/workflows/ci.yml`, which runs only on `publish/` branches).
 
 ## Writing
 
@@ -68,4 +68,5 @@ The `@effect/language-service` plugin (`packages/typescript-config/base.json`) m
 ## Git
 
 - `main` takes squash-merged PRs only. The squash message is the PR title and body, so write the PR title as the commit subject.
-- A commit that must never be published carries a `Publish: no` trailer.
+- A commit that must never be published carries a `Publish: no` trailer. A commit and its revert, published in the same batch, both drop.
+- `.publish-exclude` lists the paths that never reach the public repo. A file that belongs here only goes there. The publish job is `scripts/publish/`, and `bash scripts/publish/test/run.sh` tests it against two scratch repos it makes.
