@@ -6,6 +6,7 @@ import {
   decideAnswer,
   decideArchive,
   decideDismissHighlight,
+  decideGroupArchive,
   decideInboxOwner,
   decideMute,
   decideOperatorAsk,
@@ -133,6 +134,9 @@ export const toInboxView = (
   archived: state.archived,
   muted: state.muted,
   pinnedGroups: state.pinnedGroups,
+  ...(state.archivedGroups.length === 0
+    ? {}
+    : { archivedGroups: state.archivedGroups }),
   awaitingOperator: awaitingOperator(state).map((q) => ({
     number: q.number,
     revision: q.revision,
@@ -828,6 +832,38 @@ export const archiveInbox = Effect.fnUntraced(function* (
   return yield* readBack(inboxId);
 });
 
+// POST /api/inbox/:inboxId/archive-group. The operator archives one of an
+// Inbox's groups, or brings it back, from its sidebar row. Read, decide,
+// append, as for an Inbox's archive.
+export const archiveGroup = Effect.fnUntraced(function* (
+  inboxId: InboxId,
+  group: string,
+  archived: boolean,
+) {
+  const decided = yield* decideAndAppend(inboxId, (state) =>
+    Result.map(
+      decideGroupArchive(state, { inboxId, group, archived }),
+      (event) => ({ events: [event], result: undefined }),
+    ),
+  ).pipe(
+    Effect.catchTag('AppendConditionFailed', () =>
+      Effect.fail(
+        new ArchiveRefused({
+          message: 'the inbox changed twice while archiving; try again',
+        }),
+      ),
+    ),
+    Effect.catchTag('InputError', (e) => unavailable(Effect.fail(e))),
+  );
+  if (Result.isFailure(decided)) {
+    const refusal = decided.failure;
+    return yield* refusal.reason === 'not-found'
+      ? Effect.fail(notFound(inboxId))
+      : Effect.fail(new ArchiveRefused({ message: refusal.message }));
+  }
+  return yield* readBack(inboxId);
+});
+
 // POST /api/inbox/:inboxId/mute. The operator mutes or unmutes an Inbox from
 // the sidebar. Read, decide, append, as for a pin.
 export const muteInbox = Effect.fnUntraced(function* (
@@ -871,6 +907,7 @@ const OWNED_KIND: Record<OwnedEndpoint, MachineCallKind> = {
   dismissHighlight: 'write',
   pin: 'write',
   archive: 'write',
+  archiveGroup: 'write',
   mute: 'write',
   rename: 'write',
 };
@@ -971,6 +1008,12 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
         'archive',
         owned('archive', ({ params, payload }) =>
           archiveInbox(params.inboxId, payload.archived),
+        ),
+      )
+      .handle(
+        'archiveGroup',
+        owned('archiveGroup', ({ params, payload }) =>
+          archiveGroup(params.inboxId, payload.group, payload.archived),
         ),
       )
       .handle(

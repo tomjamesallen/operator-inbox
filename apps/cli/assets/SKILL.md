@@ -145,13 +145,23 @@ operator-inbox meta asv#3 --json                      # print asv#3's as JSON
 - `group` stays a string: it is the page's filter.
 - Nothing is read from your working directory: the values come from you, `sessionLink` and `sessionTitle` aside.
 
-**Groups.** The `group` key puts a Question in a group. The operator filters by group in the app: once any Question in the Inbox has a group, the sidebar nests the groups under the Inbox, plus "Default" for the Questions with none. A group is only a filter, so use one when the Inbox holds questions about separate threads of work.
+**Groups.** The `group` key puts a Question in a group. The operator filters by group in the app: once any Question in the Inbox has a group, the sidebar nests the groups under the Inbox while it is the one selected, plus "Default" for the Questions with none. A group is only a filter, so use one when the Inbox holds questions about separate threads of work.
 
 ```sh
 operator-inbox ask --title "<question>" --body-file <path> --meta group=store  # ask in a group
 operator-inbox meta asv#3 --meta group=ui                                   # move asv#3 to another group
 operator-inbox meta asv#3 --unset group                                     # move asv#3 back to Default
 ```
+
+**Archiving a group.** When a group's thread of work is finished and nothing in it waits on either side, archive the group, as you would an Inbox (§5):
+
+```sh
+operator-inbox group archive store                # this session's Inbox
+operator-inbox group archive store --inbox asv    # another Inbox, by id or code
+operator-inbox group unarchive store              # bring it back by hand
+```
+
+The group moves to a collapsed **Archived groups** fold under its Inbox, and its Questions leave the operator's All view and the Inbox's own view. Nothing is lost: its Questions keep their `group` key, and the operator still sees them by picking the group. Asking a new Question into it (`--meta group=store`) brings it back automatically. Archiving a group no Question is in is refused, so check the name. Default cannot be archived. The operator can also archive and unarchive a group in the app.
 
 ### Question codes
 

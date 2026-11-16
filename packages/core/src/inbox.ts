@@ -368,6 +368,25 @@ export const GroupUnpinned = Schema.TaggedStruct('GroupUnpinned', {
 });
 export type GroupUnpinned = typeof GroupUnpinned.Type;
 
+// The operator or the agent archived one of an Inbox's groups, or brought it
+// back. An archived group leaves the sidebar's group list for its Inbox's
+// collapsed "Archived groups", and its questions leave the All view and the
+// Inbox's own view, as an archived Inbox's leave All; picked on its own, it
+// still shows them. Kept on the Inbox, as a pin is: the Questions' `group`
+// metadata is never touched, so the tag stays. A new question asked into an
+// archived group brings it back first (`askEvents`).
+export const GroupArchived = Schema.TaggedStruct('GroupArchived', {
+  inboxId: InboxId,
+  group: Schema.String,
+});
+export type GroupArchived = typeof GroupArchived.Type;
+
+export const GroupUnarchived = Schema.TaggedStruct('GroupUnarchived', {
+  inboxId: InboxId,
+  group: Schema.String,
+});
+export type GroupUnarchived = typeof GroupUnarchived.Type;
+
 // The operator muted or unmuted an Inbox in the app's sidebar. A muted Inbox
 // stays in the sidebar, greyed, with its count; its groups fold away and its
 // questions leave the All view. Picked on its own, it shows them all.
@@ -425,6 +444,8 @@ export const InboxEvent = Schema.Union([
   InboxUnpinned,
   GroupPinned,
   GroupUnpinned,
+  GroupArchived,
+  GroupUnarchived,
   InboxMuted,
   InboxUnmuted,
   InboxModeOn,
@@ -525,6 +546,8 @@ export interface InboxState {
   readonly pinned: boolean;
   // The pinned groups, in the order they were pinned.
   readonly pinnedGroups: ReadonlyArray<string>;
+  // The archived groups, in the order they were archived.
+  readonly archivedGroups: ReadonlyArray<string>;
   // True after `InboxMuted`, false again after `InboxUnmuted`.
   readonly muted: boolean;
   readonly questions: ReadonlyArray<InboxQuestion>;
@@ -539,6 +562,7 @@ export const emptyInboxState: InboxState = {
   archived: false,
   pinned: false,
   pinnedGroups: [],
+  archivedGroups: [],
   muted: false,
   questions: [],
   processedCount: 0,
@@ -793,6 +817,15 @@ export const evolveInbox = (
         ...state,
         pinnedGroups: state.pinnedGroups.filter((g) => g !== event.group),
       };
+    case 'GroupArchived':
+      return state.archivedGroups.includes(event.group)
+        ? state
+        : { ...state, archivedGroups: [...state.archivedGroups, event.group] };
+    case 'GroupUnarchived':
+      return {
+        ...state,
+        archivedGroups: state.archivedGroups.filter((g) => g !== event.group),
+      };
     case 'QuestionHighlightDismissed':
       return withQuestion(state, event.number, (q) => {
         const { highlight: _, ...rest } = q;
@@ -869,6 +902,28 @@ export interface InboxSummary {
   readonly lastActivity: number;
 }
 
+/**
+ * A question's group: its `group` metadata, trimmed; '' (the default group)
+ * when it has none.
+ */
+export const questionGroup = (metadata: Metadata): string => {
+  const group = metadata[GROUP_KEY];
+  return typeof group === 'string' ? group.trim() : '';
+};
+
+/**
+ * The questions waiting for the operator outside the Inbox's archived groups:
+ * the ones its sidebar row counts, as an archived Inbox's leave All's count.
+ */
+export const awaitingOperatorShown = (
+  state: InboxState,
+): ReadonlyArray<InboxQuestion> =>
+  awaitingOperator(state).filter(
+    (q) => !state.archivedGroups.includes(questionGroup(q.metadata)),
+  );
+
+// `awaitingOperator` leaves out the questions in an archived group, which the
+// sidebar folds away; the other two counts are the columns' whole.
 export const summariseInbox = (
   inboxId: InboxId,
   state: InboxState,
@@ -879,7 +934,7 @@ export const summariseInbox = (
   ...(state.code === undefined ? {} : { code: state.code }),
   archived: state.archived,
   muted: state.muted,
-  awaitingOperator: awaitingOperator(state).length,
+  awaitingOperator: awaitingOperatorShown(state).length,
   awaitingAgent: awaitingAgent(state).length,
   processed: state.processedCount,
   lastActivity,
@@ -1013,7 +1068,8 @@ export type InboxRefusalReason =
   | 'same-inbox'
   | 'code-taken'
   | 'bad-drawing'
-  | 'bad-macro';
+  | 'bad-macro'
+  | 'unknown-group';
 
 // `conflictingInboxId` is set on `name-taken` only: the Inbox that holds the
 // name, so the agent can look at it and adopt it.
@@ -1357,15 +1413,24 @@ export const decideRename = (
 
 /**
  * The events an ask appends: the question, and before it an `InboxUnarchived`
- * when the Inbox is archived, so a new question brings its Inbox back.
+ * when the Inbox is archived and a `GroupUnarchived` when the question's group
+ * is, so a new question brings its Inbox and its group back.
  */
 export const askEvents = (
   state: InboxState,
   asked: QuestionAsked,
-): ReadonlyArray<InboxUnarchived | QuestionAsked> =>
-  state.archived
-    ? [{ _tag: 'InboxUnarchived', inboxId: asked.inboxId }, asked]
-    : [asked];
+): ReadonlyArray<InboxUnarchived | GroupUnarchived | QuestionAsked> => {
+  const group = questionGroup(asked.metadata ?? emptyMetadata);
+  return [
+    ...(state.archived
+      ? [{ _tag: 'InboxUnarchived', inboxId: asked.inboxId } as const]
+      : []),
+    ...(group !== '' && state.archivedGroups.includes(group)
+      ? [{ _tag: 'GroupUnarchived', inboxId: asked.inboxId, group } as const]
+      : []),
+    asked,
+  ];
+};
 
 /** Archive an Inbox that is active. */
 export const decideArchive = (
@@ -1948,6 +2013,46 @@ export const decidePin = (
       ? { _tag: 'GroupPinned', inboxId, group }
       : { _tag: 'GroupUnpinned', inboxId, group },
   );
+};
+
+// --- group archives ----------------------------------------------------------------
+
+/**
+ * Archive one of an Inbox's groups, or bring it back. A group is trimmed and
+ * may not be empty: the default group has no name to archive. Archiving needs
+ * a group some question in the Inbox is in, so a mistyped name is refused
+ * rather than recorded (`unknown-group`); bringing one back needs only that it
+ * is archived. One that changes nothing is refused (`archived`,
+ * `not-archived`), so the log never carries one. Allowed in an archived Inbox.
+ */
+export const decideGroupArchive = (
+  state: InboxState,
+  input: {
+    readonly inboxId: InboxId;
+    readonly group: string;
+    readonly archived: boolean;
+  },
+): Result.Result<GroupArchived | GroupUnarchived, InboxRefusal> => {
+  if (!state.opened) return notFound(input.inboxId);
+  const { inboxId, archived } = input;
+  const group = input.group.trim();
+  if (group.length === 0)
+    return refuse('empty', 'a group to archive needs a name');
+  const is = state.archivedGroups.includes(group);
+  if (!archived)
+    return is
+      ? Result.succeed({ _tag: 'GroupUnarchived', inboxId, group })
+      : refuse('not-archived', `group "${group}" is not archived`);
+  if (is) return refuse('archived', `group "${group}" is already archived`);
+  const held = state.questions.some(
+    (q) => q.state !== 'moved' && questionGroup(q.metadata) === group,
+  );
+  if (!held)
+    return refuse(
+      'unknown-group',
+      `no question in this inbox is in group "${group}"`,
+    );
+  return Result.succeed({ _tag: 'GroupArchived', inboxId, group });
 };
 
 // --- mutes -------------------------------------------------------------------------

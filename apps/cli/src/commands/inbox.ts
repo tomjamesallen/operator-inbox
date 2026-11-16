@@ -11,6 +11,7 @@ import {
   decideAssignCode,
   decideDismissHighlight,
   decideEdit,
+  decideGroupArchive,
   decideHighlight,
   decideInboxMetadata,
   decideMove,
@@ -666,6 +667,35 @@ export const dispatchUnarchive = Effect.fnUntraced(function* (opts: {
     })),
   );
   return describe(opts.inboxId, yield* readState(opts.inboxId), 'unarchived');
+});
+
+// --- group archive / unarchive -------------------------------------------------------
+
+/**
+ * Put one of an inbox's groups away, or bring it back: an archived group folds
+ * away under its inbox in the sidebar and its questions leave the operator's
+ * All view. Its questions keep their `group` key, and asking a new question
+ * into it brings it back.
+ */
+export const dispatchGroupArchive = Effect.fnUntraced(function* (opts: {
+  readonly inboxId: InboxId;
+  readonly group: string;
+  readonly archived: boolean;
+}) {
+  const event = yield* decideOrFail(opts.inboxId, (state) =>
+    Result.map(
+      decideGroupArchive(state, {
+        inboxId: opts.inboxId,
+        group: opts.group,
+        archived: opts.archived,
+      }),
+      (e) => ({ events: [e], result: e }),
+    ),
+  );
+  const state = yield* readState(opts.inboxId);
+  return opts.archived
+    ? `archived group "${event.group}" in inbox ${opts.inboxId} — ${state.label}\nasking a question into it brings it back; so does \`operator-inbox group unarchive ${event.group} --inbox ${opts.inboxId}\``
+    : `unarchived group "${event.group}" in inbox ${opts.inboxId} — ${state.label}`;
 });
 
 // --- ask ---------------------------------------------------------------------------
@@ -2010,6 +2040,49 @@ const unarchiveCommand = Command.make(
   ),
 );
 
+const groupName = Argument.String('name').pipe(
+  Argument.withDescription(
+    "The group: the value of its questions' `group` metadata key",
+  ),
+);
+
+const groupArchiveCommand = Command.make(
+  'archive',
+  { name: groupName, inbox: inboxOpt },
+  ({ name, inbox }) =>
+    print(
+      Effect.flatMap(resolved(inbox), (inboxId) =>
+        dispatchGroupArchive({ inboxId, group: name, archived: true }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "Archive a group of this session's inbox (or --inbox <id|code>) when its work is finished: it folds away in the sidebar and leaves the operator's All view; its questions keep their group",
+  ),
+);
+
+const groupUnarchiveCommand = Command.make(
+  'unarchive',
+  { name: groupName, inbox: inboxOpt },
+  ({ name, inbox }) =>
+    print(
+      Effect.flatMap(resolved(inbox), (inboxId) =>
+        dispatchGroupArchive({ inboxId, group: name, archived: false }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "Bring an archived group of this session's inbox (or --inbox <id|code>) back",
+  ),
+);
+
+const groupCommand = Command.make('group').pipe(
+  Command.withDescription(
+    "Act on a group of an inbox's questions (the `group` metadata key)",
+  ),
+  Command.withSubcommands([groupArchiveCommand, groupUnarchiveCommand]),
+);
+
 // Every subcommand an agent and its hooks run, each at the top level of
 // `operator-inbox` (`index.ts` adds serve and the setup commands).
 export const inboxSubcommands = [
@@ -2034,4 +2107,5 @@ export const inboxSubcommands = [
   listCommand,
   archiveCommand,
   unarchiveCommand,
+  groupCommand,
 ] as const;

@@ -247,6 +247,72 @@ describe('operator-inbox serve — the inbox group', () => {
     }).pipe(Effect.provide(serving(InboxLogInMemory))),
   );
 
+  it.effect('archives and unarchives a group from the app', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      yield* dispatchAsk({
+        inboxId: ID,
+        title: 'In a group',
+        body: '',
+        metadata: { group: 'store' },
+      });
+      const { api } = yield* client;
+      const before = yield* api.inbox.index({ query: {} });
+      expect(
+        before.inboxes.find((i) => i.inboxId === ID)?.awaitingOperator,
+      ).toBe(3);
+      const view = yield* api.inbox.archiveGroup({
+        query: {},
+        params: { inboxId: ID },
+        payload: { group: 'store', archived: true },
+      });
+      expect(view.archivedGroups).toEqual(['store']);
+      // Its question stays in the column, its group untouched.
+      expect(view.awaitingOperator.map((q) => q.metadata.group)).toEqual([
+        undefined,
+        undefined,
+        'store',
+      ]);
+      // The row's count and All's leave it out.
+      const index = yield* api.inbox.index({ query: {} });
+      expect(
+        index.inboxes.find((i) => i.inboxId === ID)?.awaitingOperator,
+      ).toBe(2);
+      expect(index.totalAwaitingOperator).toBe(2);
+      const again = yield* Effect.flip(
+        api.inbox.archiveGroup({
+          query: {},
+          params: { inboxId: ID },
+          payload: { group: 'store', archived: true },
+        }),
+      );
+      expect(again._tag).toBe('ArchiveRefused');
+      const unknown = yield* Effect.flip(
+        api.inbox.archiveGroup({
+          query: {},
+          params: { inboxId: ID },
+          payload: { group: 'nowhere', archived: true },
+        }),
+      );
+      expect(unknown._tag).toBe('ArchiveRefused');
+      const off = yield* api.inbox.archiveGroup({
+        query: {},
+        params: { inboxId: ID },
+        payload: { group: 'store', archived: false },
+      });
+      // None archived: the key is left out.
+      expect(off).not.toHaveProperty('archivedGroups');
+      const missing = yield* Effect.flip(
+        api.inbox.archiveGroup({
+          query: {},
+          params: { inboxId: InboxId.make('01INBOXSERVENONE0000000000') },
+          payload: { group: 'store', archived: true },
+        }),
+      );
+      expect(missing._tag).toBe('InboxNotFound');
+    }).pipe(Effect.provide(serving(InboxLogInMemory))),
+  );
+
   it.effect('archives and unarchives an inbox from the app', () =>
     Effect.gen(function* () {
       yield* seed;

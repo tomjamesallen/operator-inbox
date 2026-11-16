@@ -363,6 +363,7 @@ const EXPECTED_LIST: unknown = [
       archived: false,
       pinned: false,
       pinnedGroups: [],
+      archivedGroups: [],
       muted: false,
       questions: [
         {
@@ -450,6 +451,7 @@ const EXPECTED_LIST: unknown = [
       archived: false,
       pinned: false,
       pinnedGroups: [],
+      archivedGroups: [],
       muted: false,
       questions: [
         {

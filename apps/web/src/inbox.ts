@@ -300,13 +300,22 @@ export const highlightedGroups = (view: InboxViewDto): ReadonlySet<string> =>
 export interface GroupRow {
   readonly group: string;
   readonly awaitingOperator: number;
+  // Archived (core's `GroupArchived`): the sidebar folds it away under its
+  // Inbox's "Archived groups", and its questions leave All and the Inbox's
+  // own view.
+  readonly archived: boolean;
 }
+
+/** An Inbox's archived groups: none from a serve that predates them. */
+export const archivedGroupsOf = (view: InboxViewDto): ReadonlyArray<string> =>
+  view.archivedGroups ?? [];
 
 /**
  * An Inbox's groups for the sidebar: none while no Question has a group, so
  * the Inbox stays one row. Once any has, Default first, for the rest (shown
  * even when empty, so it is always there to pick), then every named
- * group A–Z, each with how many of its Questions wait for the operator.
+ * group A–Z, each with how many of its Questions wait for the operator and
+ * whether it is archived.
  */
 export const groupRowsOf = (view: InboxViewDto): ReadonlyArray<GroupRow> => {
   const counts = new Map<string, number>([[DEFAULT_GROUP, 0]]);
@@ -318,10 +327,29 @@ export const groupRowsOf = (view: InboxViewDto): ReadonlyArray<GroupRow> => {
   const named = [...counts.keys()]
     .filter((g) => g !== DEFAULT_GROUP)
     .sort((a, b) => a.localeCompare(b));
+  const archived = archivedGroupsOf(view);
   return [DEFAULT_GROUP, ...named].map((group) => ({
     group,
     awaitingOperator: counts.get(group) ?? 0,
+    archived: archived.includes(group),
   }));
+};
+
+/**
+ * A view without its archived groups' questions: what All shows of an Inbox,
+ * and the Inbox's own view with no group in force, as an archived Inbox's
+ * cards leave All.
+ */
+export const withoutArchivedGroups = (view: InboxViewDto): InboxViewDto => {
+  const archived = archivedGroupsOf(view);
+  if (archived.length === 0) return view;
+  const keep = (q: AnyViewQuestion) => !archived.includes(groupOf(q));
+  return {
+    ...view,
+    awaitingOperator: view.awaitingOperator.filter(keep),
+    awaitingAgent: view.awaitingAgent.filter(keep),
+    processed: view.processed.filter(keep),
+  };
 };
 
 /**
@@ -337,12 +365,14 @@ export const groupsInForce = (
   return chosen.filter((g) => has.has(g));
 };
 
+// With no group in force the Inbox shows whole, but for its archived groups,
+// which show only when picked.
 const narrowToGroups = (
   view: InboxViewDto,
   chosen: ReadonlyArray<string>,
 ): InboxViewDto => {
   const groups = groupsInForce(view, chosen);
-  if (groups.length === 0) return view;
+  if (groups.length === 0) return withoutArchivedGroups(view);
   const keep = (q: AnyViewQuestion) => groups.includes(groupOf(q));
   return {
     ...view,
@@ -971,7 +1001,8 @@ export const inboxVisibleRefreshAtom: Atom.Atom<void> = Atom.readable((get) => {
  * The views the screen shows: the selected Inbox's (archived or not), narrowed
  * to the chosen groups when it has any of them, or for All every ACTIVE
  * Inbox's, narrowed by the filter when it names any. An archived Inbox's
- * cards leave the All view, and so do a muted one's. An id the board no
+ * cards leave the All view, and so do a muted one's; an archived group's
+ * leave All and the Inbox's own view, and show when the group is picked. An id the board no
  * longer holds narrows to nothing it can show. Groups narrow only a selected
  * Inbox: the sidebar nests them under one.
  */
@@ -993,15 +1024,20 @@ export const viewsShown = (
     filter.length === 0
       ? active
       : active.filter((v) => filter.includes(v.inboxId))
-  ).map(pinned);
+  ).map((v) => pinned(withoutArchivedGroups(v)));
 };
+
+/** The pinned groups the pinned filter shows: an archived one's pin waits. */
+export const pinnedGroupsShown = (view: InboxViewDto): ReadonlyArray<string> =>
+  view.pinnedGroups.filter((g) => !archivedGroupsOf(view).includes(g));
 
 /**
  * A view narrowed to what is pinned, by the sidebar filter's rules: with the
  * pin toggle on, the inbox panel keeps only what belongs to a pinned group or
  * Inbox. Every question of a pinned Inbox, and of an unpinned one only those in a
  * pinned group. Nothing of an archived Inbox, whose pins wait for it to come
- * back: the sidebar leaves it out too, so its own page narrows to nothing.
+ * back: the sidebar leaves it out too, so its own page narrows to nothing. An
+ * archived group's pin waits in the same way.
  */
 const narrowToPinned = (
   board: InboxBoardDto,
@@ -1013,7 +1049,7 @@ const narrowToPinned = (
   )
     return view;
   const keep = (q: AnyViewQuestion) =>
-    !view.archived && view.pinnedGroups.includes(groupOf(q));
+    !view.archived && pinnedGroupsShown(view).includes(groupOf(q));
   return {
     ...view,
     awaitingOperator: view.awaitingOperator.filter(keep),
@@ -1045,7 +1081,7 @@ export const scopeLine = (
     const inboxPinned =
       board.inboxes.find((i) => i.inboxId === selected)?.pinned === true;
     if (onlyPinned && !inboxPinned && view !== undefined) {
-      const pinned = view.archived ? [] : view.pinnedGroups;
+      const pinned = view.archived ? [] : pinnedGroupsShown(view);
       inForce =
         inForce.length === 0
           ? pinned
@@ -1605,6 +1641,83 @@ export const archiveOutcomeAtom = Atom.family((inboxId: InboxId) =>
           ?.archived === asked,
     ),
   ),
+);
+
+// --- a group's archive ------------------------------------------------------------
+
+export interface GroupArchiveRequest {
+  readonly inboxId: InboxId;
+  readonly group: string;
+  readonly archived: boolean;
+  // A key sent it with the row out of sight (`WriteWords`).
+  readonly placeless?: boolean | (() => boolean);
+}
+
+// What a group row's archive last asked for, keyed like `groupArchiveAtom`,
+// so its failure is worded by the attempt.
+const groupArchiveAskedAtom = Atom.family((_key: string) =>
+  Atom.make<GroupArchiveRequest | undefined>(undefined),
+);
+
+// Archive a group or bring it back, one Atom per group row (keyed by
+// `pinKey`). On success it refreshes the board, so the row moves to its
+// Inbox's "Archived groups", or out of it.
+export const groupArchiveAtom = Atom.family((key: string) =>
+  InboxClient.runtime.fn(
+    Effect.fnUntraced(function* (
+      req: GroupArchiveRequest,
+      get: Atom.FnContext,
+    ) {
+      get.set(groupArchiveAskedAtom(key), req);
+      const client = yield* InboxClient;
+      return yield* sendWrite(
+        get,
+        {
+          inboxId: req.inboxId,
+          what: (label) =>
+            `${req.archived ? 'Archiving' : 'Unarchiving'} the group ${req.group} in ${label}`,
+          notDone: req.archived ? 'Not archived' : 'Not unarchived',
+          refused: 'ArchiveRefused',
+          placeless: req.placeless === true,
+        },
+        client.inbox.archiveGroup({
+          query: {},
+          params: { inboxId: req.inboxId },
+          payload: { group: req.group, archived: req.archived },
+        }),
+        (registry) => registry.refresh(inboxBoardAtom),
+      );
+    }),
+  ),
+);
+
+// A group row's archive outcome (`writeOutcomeOf`), gone once a board shows
+// the group as it asked.
+export const groupArchiveOutcomeAtom = Atom.family((key: string) =>
+  Atom.make((get): WriteOutcome<GroupArchiveRequest> | undefined =>
+    writeOutcomeOf(
+      Option.getOrUndefined(
+        get.self<WriteOutcome<GroupArchiveRequest> | undefined>(),
+      ),
+      get(groupArchiveAtom(key)),
+      get(groupArchiveAskedAtom(key)),
+      (asked) => {
+        const view = get(drawnBoardAtom)?.views.find(
+          (v) => v.inboxId === asked.inboxId,
+        );
+        return (
+          view !== undefined &&
+          archivedGroupsOf(view).includes(asked.group) === asked.archived
+        );
+      },
+    ),
+  ),
+);
+
+// Each Inbox's "Archived groups" fold, under its groups. It starts closed:
+// archiving a group moves it there. Not remembered across a reload.
+export const archivedGroupsOpenAtom = Atom.family((_inboxId: InboxId) =>
+  Atom.make(false).pipe(Atom.keepAlive),
 );
 
 // --- asking the agent: the + and Ctrl+A -------------------------------------------

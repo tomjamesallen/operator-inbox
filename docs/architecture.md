@@ -29,7 +29,7 @@ A pnpm and Turborepo monorepo:
 
 ## The event log
 
-State is event-sourced. Every change is an event appended to one log, a kairos-es store on one SQLite file (by default `~/.local/state/operator-inbox/inbox.sqlite`, tables prefixed `operator_inbox`). Its events include `InboxOpened`, `QuestionAsked`, `QuestionAnswered`, `AnswerProcessed`, `QuestionWithdrawn`, `QuestionEdited`, `QuestionMoved`, `QuestionHighlighted`, `InboxRenamed`, `InboxArchived`, `InboxMuted`, `InboxPinned`, `InboxModeOn` and `InboxModeOff`, each a tagged schema in `packages/core/src/inbox.ts`.
+State is event-sourced. Every change is an event appended to one log, a kairos-es store on one SQLite file (by default `~/.local/state/operator-inbox/inbox.sqlite`, tables prefixed `operator_inbox`). Its events include `InboxOpened`, `QuestionAsked`, `QuestionAnswered`, `AnswerProcessed`, `QuestionWithdrawn`, `QuestionEdited`, `QuestionMoved`, `QuestionHighlighted`, `InboxRenamed`, `InboxArchived`, `GroupArchived`, `InboxMuted`, `InboxPinned`, `InboxModeOn` and `InboxModeOff`, each a tagged schema in `packages/core/src/inbox.ts`.
 
 A command is a decision over the events it reads. Core's `decide…` functions take an Inbox's folded state and a request, and return either the events to append or a refusal (`InboxRefusal`) naming why. The store (`apps/cli/src/inbox-store.ts`) reads the events a decision needs, by tag, and appends its result on the condition that nothing it read has changed since. On a conflict it reads again and decides again. So the consistency boundary is what each decision reads, not a fixed aggregate: opening an Inbox under a name reads the name as well as the Inbox, so two sessions cannot take the same name.
 
@@ -37,7 +37,7 @@ Views are folds. The read model the page and `operator-inbox list` show is folde
 
 ## The CLI
 
-`apps/cli/src/commands/` holds one module per command group, built with `effect/cli`. The commands an agent calls (`open`, `ask`, `answers`, `done`, `withdraw`, `edit`, `highlight`, `move`, `meta`, `archive`, `mode`, `watch`, `wait`) each run one decision against the store and print a short result. A refusal exits non-zero with one line naming what is missing. Before `ask` and `edit` decide anything, they parse each ```mermaid fence in the body with Mermaid itself, under a happy-dom window (`src/mermaid-check.ts`), and refuse a body holding a diagram the page could not draw.
+`apps/cli/src/commands/` holds one module per command group, built with `effect/cli`. The commands an agent calls (`open`, `ask`, `answers`, `done`, `withdraw`, `edit`, `highlight`, `move`, `meta`, `archive`, `group archive`, `mode`, `watch`, `wait`) each run one decision against the store and print a short result. A refusal exits non-zero with one line naming what is missing. Before `ask` and `edit` decide anything, they parse each ```mermaid fence in the body with Mermaid itself, under a happy-dom window (`src/mermaid-check.ts`), and refuse a body holding a diagram the page could not draw.
 
 `operator-inbox skill` prints the skill an agent reads (`apps/cli/assets/SKILL.md`). The skill and the classifier prompt ship inside the CLI package, and are found relative to it rather than through a checkout.
 

@@ -482,7 +482,8 @@ describe('the rows', () => {
         ],
       }),
     ]);
-    await mount();
+    // Only the selected Inbox lists its groups.
+    await mount(`/inbox/${GROVE}`);
     await openDrawer();
     expect(
       within(screen.getByRole('list', { name: 'Groups in grove' }))

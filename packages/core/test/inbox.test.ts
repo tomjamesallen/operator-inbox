@@ -10,6 +10,7 @@ import {
   decideAsk,
   decideDismissHighlight,
   decideEdit,
+  decideGroupArchive,
   decideHighlight,
   decideInboxMetadata,
   decideMove,
@@ -1559,6 +1560,204 @@ describe('pins', () => {
     expect(
       refusalOf(decidePin(inboxState([]), { inboxId: ID, pinned: true })),
     ).toBe('not-found');
+  });
+});
+
+describe('group archives', () => {
+  const inGroup = (x: number, group: string): InboxEvent => ({
+    _tag: 'QuestionAsked',
+    inboxId: ID,
+    number: n(x),
+    title: `question ${x}`,
+    body: '',
+    metadata: { group },
+  });
+  const archived = (group: string): InboxEvent => ({
+    _tag: 'GroupArchived',
+    inboxId: ID,
+    group,
+  });
+  const unarchived = (group: string): InboxEvent => ({
+    _tag: 'GroupUnarchived',
+    inboxId: ID,
+    group,
+  });
+
+  it('folds group archives on and off, in the order archived, the questions untouched', () => {
+    const state = inboxState([
+      opened,
+      inGroup(1, 'ui'),
+      inGroup(2, 'store'),
+      archived('ui'),
+      archived('store'),
+      unarchived('ui'),
+      archived('ui'),
+      archived('ui'),
+    ]);
+    expect(state.archivedGroups).toEqual(['store', 'ui']);
+    expect(state.questions.map((q) => q.metadata.group)).toEqual([
+      'ui',
+      'store',
+    ]);
+    expect(inboxState([opened]).archivedGroups).toEqual([]);
+  });
+
+  it('decides an archive, trims the group, and refuses what changes nothing', () => {
+    const state = inboxState([opened, inGroup(1, 'store')]);
+    expect(
+      decideGroupArchive(state, {
+        inboxId: ID,
+        group: ' store ',
+        archived: true,
+      }),
+    ).toEqual(
+      Result.succeed({ _tag: 'GroupArchived', inboxId: ID, group: 'store' }),
+    );
+    const put = inboxState([opened, inGroup(1, 'store'), archived('store')]);
+    expect(
+      refusalOf(
+        decideGroupArchive(put, {
+          inboxId: ID,
+          group: 'store',
+          archived: true,
+        }),
+      ),
+    ).toBe('archived');
+    expect(
+      decideGroupArchive(put, { inboxId: ID, group: 'store', archived: false }),
+    ).toEqual(
+      Result.succeed({ _tag: 'GroupUnarchived', inboxId: ID, group: 'store' }),
+    );
+    expect(
+      refusalOf(
+        decideGroupArchive(state, {
+          inboxId: ID,
+          group: 'store',
+          archived: false,
+        }),
+      ),
+    ).toBe('not-archived');
+    expect(
+      refusalOf(
+        decideGroupArchive(state, { inboxId: ID, group: ' ', archived: true }),
+      ),
+    ).toBe('empty');
+    expect(
+      refusalOf(
+        decideGroupArchive(inboxState([]), {
+          inboxId: ID,
+          group: 'store',
+          archived: true,
+        }),
+      ),
+    ).toBe('not-found');
+  });
+
+  it('refuses to archive a group no question in the inbox is in', () => {
+    const state = inboxState([opened, inGroup(1, 'store')]);
+    expect(
+      refusalOf(
+        decideGroupArchive(state, {
+          inboxId: ID,
+          group: 'stor',
+          archived: true,
+        }),
+      ),
+    ).toBe('unknown-group');
+  });
+
+  it('archives a group in an archived inbox too', () => {
+    const state = inboxState([
+      opened,
+      inGroup(1, 'store'),
+      { _tag: 'InboxArchived', inboxId: ID },
+    ]);
+    expect(
+      Result.isSuccess(
+        decideGroupArchive(state, {
+          inboxId: ID,
+          group: 'store',
+          archived: true,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('brings an archived group back when a question is asked into it', () => {
+    const state = inboxState([opened, inGroup(1, 'store'), archived('store')]);
+    const into = Result.getOrThrow(
+      decideAsk(state, {
+        inboxId: ID,
+        title: 'Next',
+        body: '',
+        metadata: { group: ' store ' },
+      }),
+    );
+    const events = askEvents(state, into);
+    expect(events.map((e) => e._tag)).toEqual([
+      'GroupUnarchived',
+      'QuestionAsked',
+    ]);
+    expect(events[0]).toEqual({
+      _tag: 'GroupUnarchived',
+      inboxId: ID,
+      group: 'store',
+    });
+    expect(
+      inboxState([opened, inGroup(1, 'store'), archived('store'), ...events])
+        .archivedGroups,
+    ).toEqual([]);
+    // Into another group, or none, it stays archived.
+    for (const metadata of [{ group: 'ui' }, undefined]) {
+      const other = Result.getOrThrow(
+        decideAsk(state, {
+          inboxId: ID,
+          title: 'Other',
+          body: '',
+          ...(metadata === undefined ? {} : { metadata }),
+        }),
+      );
+      expect(askEvents(state, other).map((e) => e._tag)).toEqual([
+        'QuestionAsked',
+      ]);
+    }
+  });
+
+  it('brings the inbox back before the group, when both are archived', () => {
+    const state = inboxState([
+      opened,
+      inGroup(1, 'store'),
+      archived('store'),
+      { _tag: 'InboxArchived', inboxId: ID },
+    ]);
+    const into = Result.getOrThrow(
+      decideAsk(state, {
+        inboxId: ID,
+        title: 'Next',
+        body: '',
+        metadata: { group: 'store' },
+      }),
+    );
+    expect(askEvents(state, into).map((e) => e._tag)).toEqual([
+      'InboxUnarchived',
+      'GroupUnarchived',
+      'QuestionAsked',
+    ]);
+  });
+
+  it('leaves an archived group’s waiting questions out of the summary’s count, and All’s', () => {
+    const state = inboxState([
+      opened,
+      inGroup(1, 'store'),
+      inGroup(2, 'ui'),
+      asked(3),
+      archived('store'),
+    ]);
+    const summary = summariseInbox(ID, state, 1);
+    expect(summary.awaitingOperator).toBe(2);
+    expect(totalAwaitingOperator([summary])).toBe(2);
+    // The column itself still holds it: picked on its own, it shows.
+    expect(awaitingOperator(state)).toHaveLength(3);
   });
 });
 
