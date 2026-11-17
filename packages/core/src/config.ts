@@ -15,6 +15,7 @@ import {
   ChaseAfterMinutes,
   DiagramSize,
   PriorityPull,
+  SendKey,
   WideBlocks,
 } from './api/inbox-config-api';
 import { SERVE_DEFAULT_PORT } from './api/serve-port';
@@ -322,6 +323,10 @@ export const AppConfig = Schema.Struct({
   // How a table or a picture wider than the text column widens: `both` or
   // `right` (`WideBlocks`). Unset: `DEFAULT_WIDE_BLOCKS`, `both`.
   wideBlocks: Schema.optional(WideBlocks),
+  // Which key sends from the answer, follow-up and ask boxes: `mod+enter` or
+  // `enter` (`SendKey`). Unset: `DEFAULT_SEND_KEY`, `mod+enter`, where Send's
+  // keybinding sends and Enter is a new line.
+  sendKey: Schema.optional(SendKey),
   // Listen mode, where serve reads the Questions aloud (`readout-api.ts`).
   // `voice` is the voice the audio is made in. Unset:
   // `DEFAULT_READOUT_VOICE`.

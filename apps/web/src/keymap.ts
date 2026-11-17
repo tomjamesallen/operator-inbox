@@ -97,6 +97,7 @@ import {
   steppedRate,
   toggleListenAtom,
 } from './readout/readout';
+import { isComposingPress } from './send-key';
 import { widgetsOpenedAtom } from './widgets';
 
 // The inbox screen's keymap: the defaults from
@@ -518,8 +519,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return true;
   },
   clear_selection: (get) => clearSelectionByKey(get),
+  // A chord pressed while an input method composes is the input method's.
+  // Under config.json's `sendKey: "enter"` the boxes that send text take
+  // Send's Enter chords as a new line before this sees them (`send-key.ts`).
   send_response: (get, e, binding) => {
-    if (dialogOpen(get) || otherFieldKeeps(binding, e)) return false;
+    if (dialogOpen(get) || otherFieldKeeps(binding, e) || isComposingPress(e))
+      return false;
     get.set(sendComposerAtom, false);
     return true;
   },

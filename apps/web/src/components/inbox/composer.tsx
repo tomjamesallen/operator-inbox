@@ -47,6 +47,7 @@ import {
   readerAskAtom,
   readerIntroAtom,
   sendComposerAtom,
+  sendKeyAtom,
   shownQueuesAtom,
   stepAskAtom,
   troublesAtom,
@@ -58,6 +59,7 @@ import {
 import { keyHintAtom } from '../../keymap';
 import { askMacroFocusAtom, macroCardsAtom } from '../../macros';
 import { listenOnAtom } from '../../readout/readout';
+import { ENTER_HINT, insertNewline, sendKeyStepOf } from '../../send-key';
 import { AttachDrop, AttachRefusal, FileStrip } from './attachments';
 import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
@@ -117,6 +119,7 @@ const Box = ({
   combobox,
   boxRef,
   attachTo,
+  sends = false,
 }: {
   readonly value: string;
   readonly placeholder: string;
@@ -135,9 +138,35 @@ const Box = ({
   readonly boxRef?: { current: HTMLTextAreaElement | null };
   // The box's place, when files pasted into it are attached to it.
   readonly attachTo?: string;
+  // Whether the box sends what is in it (an answer, a follow-up, an ask), so
+  // config.json's `sendKey` decides what Enter does in it (`send-key.ts`).
+  readonly sends?: boolean;
 }) => {
   const self = useRef<HTMLTextAreaElement | null>(null);
   const addFiles = useAtomSet(addFilesAtom);
+  const sendKey = useAtomValue(sendKeyAtom);
+  const send = useAtomSet(sendComposerAtom);
+  // The box's own handler first: a key the macro menu took is not a send.
+  const keyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    onKeyDown?.(e);
+    if (!sends || e.isDefaultPrevented()) return;
+    const step = sendKeyStepOf(sendKey, {
+      key: e.key,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      isComposing: e.nativeEvent.isComposing,
+      keyCode: e.keyCode,
+    });
+    if (step === 'pass') return;
+    e.preventDefault();
+    // Kept from the keymap's listener on the document, so Send's keybinding
+    // does not send the line it has just put in.
+    e.stopPropagation();
+    if (step === 'send') send(false);
+    else insertNewline(e.currentTarget);
+  };
   // A paste that carries files, an image copied from the screen most often,
   // attaches them; text pasted with them still goes in as text.
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -179,7 +208,7 @@ const Box = ({
             'aria-activedescendant': combobox.active,
           })}
       onChange={(e) => onChange(e.target.value, e.target)}
-      onKeyDown={onKeyDown}
+      onKeyDown={keyDown}
       onPaste={onPaste}
       {...(onSelect === undefined
         ? {}
@@ -205,7 +234,11 @@ const Actions = ({
   readonly deferReady?: boolean;
 }) => {
   const send = useAtomSet(sendComposerAtom);
-  const sendHint = useAtomValue(keyHintAtom('send_response'));
+  const chordHint = useAtomValue(keyHintAtom('send_response'));
+  const sendHint =
+    useAtomValue(sendKeyAtom) === 'enter'
+      ? { first: ENTER_HINT.label, aria: ENTER_HINT.aria }
+      : chordHint;
   const deferHint = useAtomValue(keyHintAtom('defer_to_agent'));
   return (
     <div className="flex shrink-0 gap-s1">
@@ -315,6 +348,7 @@ const AnswerBox = ({
             attachTo={place}
             value={draft}
             placeholder="Write your answer"
+            sends
             combobox={menu.combobox}
             onChange={(text, el) => {
               setText(text);
@@ -416,6 +450,7 @@ const FollowUpBox = ({
             boxRef={self}
             value={draft}
             placeholder="Add a follow-up"
+            sends
             combobox={menu.combobox}
             onChange={(text, el) => {
               setDraft(text);
@@ -476,6 +511,7 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
             boxRef={self}
             value={draft}
             placeholder="What do you want to ask?"
+            sends
             combobox={menu.combobox}
             onChange={(text, el) => {
               setDraft(text);

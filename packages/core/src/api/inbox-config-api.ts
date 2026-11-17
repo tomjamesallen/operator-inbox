@@ -38,10 +38,21 @@ export const WideBlocks = Schema.Literals(['both', 'right']);
 export type WideBlocks = typeof WideBlocks.Type;
 export const DEFAULT_WIDE_BLOCKS: WideBlocks = 'both';
 
+// Which key sends from the boxes that send text (an answer, a follow-up, a
+// question for the agent): config.json's `sendKey`. `mod+enter`: Send's
+// keybinding (`send_response`, ⌘↩ and Ctrl+↩ unless the keybindings file
+// rebinds it) sends, and Enter is a new line. `enter`: Enter sends, and
+// ⇧↩, ⌘↩ and Ctrl+↩ are a new line. Either way a key pressed while an input
+// method is composing never sends, and a macro card's fields keep Enter as a
+// new line, with Send's keybinding sending from them.
+export const SendKey = Schema.Literals(['mod+enter', 'enter']);
+export type SendKey = typeof SendKey.Type;
+export const DEFAULT_SEND_KEY: SendKey = 'mod+enter';
+
 // What serve reads from Local's config for the Inbox page: the metadata rules
 // from metadata.json as the file holds them, or the default when there is no
 // file, and config.json's `chaseAfterMinutes`, `diagramSize`,
-// `priorityPull` and `wideBlocks` when they are set. Its own
+// `priorityPull`, `wideBlocks` and `sendKey` when they are set. Its own
 // endpoint, apart from the board, so the board's shape does not move.
 // BROWSER-SAFE: the web app imports it, so it uses nothing Node-only.
 export const InboxConfigDto = Schema.Struct({
@@ -58,6 +69,9 @@ export const InboxConfigDto = Schema.Struct({
   // Absent: unset, or from a serve that predates it. The page then uses
   // `DEFAULT_WIDE_BLOCKS`.
   wideBlocks: Schema.optionalKey(WideBlocks),
+  // Absent: unset, or from a serve that predates it. The page then uses
+  // `DEFAULT_SEND_KEY`.
+  sendKey: Schema.optionalKey(SendKey),
 });
 export type InboxConfigDto = typeof InboxConfigDto.Type;
 

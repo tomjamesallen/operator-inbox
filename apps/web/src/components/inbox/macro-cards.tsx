@@ -286,8 +286,9 @@ const Field = ({
     case 'text':
       return (
         // A textarea, not an input: a value often runs to several lines, so it
-        // wraps and grows as the answer box does. Enter is a new line; the
-        // send keys reach the page as they do from the answer box.
+        // wraps and grows as the answer box does. Enter is a new line, whatever
+        // config.json's `sendKey` says; Send's keybinding reaches the page as
+        // it does from the answer box.
         <textarea
           data-macro-stop={stop}
           aria-label={param.name}
