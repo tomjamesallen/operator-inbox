@@ -15,6 +15,7 @@ import {
   WIDGET_KEYS,
 } from '@operator-inbox/core/keymap';
 import { useRef } from 'react';
+import { sendKeyAtom } from '../inbox-reader';
 import {
   inboxBadgeAtom,
   keyBadgeAtom,
@@ -162,7 +163,14 @@ export const KeymapHelp = () => {
   const [open, setOpen] = useAtom(keymapHelpOpenAtom);
   const [query, setQuery] = useAtom(keymapHelpQueryAtom);
   const keymap = useAtomValue(keymapAtom);
+  // Under config.json's `sendKey: "enter"`, Enter sends from the boxes and
+  // Send's keybinding sends from a macro card only (`send-key.ts`).
+  const enterSends = useAtomValue(sendKeyAtom) === 'enter';
   const search = useRef<HTMLInputElement>(null);
+  const descriptionOf = (action: (typeof KEYMAP_ACTIONS)[number]): string =>
+    enterSends && action.id === 'send_response'
+      ? 'Send, from a macro card; in a response box or the ask box, Enter sends and this is a new line (config.json’s sendKey)'
+      : action.description;
   const q = query.trim();
   const sections = KEYMAP_SECTIONS.map((section) => ({
     section,
@@ -172,15 +180,24 @@ export const KeymapHelp = () => {
         matchesQuery(
           q,
           section,
-          a.description,
+          descriptionOf(a),
           a.id,
           ...bindingsOf(keymap, a.id).map((b) => sequenceText(b.sequence)),
         ),
     ),
   })).filter((s) => s.actions.length > 0);
-  const widgets = WIDGET_KEYS.filter((w) =>
-    matchesQuery(q, 'in place', w.what, w.where, w.keys),
-  );
+  const widgets = [
+    ...(enterSends
+      ? [
+          {
+            keys: '↩ · ⇧↩ / ⌘↩ / Ctrl+↩',
+            where: 'Response box, ask box',
+            what: 'Send · a new line (config.json’s sendKey)',
+          },
+        ]
+      : []),
+    ...WIDGET_KEYS,
+  ].filter((w) => matchesQuery(q, 'in place', w.what, w.where, w.keys));
   // The card's own keys, and the three of the keymap's that act in it, as
   // the keymap binds them now.
   const macroKeys = [
@@ -194,7 +211,9 @@ export const KeymapHelp = () => {
       what: 'Bring back the card last removed, while nothing is typed since',
     },
     {
-      keys: keysLabel(keymap, 'send_response', 1) ?? 'unbound',
+      keys: enterSends
+        ? `↩ in the box · ${keysLabel(keymap, 'send_response', 1) ?? 'unbound'} in a card`
+        : (keysLabel(keymap, 'send_response', 1) ?? 'unbound'),
       what: 'Send; with a required field empty, go to it first; again, send it as it is',
     },
   ].filter((k) => matchesQuery(q, 'macros', k.what, k.keys));
@@ -269,7 +288,7 @@ export const KeymapHelp = () => {
                           data-action={action.id}
                         >
                           <td className="py-0.75 pr-s2 text-fg/80">
-                            {action.description}
+                            {descriptionOf(action)}
                             <div className="text-10.5 text-fg/35">
                               {action.id}
                               {action.param === undefined

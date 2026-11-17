@@ -2,6 +2,7 @@ import path from 'node:path';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
 import { ConfigProvider, Effect, FileSystem, Result, Schema } from 'effect';
+import { DEFAULT_SEND_KEY } from '../src/api/inbox-config-api';
 import {
   AppConfig,
   ConfigError,
@@ -580,5 +581,21 @@ describe('readout', () => {
     expect(
       describeConfigFailure(P, thrownBy({ readout: { voice: 3 } })),
     ).toContain('readout.voice');
+  });
+});
+
+describe('sendKey', () => {
+  const decode = Schema.decodeUnknownSync(AppConfig);
+  it('is mod+enter by default, and either value when set', () => {
+    expect(DEFAULT_SEND_KEY).toBe('mod+enter');
+    expect(decode({}).sendKey).toBeUndefined();
+    expect(decode({ sendKey: 'enter' }).sendKey).toBe('enter');
+    expect(decode({ sendKey: 'mod+enter' }).sendKey).toBe('mod+enter');
+  });
+
+  it('refuses any other value, naming the key and both it takes', () => {
+    expect(describeConfigFailure(P, thrownBy({ sendKey: 'cmd+enter' }))).toBe(
+      `config.json at ${P}: sendKey — expected "mod+enter" or "enter", got "cmd+enter"`,
+    );
   });
 });

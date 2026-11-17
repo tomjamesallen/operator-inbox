@@ -4,6 +4,7 @@ import {
   DEFAULT_DIAGRAM_SIZE,
   DEFAULT_INBOX_METADATA,
   DEFAULT_PRIORITY_PULL,
+  DEFAULT_SEND_KEY,
   DEFAULT_WIDE_BLOCKS,
   DiagramSize,
   type InboxId,
@@ -13,6 +14,7 @@ import {
   type MacroInvoked,
   type PriorityPull,
   type QuestionComment,
+  SendKey,
   WideBlocks,
 } from '@operator-inbox/core/api';
 import { Effect, Exit, Option } from 'effect';
@@ -494,6 +496,35 @@ export const wideBlocksAtom = Atom.make((get): WideBlocks => {
       const wide = config.wideBlocks ?? DEFAULT_WIDE_BLOCKS;
       if (wide !== remembered) get.set(rememberedWideBlocksAtom, wide);
       return wide;
+    },
+  });
+}).pipe(Atom.keepAlive);
+
+// The send key last read, kept in this browser's localStorage as the wide
+// blocks are, so Enter pressed in the first moments after a reload does what
+// it did before it, rather than what the default does until config.json is
+// read again.
+const rememberedSendKeyAtom = Atom.kvs({
+  runtime: Atom.runtime(KeyValueStore.layerStorage(() => localStorage)),
+  key: 'operator-inbox:send-key',
+  schema: SendKey,
+  defaultValue: (): SendKey => DEFAULT_SEND_KEY,
+}).pipe(Atom.keepAlive);
+
+/**
+ * Which key sends from the answer, follow-up and ask boxes: config.json's
+ * `sendKey`, or `mod+enter` (Send's keybinding sends, Enter is a new line)
+ * when it is unset. Until the config is read, or when it cannot be, the one
+ * last read in this browser.
+ */
+export const sendKeyAtom = Atom.make((get): SendKey => {
+  const remembered = get(rememberedSendKeyAtom);
+  return Option.match(AsyncResult.value(get(inboxConfigAtom)), {
+    onNone: () => remembered,
+    onSome: (config) => {
+      const key = config.sendKey ?? DEFAULT_SEND_KEY;
+      if (key !== remembered) get.set(rememberedSendKeyAtom, key);
+      return key;
     },
   });
 }).pipe(Atom.keepAlive);
