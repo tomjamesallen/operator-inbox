@@ -14,6 +14,7 @@ import {
   LOCAL_MACHINE,
   LOCAL_MACHINE_KEY,
 } from './api/inbox-api';
+import { type Attachment, imageAttachmentNamed } from './attachment';
 import type { InboxMachine } from './config';
 import {
   findMachine,
@@ -358,19 +359,44 @@ const activeAwaiting = (rows: ReadonlyArray<InboxSummaryDto>): number =>
 
 // A question with its body rendered by Local, from its raw `body`: the
 // `bodyHtml`, `bodyParts` and `bodyImages` the machine sent are discarded,
-// never passed on. Local holds none of the machine's files, so its body shows
-// none in place.
+// never passed on. A body's `attachment:<name>` image is drawn from the
+// Question's own files (`askedAttachments`), each at the URL Local's serve
+// reads it back from, which sends the read on to the machine that keeps it
+// (`serve-attachments.ts`, apps/cli). The URL is made here from the last
+// three segments of the file's path, each encoded, and a path with a `.` or
+// `..` among them draws nothing, so a machine's path can only ever name a
+// file under `/api/attachments/`.
 const renderedOnLocal = <
   Q extends {
     readonly body: string;
     readonly bodyHtml: string;
     readonly bodyParts?: InboxViewDto['awaitingOperator'][number]['bodyParts'];
     readonly bodyImages?: ReadonlyArray<string>;
+    readonly askedAttachments?: ReadonlyArray<Attachment>;
   },
 >({
   bodyImages: _sent,
   ...q
-}: Q): Omit<Q, 'bodyImages'> => ({ ...q, ...renderedQuestionBody(q.body) });
+}: Q): Omit<Q, 'bodyImages'> => ({
+  ...q,
+  ...renderedQuestionBody(q.body, keptImages(q.askedAttachments ?? [])),
+});
+
+// Where Local's serve reads a machine's file back from, by name: the first
+// image of that name the Question carries, as Local draws its own.
+const keptImages =
+  (attachments: ReadonlyArray<Attachment>) =>
+  (name: string): string | undefined => {
+    const file = imageAttachmentNamed(attachments, name);
+    if (file === undefined) return undefined;
+    const parts = file.path.split('/').slice(-3);
+    if (
+      parts.length < 3 ||
+      parts.some((p) => p === '' || p === '.' || p === '..')
+    )
+      return undefined;
+    return `/api/attachments/${parts.map(encodeURIComponent).join('/')}`;
+  };
 
 // A machine's view as Local passes it to the page: tagged with the
 // machine, and every question's body rendered again here. The page renders

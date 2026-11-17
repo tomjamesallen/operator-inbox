@@ -28,6 +28,7 @@ import {
   pendingRefusalAtom,
   pickerAskedAtom,
   removeFileAtom,
+  unloadedImageAtom,
 } from '../../attachments';
 import { focusRing, headerButton, label } from '../styles';
 import { edgeFade, fadeEdges } from './edge-fade';
@@ -214,16 +215,14 @@ export const AttachRefusal = ({ place }: { readonly place: string }) => {
 
 /**
  * The files an answer or a question carries, on its card: an image as a
- * thumbnail that opens whole in a new tab, anything else as its name. A
- * file held on another machine cannot be read from here, so it is its name
- * only (`readable` false).
+ * thumbnail that opens whole over the page, anything else as its name, a
+ * link that downloads it. Each is read back through this page's serve,
+ * which reads a file another machine keeps from that machine.
  */
 export const AttachmentList = ({
   attachments,
-  readable,
 }: {
   readonly attachments: ReadonlyArray<Attachment>;
-  readonly readable: boolean;
 }) => (
   <ul
     className="mt-s2 flex flex-wrap items-end gap-s2 text-11 text-fg/60"
@@ -231,29 +230,46 @@ export const AttachmentList = ({
     data-zen-attachments
   >
     {attachments.map((a) => {
-      const url = readable ? attachmentUrl(a) : undefined;
-      const image = url !== undefined && isImageAttachment(a.type);
+      const url = attachmentUrl(a);
       return (
         <li key={a.path} className="min-w-0">
-          {image ? (
+          {url !== undefined && isImageAttachment(a.type) ? (
             <ImageLightbox attachment={a} url={url} />
           ) : (
-            <a
-              {...(url === undefined ? {} : { href: url, download: a.name })}
-              title={a.path}
-              className={`flex max-w-60 items-center gap-s1 border border-fg/12 px-s1 py-px ${url === undefined ? '' : 'hover:border-fg/40 hover:text-fg'}`}
-            >
-              <Icon d={ICON_ATTACH} />
-              <span className="min-w-0 truncate">{a.name}</span>
-              <span className="shrink-0 text-fg/35">
-                {attachmentSize(a.bytes)}
-              </span>
-            </a>
+            <KeptFile attachment={a} url={url} />
           )}
         </li>
       );
     })}
   </ul>
+);
+
+/**
+ * A file as its name and size: a link that downloads it, or, with no URL to
+ * read it from (`url` undefined), the name alone, `unread` saying why.
+ */
+const KeptFile = ({
+  attachment,
+  url,
+  unread,
+}: {
+  readonly attachment: Attachment;
+  readonly url: string | undefined;
+  readonly unread?: string;
+}) => (
+  <a
+    {...(url === undefined ? {} : { href: url, download: attachment.name })}
+    title={
+      unread === undefined ? attachment.path : `${unread}: ${attachment.path}`
+    }
+    className={`flex max-w-60 items-center gap-s1 border border-fg/12 px-s1 py-px ${url === undefined ? '' : 'hover:border-fg/40 hover:text-fg'}`}
+  >
+    <Icon d={ICON_ATTACH} />
+    <span className="min-w-0 truncate">{attachment.name}</span>
+    <span className="shrink-0 text-fg/35">
+      {unread ?? attachmentSize(attachment.bytes)}
+    </span>
+  </a>
 );
 
 /**
@@ -267,26 +283,40 @@ export const ImageLightbox = ({
 }: {
   readonly attachment: Attachment;
   readonly url: string;
-}) => (
-  <Dialog.Root>
-    <Dialog.Trigger
-      // The card under it lights on a click; the image is not the card's.
-      onClick={(e) => e.stopPropagation()}
-      aria-label={`Show ${attachment.name}`}
-      title={`${attachment.name} (${attachmentSize(attachment.bytes)})`}
-      className={`block cursor-zoom-in border border-fg/12 hover:border-fg/40 ${focusRing}`}
-      data-zen-thumbnail
-    >
-      <img
-        src={url}
-        alt={attachment.name}
-        loading="lazy"
-        className="block max-h-40 max-w-60 object-contain"
+}) => {
+  // An image serve could not send (its machine unreachable, say) is its
+  // card, saying so, rather than a broken image.
+  const [unloaded, setUnloaded] = useAtom(unloadedImageAtom(url));
+  if (unloaded)
+    return (
+      <KeptFile
+        attachment={attachment}
+        url={undefined}
+        unread="could not be read"
       />
-    </Dialog.Trigger>
-    <Lightbox attachment={attachment} url={url} />
-  </Dialog.Root>
-);
+    );
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger
+        // The card under it lights on a click; the image is not the card's.
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Show ${attachment.name}`}
+        title={`${attachment.name} (${attachmentSize(attachment.bytes)})`}
+        className={`block cursor-zoom-in border border-fg/12 hover:border-fg/40 ${focusRing}`}
+        data-zen-thumbnail
+      >
+        <img
+          src={url}
+          alt={attachment.name}
+          loading="lazy"
+          onError={() => setUnloaded(true)}
+          className="block max-h-40 max-w-60 object-contain"
+        />
+      </Dialog.Trigger>
+      <Lightbox attachment={attachment} url={url} />
+    </Dialog.Root>
+  );
+};
 
 // A press in the lightbox is the lightbox's. It is portalled to the end of
 // the page, but React carries its events up the component tree, through the
@@ -390,19 +420,17 @@ const bodyImageAt = (
 export const BodyImages = ({
   itemKey,
   attachments,
-  readable,
   children,
 }: {
   readonly itemKey: string;
   // The question's files, which its body's images name.
   readonly attachments: ReadonlyArray<Attachment>;
-  readonly readable: boolean;
   readonly children: ReactNode;
 }) => {
   const [open, setOpen] = useAtom(bodyImageOpenAtom(itemKey));
   const opener = useRef<HTMLElement | null>(null);
   const fileOf = (name: string) => {
-    const file = readable ? imageAttachmentNamed(attachments, name) : undefined;
+    const file = imageAttachmentNamed(attachments, name);
     const url = file === undefined ? undefined : attachmentUrl(file);
     return file === undefined || url === undefined ? undefined : { file, url };
   };

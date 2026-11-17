@@ -8,6 +8,7 @@ import {
   inboxMachineKey,
   LOCAL_MACHINE_KEY,
 } from '../src/api/inbox-api';
+import type { Attachment } from '../src/attachment';
 import { QuestionNumber, QuestionRevision } from '../src/inbox';
 import {
   decideInboxOwner,
@@ -494,34 +495,76 @@ describe('a machine’s question HTML is never passed on', () => {
   });
 });
 
-describe('a machine’s body images are never passed on', () => {
-  it('machineView drops the names of the files a machine’s body showed in place', () => {
-    const BODY = '![a](attachment:shot.png)';
-    const question = {
-      number: QuestionNumber.make(1),
-      revision: QuestionRevision.make(1),
-      metadata: {},
-      title: 'q',
-      body: BODY,
-      bodyHtml: '',
-      bodyImages: ['shot.png'],
-    };
-    const out = machineView(
+describe('a machine’s body images are drawn again by Local', () => {
+  const question = (
+    body: string,
+    askedAttachments?: ReadonlyArray<Attachment>,
+  ) => ({
+    number: QuestionNumber.make(1),
+    revision: QuestionRevision.make(1),
+    metadata: {},
+    title: 'q',
+    body,
+    bodyHtml: '<img src="https://elsewhere/x.png">',
+    bodyImages: ['sent-by-the-machine.png'],
+    ...(askedAttachments === undefined ? {} : { askedAttachments }),
+  });
+  const viewWith = (q: ReturnType<typeof question>) =>
+    machineView(
       {
         ...view('H'),
-        awaitingOperator: [{ ...question, askedSeq: 1 }],
-        awaitingAgent: [{ ...question, response: 'a', answeredSeq: 2 }],
-        processed: [{ ...question, withdrawn: false, processedSeq: 3 }],
+        awaitingOperator: [{ ...q, askedSeq: 1 }],
+        awaitingAgent: [{ ...q, response: 'a', answeredSeq: 2 }],
+        processed: [{ ...q, withdrawn: false, processedSeq: 3 }],
       },
       ref('laptop', 3010),
     );
-    for (const q of [
-      ...out.awaitingOperator,
-      ...out.awaitingAgent,
-      ...out.processed,
-    ]) {
+  const columns = (out: InboxViewDto) => [
+    ...out.awaitingOperator,
+    ...out.awaitingAgent,
+    ...out.processed,
+  ];
+
+  it('machineView draws a body’s image from the Question’s own file, read through Local', () => {
+    const out = viewWith(
+      question('![a](attachment:shot.png)', [
+        {
+          path: '/far/state/attachments/01INBOX/0123456789abcdef/shot.png',
+          name: 'shot.png',
+          type: 'image/png',
+          bytes: 3,
+        },
+      ]),
+    );
+    for (const q of columns(out)) {
+      // Local's own names, never the machine's.
+      expect(q.bodyImages).toStrictEqual(['shot.png']);
+      expect(q.bodyHtml).toContain(
+        'src="/api/attachments/01INBOX/0123456789abcdef/shot.png"',
+      );
+      expect(q.bodyHtml).not.toContain('elsewhere');
+    }
+  });
+
+  it('a path a machine sent cannot climb out of the attachments route', () => {
+    const out = viewWith(
+      question('![a](attachment:shot.png)', [
+        {
+          path: '/x/../../shot.png',
+          name: 'shot.png',
+          type: 'image/png',
+          bytes: 3,
+        },
+      ]),
+    );
+    expect('bodyImages' in (out.awaitingOperator[0] ?? {})).toBe(false);
+    expect(out.awaitingOperator[0]?.bodyHtml).toBe('<p>a</p>\n');
+  });
+
+  it('a body naming no image the Question carries is its alt text, with no names', () => {
+    const out = viewWith(question('![a](attachment:shot.png)'));
+    for (const q of columns(out)) {
       expect('bodyImages' in q).toBe(false);
-      // Local holds none of the machine's files: the image is its alt text.
       expect(q.bodyHtml).toBe('<p>a</p>\n');
     }
   });
