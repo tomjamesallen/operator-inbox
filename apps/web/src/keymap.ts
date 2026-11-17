@@ -55,6 +55,7 @@ import {
 import {
   activeQueueAtom,
   askingAtom,
+  askPlaceOf,
   colophonOpenAtom,
   commentHereAtom,
   composerAtom,
@@ -548,7 +549,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     get.set(macroInfoOpenAtom, toggledIn(open, card, !open.includes(card)));
     return true;
   },
-  // Newest first across the answer box: a card removal with nothing done to
+  // Newest first across the answer box, or the ask box: a card removal with nothing done to
   // the answer since comes back, whatever history the focused field has from
   // before it; after an edit the press is the browser's (`card-undo.ts`).
   // Another field, and a modal, keep it.
@@ -556,9 +557,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (dialogOpen(get) || otherFieldKeeps(binding, e)) return false;
     const snapshot = get.once(readerSnapshotAtom);
     const composer = snapshot === undefined ? undefined : composerOf(snapshot);
-    if (composer?._tag !== 'Answer' && composer?._tag !== 'Held') return false;
-    const { key } = composer.item;
-    if (get.once(undoableRemovalAtom(key)) === undefined) return false;
+    const key =
+      composer?._tag === 'Answer' || composer?._tag === 'Held'
+        ? composer.item.key
+        : composer?._tag === 'Asking'
+          ? askPlaceOf(composer.inboxId)
+          : undefined;
+    if (key === undefined || get.once(undoableRemovalAtom(key)) === undefined)
+      return false;
     get.set(undoCardRemovalAtom, { key });
     return true;
   },

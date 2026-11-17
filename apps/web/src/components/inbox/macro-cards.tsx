@@ -53,8 +53,8 @@ import { CardShell } from './card-shell';
 import { CommentCard } from './comment-card';
 import { edgeFade, fadeEdges } from './edge-fade';
 
-// The macros of the answer box: the `/` menu over it and a card per macro
-// invoked under it. A card is its header (`/name`, the "i", its description,
+// The macros of the answer box and the ask box: the `/` menu over it and a
+// card per macro invoked under it. A card is its header (`/name`, the "i", its description,
 // ×) and a labelled row per parameter in Base UI's own controls: a radio group
 // for a one-of, a toggle group for a many-of, a number field, an input. Tab
 // walks the fields; Esc shuts the "i", then goes back to the text; ⌘⌫ removes
@@ -72,7 +72,8 @@ const firstStopOf = (card: MacroCard): MacroFocus =>
     : { _tag: 'Card', card: card.id };
 
 // Inside double quotes an attribute value needs only `"` and `\` escaped, and
-// an answer key (`<inbox id>/<number>`) holds neither.
+// an answer key (`<inbox id>/<number>`) or an ask's (`ask:<inbox id>`) holds
+// neither.
 const stopSelector = (key: string, to: MacroFocus): string | undefined =>
   to._tag === 'Field'
     ? `[data-macro-stop="${key}#${to.card}:${to.index}"]`
@@ -93,19 +94,19 @@ const focusStop = (el: HTMLElement): void => {
  * The `/` menu of the box at the foot: its state lives in `macroMenuAtom`,
  * and this reads the box's text and caret into it, takes the menu's keys
  * first, and acts on a pick. `/attach` opens the box's file picker; a macro,
- * offered in the answer box only, becomes a card under it.
+ * offered in the answer box and the ask box, becomes a card under it.
  */
 export const useMacroMenu = (item: {
   // The box's place, whose picker `/attach` opens (`attachments.ts`).
   readonly place: string;
   readonly text: string;
   readonly setText: (text: string) => void;
-  // The answer the macros' cards belong to. Left out (a follow-up, an ask),
-  // the menu offers `/attach` alone.
+  // The answer, or the ask, the macros' cards belong to: an ask's names no
+  // question. Left out (a follow-up), the menu offers `/attach` alone.
   readonly macros?: {
     readonly key: string;
     readonly inboxId: InboxId;
-    readonly number: QuestionNumber;
+    readonly number?: QuestionNumber;
   };
 }) => {
   const [menu, setMenu] = useAtom(macroMenuAtom);
@@ -167,7 +168,9 @@ export const useMacroMenu = (item: {
     const added = withCard(cards, macro);
     setCards({
       inboxId: item.macros.inboxId,
-      number: item.macros.number,
+      ...(item.macros.number === undefined
+        ? {}
+        : { number: item.macros.number }),
       cards: added.cards,
     });
     if (macro.params.length > 0)
@@ -511,23 +514,27 @@ const Card = ({
 };
 
 /**
- * The cards of one answer, under its box, one stack scrolling once taller than
- * its token: the comments on the Question (in body order), then the
- * macros, then the files waiting to be sent (`FileCards`), side by side. Every card is the same kind of stop, so Tab, Esc, ⌘⌫ and the focus a
- * removal leaves behind are the same for both.
+ * The cards of one answer, or one ask, under its box, one stack scrolling once
+ * taller than its token: the comments on the Question (in body order; an ask
+ * has none), then the macros, then the files waiting to be sent
+ * (`FileCards`), side by side. Every card is the same kind of stop, so Tab,
+ * Esc, ⌘⌫ and the focus a removal leaves behind are the same for both.
  */
 export const MacroCards = ({
   itemKey,
   inboxId,
   number,
+  place = answerPlaceOf(itemKey),
 }: {
   readonly itemKey: string;
   readonly inboxId: InboxId;
-  readonly number: QuestionNumber;
+  // The answer's question; an ask's cards name none.
+  readonly number?: QuestionNumber;
+  // The box's place, whose files the stack shows: the answer's by default.
+  readonly place?: string;
 }) => {
   const [cards, setCards] = useAtom(macroCardsAtom(itemKey));
   const comments = useAtomValue(commentsInOrderAtom(itemKey));
-  const place = answerPlaceOf(itemKey);
   const files = useAtomValue(pendingFilesAtom(place));
   // A removal is kept to undo (`card-undo.ts`).
   const removeCard = useAtomSet(removeCardAtom);
@@ -553,8 +560,9 @@ export const MacroCards = ({
   if (cards.length === 0 && comments.length === 0 && files.length === 0)
     return null;
   const held = heldOn !== undefined && heldOn === missingKeyOf(cards);
+  const questioned = number === undefined ? {} : { number };
   const write = (next: ReadonlyArray<MacroCard>) =>
-    setCards({ inboxId, number, cards: next });
+    setCards({ inboxId, ...questioned, cards: next });
   const stops = stackStops(cards, comments);
   // The next card down takes the focus, else the one above, else the text.
   const focusAfter = (at: number) => {
@@ -590,7 +598,7 @@ export const MacroCards = ({
           remove={() => {
             removeCard({
               key: itemKey,
-              card: { _tag: 'Macro', id: card.id, inboxId, number },
+              card: { _tag: 'Macro', id: card.id, inboxId, ...questioned },
             });
             focusAfter(comments.length + at);
           }}

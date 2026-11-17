@@ -424,6 +424,8 @@ describe('the fold version moves with the fold', () => {
     3: '3ccd0976c8c48a566854e340a73481c6b2118dc93908289d1cbe4b63cc05ca83',
     // A Question holds the agent's own files apart (`askedAttachments`).
     4: '9eb2e6bd5200b8926b0728737454f467ce1787b029a0c6003f737555036d1ea1',
+    // An operator's question holds the macros they asked with (`macros`).
+    5: '4732a787449376b203bc8c8ea9614f8531b8d61c3aeb84b928e95beada063af3',
   };
 
   it('core fold section is the one this version was pinned with', () => {

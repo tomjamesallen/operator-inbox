@@ -583,6 +583,7 @@ export const askQuestion = Effect.fnUntraced(function* (
   text: string,
   highlightReply?: true,
   uploads: ReadonlyArray<AttachmentUpload> = [],
+  macros?: MacrosInvoked,
 ) {
   const refused = (refusal: InboxRefusal) =>
     refusal.reason === 'not-found'
@@ -592,6 +593,7 @@ export const askQuestion = Effect.fnUntraced(function* (
     inboxId,
     text,
     ...(highlightReply === undefined ? {} : { highlightReply }),
+    ...(macros === undefined ? {} : { macros }),
   };
   const attachments = yield* keptUploads(
     inboxId,
@@ -1339,6 +1341,7 @@ export const makeInboxApiLive = (api: typeof OperatorInboxApi) =>
             payload.text,
             payload.highlightReply,
             payload.attachments,
+            payload.macros,
           ),
         ),
       )

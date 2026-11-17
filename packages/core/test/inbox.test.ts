@@ -312,6 +312,69 @@ describe('the operator asks the agent', () => {
     );
   });
 
+  it('carries its macros, instruction and all, into the fold and through a move', () => {
+    const PARK = {
+      macro: 'park',
+      instruction: 'Stop work on this thread until asked.',
+      args: {},
+    };
+    const TODO = {
+      macro: 'todo',
+      instruction: 'Add this to the to-do list.',
+      args: { text: 'Book the room', priority: null },
+    };
+    const event = Result.getOrThrow(
+      decideOperatorAsk(inboxState([opened]), {
+        inboxId: ID,
+        text: 'Check X',
+        macros: [TODO, PARK],
+      }),
+    );
+    expect(event).toMatchObject({ body: 'Check X', macros: [TODO, PARK] });
+    const state = inboxState([opened, event]);
+    expect(awaitingAgent(state)[0]).toMatchObject({
+      operatorQuestion: true,
+      response: 'Check X',
+      macros: [TODO, PARK],
+    });
+    const TO = InboxId.make('01INBOX0000000000000000002');
+    const [moved] = Result.getOrThrow(
+      decideMove(
+        state,
+        inboxState([{ _tag: 'InboxOpened', inboxId: TO, label: 'other' }]),
+        { inboxId: ID, numbers: [n(1)], toInboxId: TO },
+      ),
+    );
+    if (moved === undefined) throw new Error('no move');
+    expect(moved.question).toMatchObject({
+      operatorQuestion: true,
+      macros: [TODO, PARK],
+    });
+    // No macros, no key.
+    expect(Result.getOrThrow(ask([opened]))).not.toHaveProperty('macros');
+  });
+
+  it('may be macros alone, titled by them', () => {
+    const PARK = { macro: 'park', instruction: 'Stop work.', args: {} };
+    const event = Result.getOrThrow(
+      decideOperatorAsk(inboxState([opened]), {
+        inboxId: ID,
+        text: '  ',
+        macros: [PARK],
+      }),
+    );
+    expect(event).toMatchObject({ title: '/park', body: '', macros: [PARK] });
+    expect(
+      refusalOf(
+        decideOperatorAsk(inboxState([opened]), {
+          inboxId: ID,
+          text: 'Check X',
+          macros: [{ ...PARK, instruction: ' ' }],
+        }),
+      ),
+    ).toBe('bad-macro');
+  });
+
   it('cuts a long first line, with an ellipsis', () => {
     const title = operatorQuestionTitle('x'.repeat(200));
     expect(title.length).toBe(OPERATOR_QUESTION_TITLE_LIMIT);

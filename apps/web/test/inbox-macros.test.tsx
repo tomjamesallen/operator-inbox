@@ -455,6 +455,121 @@ describe('an answer that carried macros', () => {
   });
 });
 
+describe('the ask box', () => {
+  const asking = async () => {
+    serve.macros = JSON.stringify(MACROS);
+    await mounted();
+    press({ key: 'A', code: 'KeyA', ctrlKey: true });
+    await screen.findByText(/In orchard/);
+    await waitFor(() => expect(document.activeElement).toBe(box()));
+    expect(box().getAttribute('placeholder')).toBe('What do you want to ask?');
+  };
+
+  it('offers the macros, and sends each with its instruction and arguments', async () => {
+    await asking();
+    typeBox('/');
+    // The menu's own rows: the Inboxes to ask in are options too.
+    await waitFor(() =>
+      expect(
+        [...(menu()?.querySelectorAll('[role="option"]') ?? [])].map(
+          (o) => o.querySelector('span')?.textContent,
+        ),
+      ).toEqual(['/attach', '/agenda', '/todo', '/park']),
+    );
+    typeBox('');
+    await invoke('agenda', 'Can you wrap the rota up? ');
+    fireEvent.click(screen.getByRole('radio', { name: 'Tobin' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'item' }), {
+      target: { value: 'Opening date' },
+    });
+    await invoke('park', 'Can you wrap the rota up? ');
+    send();
+    await waitFor(() => expect(serve.posts).toHaveLength(1));
+    expect(serve.posts[0]).toEqual({
+      path: `/api/inbox/${A}/questions`,
+      body: {
+        text: 'Can you wrap the rota up? ',
+        macros: [
+          {
+            macro: 'agenda',
+            instruction: 'Add the item to the named person’s agenda.',
+            args: { person: 'Tobin', item: 'Opening date' },
+          },
+          {
+            macro: 'park',
+            instruction: 'Stop work on this thread until asked.',
+            args: {},
+          },
+        ],
+      },
+    });
+    // A send that lands clears the cards and their draft.
+    await waitFor(() =>
+      expect(
+        sessionStorage.getItem('operator-inbox:inbox-macro-drafts'),
+      ).not.toContain('agenda'),
+    );
+  });
+
+  it('may ask with macros alone, and holds a send on an empty required field once', async () => {
+    await asking();
+    await invoke('agenda');
+    expect(box().value).toBe('');
+    const ask = screen.getByRole('button', { name: 'Ask' });
+    expect(ask).not.toHaveProperty('disabled', true);
+    box().focus();
+    send();
+    await settle();
+    expect(serve.posts).toHaveLength(0);
+    await waitFor(() =>
+      expect(card('agenda')?.textContent).toContain('needs person and item'),
+    );
+    send();
+    await waitFor(() => expect(serve.posts).toHaveLength(1));
+    expect(serve.posts[0]?.body).toEqual({
+      text: '',
+      macros: [
+        {
+          macro: 'agenda',
+          instruction: 'Add the item to the named person’s agenda.',
+          args: { person: null, item: null },
+        },
+      ],
+    });
+  });
+
+  it('shows the macros an operator’s question carried, in With the agent', async () => {
+    serve.board = board([
+      {
+        ...VIEW_A,
+        awaitingAgent: [
+          {
+            ...answered(7, '/park', 15, ''),
+            body: '',
+            bodyHtml: '',
+            operatorQuestion: true,
+            macros: [
+              {
+                macro: 'park',
+                instruction: 'Stop work on this thread until asked.',
+                args: {},
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    await mounted(`/inbox/${A}`);
+    await onQueue(/With the agent/);
+    const sent = await waitFor(() => {
+      const el = document.querySelector('[data-sent-macros]');
+      if (el === null) throw new Error('not yet');
+      return el;
+    });
+    expect(sent.textContent).toContain('/park');
+  });
+});
+
 describe('the help sheet', () => {
   it('has a Macros section with the card’s keys and the file it read', async () => {
     serve.macros = JSON.stringify(MACROS);

@@ -1,6 +1,6 @@
-import type {
+import {
   InboxId,
-  InboxOperatorQuestionDto,
+  type InboxOperatorQuestionDto,
 } from '@operator-inbox/core/api';
 import { Atom } from 'effect/reactivity';
 import {
@@ -9,8 +9,13 @@ import {
   commentsAtom,
   removeCommentAtom,
 } from './comments';
-import { responseDraftAtom } from './inbox';
-import { askMacroFocusAtom, type MacroCard, macroCardsAtom } from './macros';
+import { askDraftAtom, responseDraftAtom } from './inbox';
+import {
+  ASK_CARDS_PREFIX,
+  askMacroFocusAtom,
+  type MacroCard,
+  macroCardsAtom,
+} from './macros';
 
 // Undo for a card removed from an answer: a comment's or a macro's, by its ×,
 // ⌘⌫ or the body's context menu. Each removal keeps the card whole (its text,
@@ -52,7 +57,8 @@ export type RemovedCard =
       // Its place among the macro cards.
       readonly at: number;
       readonly inboxId: InboxId;
-      readonly number: QuestionNumber;
+      // The answer's question; an ask's cards name none.
+      readonly number?: QuestionNumber;
     };
 
 export interface CardRemoval {
@@ -67,13 +73,23 @@ export interface CardRemoval {
 type Read = <A>(atom: Atom.Atom<A>) => A;
 
 // Everything an edit can change, in one comparable string. Small: one answer's
-// text, comments and cards.
-const answerStateOf = (read: Read, key: string): string =>
-  JSON.stringify([
-    read(responseDraftAtom(key)),
+// text, comments and cards, or one ask's text and cards (`askCardsKeyOf`).
+const answerStateOf = (read: Read, key: string): string => {
+  const asking = askOfKey(key);
+  return JSON.stringify([
+    asking === undefined
+      ? read(responseDraftAtom(key))
+      : read(askDraftAtom(asking)),
     read(commentsAtom(key)),
     read(macroCardsAtom(key)),
   ]);
+};
+
+// The Inbox an ask's key is for; an answer's key is for none.
+const askOfKey = (key: string): InboxId | undefined =>
+  key.startsWith(ASK_CARDS_PREFIX)
+    ? InboxId.make(key.slice(ASK_CARDS_PREFIX.length))
+    : undefined;
 
 /** One answer's removals, the latest last. Memory only. */
 export const cardRemovalsAtom = Atom.family((_key: string) =>
@@ -105,7 +121,7 @@ export type CardToRemove =
       readonly _tag: 'Macro';
       readonly id: number;
       readonly inboxId: InboxId;
-      readonly number: QuestionNumber;
+      readonly number?: QuestionNumber;
     };
 
 /** Remove a card from answer `key`, keeping it to undo. */
@@ -126,9 +142,11 @@ export const removeCardAtom = Atom.writable(
       const at = cards.findIndex((c) => c.id === card.id);
       const found = cards[at];
       if (found === undefined) return;
+      const questioned =
+        card.number === undefined ? {} : { number: card.number };
       ctx.set(macroCardsAtom(key), {
         inboxId: card.inboxId,
-        number: card.number,
+        ...questioned,
         cards: cards.filter((c) => c.id !== card.id),
       });
       removed = {
@@ -136,7 +154,7 @@ export const removeCardAtom = Atom.writable(
         card: found,
         at,
         inboxId: card.inboxId,
-        number: card.number,
+        ...questioned,
       };
     }
     const seq = ctx.get(removalSeqAtom) + 1;
@@ -199,7 +217,7 @@ export const undoCardRemovalAtom = Atom.writable(
     const id = freeId(cards, removed.card.id);
     ctx.set(macroCardsAtom(key), {
       inboxId: removed.inboxId,
-      number: removed.number,
+      ...(removed.number === undefined ? {} : { number: removed.number }),
       cards: insertedAt(cards, removed.at, { ...removed.card, id }),
     });
     ctx.set(askMacroFocusAtom, {

@@ -1,0 +1,1 @@
+{"text":"","macros":[{"macro":"agenda","instruction":"Add the item to the named person’s agenda. Do not message them.","args":{"person":"Mira","item":"Confirm the opening date"}},{"macro":"park","instruction":"Stop work on this thread until the operator asks.","args":{}}]}
