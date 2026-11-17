@@ -1,9 +1,4 @@
-import {
-  RegistryProvider,
-  useAtomRefresh,
-  useAtomSet,
-  useAtomValue,
-} from '@effect/atom-react';
+import { useAtomRefresh, useAtomSet, useAtomValue } from '@effect/atom-react';
 import { InboxId, InboxMachineKey } from '@operator-inbox/core/api';
 import {
   act,
@@ -27,6 +22,7 @@ import {
 } from '../src/inbox-reader';
 import { inboxReaderAtoms } from '../src/inbox-reader-machine';
 import { json } from './fixture';
+import { TestRegistry } from './registry';
 
 // The reader on the real machine, real Atoms and the real client, over a fetch
 // that answers as serve does. All names are invented.
@@ -184,9 +180,9 @@ afterEach(() => {
 const mount = (path = '/inbox') => {
   history.replaceState(null, '', path);
   return render(
-    <RegistryProvider>
+    <TestRegistry>
       <InboxPage />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
 };
 
@@ -687,10 +683,10 @@ describe('answering', () => {
     };
     history.replaceState(null, '', '/inbox');
     render(
-      <RegistryProvider>
+      <TestRegistry>
         <InboxPage />
         <Strays />
-      </RegistryProvider>,
+      </TestRegistry>,
     );
     await litArticle();
     type('My answer');
@@ -725,10 +721,10 @@ describe('answering', () => {
     );
     history.replaceState(null, '', '/inbox');
     render(
-      <RegistryProvider>
+      <TestRegistry>
         <InboxPage />
         <Strays />
-      </RegistryProvider>,
+      </TestRegistry>,
     );
     await litArticle();
     type('My answer');
@@ -1023,10 +1019,10 @@ describe('the Atoms the keys will drive', () => {
   const mountKeys = () => {
     history.replaceState(null, '', '/inbox');
     return render(
-      <RegistryProvider>
+      <TestRegistry>
         <InboxPage />
         <Keys />
-      </RegistryProvider>,
+      </TestRegistry>,
     );
   };
 

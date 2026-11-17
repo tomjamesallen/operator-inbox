@@ -1,4 +1,4 @@
-import { RegistryProvider, useAtomSet } from '@effect/atom-react';
+import { useAtomSet } from '@effect/atom-react';
 import {
   act,
   fireEvent,
@@ -17,6 +17,7 @@ import {
   railShut,
   useInboxPage,
 } from './inbox-page-harness';
+import { TestRegistry } from './registry';
 
 // The sidebar sits over the page and never moves the question. jsdom lays nothing
 // out, so this holds what it can see: the sidebar is outside the reader's tree,
@@ -40,10 +41,10 @@ const Measure = () => {
 const mount = async (): Promise<void> => {
   history.replaceState(null, '', `/inbox/${A}`);
   render(
-    <RegistryProvider>
+    <TestRegistry>
       <InboxPage />
       <Measure />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
   await waitFor(() => expect(litKey()).toBeDefined());
   fireEvent.click(screen.getByRole('button', { name: 'wide' }));
