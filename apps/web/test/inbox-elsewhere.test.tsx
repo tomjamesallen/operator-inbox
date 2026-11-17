@@ -459,7 +459,9 @@ describe('the list’s keys', () => {
       ]);
       mount(`/inbox/${A}`);
       await focusList();
-      expect(screen.getByText(/Ctrl\+↩ session/)).toBeDefined();
+      const keys = screen.getByText(/Ctrl\+↩ session/);
+      // A touch-only device has no keys to press: the line goes.
+      expect(keys.classList).toContain('touch-only:hidden');
       // The list's key, never the keymap's, where Ctrl+Enter sends.
       const keymap = vi.fn();
       document.addEventListener('keydown', keymap);

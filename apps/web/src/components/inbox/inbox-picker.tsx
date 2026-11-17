@@ -200,7 +200,10 @@ const PickerBody = ({
           )
         }
       </Autocomplete.List>
-      <p className="border-t border-fg/13 px-s3 py-s1 text-10 text-fg/40">
+      <p
+        data-inbox-picker-keys
+        className="border-t border-fg/13 px-s3 py-s1 text-10 text-fg/40 touch-only:hidden"
+      >
         ↩ select the inbox · Ctrl+↩ open its session
       </p>
     </Autocomplete.Root>

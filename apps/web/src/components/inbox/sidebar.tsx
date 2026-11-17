@@ -203,7 +203,7 @@ const HelpButton = () => {
       title={`Keyboard shortcuts and help${inParens(hint.all)}`}
       data-sidebar-help
       onClick={() => setHelpOpen(true)}
-      className="ml-auto cursor-pointer px-s1 text-fg/30 hover:text-fg/70 focus-visible:text-fg/70"
+      className="ml-auto cursor-pointer px-s1 text-fg/30 hover:text-fg/70 focus-visible:text-fg/70 touch-only:hidden"
     >
       ?
     </button>

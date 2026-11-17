@@ -113,7 +113,7 @@ export const OpenSessionItem = ({
   ) : (
     <Menu.Item className={className} onClick={() => open(target.link)}>
       {LABEL}
-      <span className="text-fg/30">{hint.first}</span>
+      <span className="text-fg/30 touch-only:hidden">{hint.first}</span>
     </Menu.Item>
   );
 };

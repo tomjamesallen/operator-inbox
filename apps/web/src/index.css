@@ -7,7 +7,7 @@
 /*
  * The app's styles are Tailwind utilities on the elements. This file holds
  * only what a utility cannot: the theme the utilities draw from, the dark
- * scheme's values for it, four variants, two utilities
+ * scheme's values for it, six variants, two utilities
  * (`overflow-anchor-none`, `scrollbar-none`), and one escape hatch. A value
  * the design needs and the theme lacks is added here as a token, never
  * written as a bracketed literal on an element.
@@ -456,6 +456,20 @@
     @slot;
   }
   @media (height < 30rem) {
+    @slot;
+  }
+}
+
+/* A touch-only device: the primary pointer is a finger and nothing on the
+   device can hover, so a phone or a bare tablet. A key hint hides here
+   (`touch-only:hidden`). A tablet with a trackpad, as a keyboard case brings,
+   can hover, so it keeps its hints, and so does a laptop with a touch screen,
+   whose primary pointer is fine. No media query can see a keyboard on its own,
+   so a tablet with only a keyboard paired is taken for touch-only. Not
+   `pointer-coarse:`, which is what a finger needs (a bigger target, a menu in
+   place of a right-click) and holds on that tablet with its trackpad too. */
+@custom-variant touch-only {
+  @media (pointer: coarse) and (any-hover: none) {
     @slot;
   }
 }

@@ -364,7 +364,7 @@ export const MetaItem = ({
   return (
     <Menu.Item className={className} onClick={() => show(inboxId)}>
       Metadata
-      <span className="text-fg/30">{hint.first}</span>
+      <span className="text-fg/30 touch-only:hidden">{hint.first}</span>
     </Menu.Item>
   );
 };
@@ -376,7 +376,7 @@ export const LitMetaItem = ({ className }: { readonly className: string }) => {
   return (
     <Menu.Item className={className} onClick={() => setOpen(true)}>
       Metadata
-      <span className="text-fg/30">{hint.first}</span>
+      <span className="text-fg/30 touch-only:hidden">{hint.first}</span>
     </Menu.Item>
   );
 };

@@ -36,7 +36,9 @@ export const Tip = ({
       <Tooltip.Positioner side="top" sideOffset={6} className="z-40">
         <Tooltip.Popup className="flex items-center gap-s2 bg-fg px-s2 py-s1 font-zen text-11 whitespace-nowrap text-bg">
           {label}
-          {keys !== undefined && <span className="text-bg/60">{keys}</span>}
+          {keys !== undefined && (
+            <span className="text-bg/60 touch-only:hidden">{keys}</span>
+          )}
         </Tooltip.Popup>
       </Tooltip.Positioner>
     </Tooltip.Portal>

@@ -83,7 +83,7 @@ export const GroupArchiveItem = ({
       onClick={() => archive({ inboxId, group, archived: !archived })}
     >
       {archived ? 'Unarchive' : 'Archive'}
-      <span className="text-fg/30">{keys.first}</span>
+      <span className="text-fg/30 touch-only:hidden">{keys.first}</span>
     </Menu.Item>
   );
 };
@@ -121,7 +121,7 @@ export const InboxMenuItems = ({
       )}
       <Menu.Item className={MENU_ITEM} onClick={() => openRename(inboxId)}>
         Rename
-        <span className="text-fg/30">{renameKeys.first}</span>
+        <span className="text-fg/30 touch-only:hidden">{renameKeys.first}</span>
       </Menu.Item>
       <PinItem inboxId={inboxId} pinned={pinned} name={label} />
       <PriorityItem inboxId={inboxId} className={MENU_ITEM} />
@@ -131,7 +131,9 @@ export const InboxMenuItems = ({
         onClick={() => archive({ archived: !archived })}
       >
         {archived ? 'Unarchive' : 'Archive'}
-        <span className="text-fg/30">{archiveKeys.first}</span>
+        <span className="text-fg/30 touch-only:hidden">
+          {archiveKeys.first}
+        </span>
       </Menu.Item>
       <Menu.Item
         className={MENU_ITEM}

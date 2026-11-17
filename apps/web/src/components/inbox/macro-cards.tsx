@@ -460,7 +460,14 @@ const Card = ({
         {waiting ? (
           <output className="min-w-0 flex-1 truncate text-orange">
             needs {missing.map((p) => p.name).join(' and ')} ·{' '}
-            {sendHint.first ?? 'Send'} again sends it as it is
+            {/* A finger has the Send button, not the key. */}
+            <span data-macro-held-keys className="touch-only:hidden">
+              {sendHint.first ?? 'Send'}
+            </span>
+            <span data-macro-held-touch className="hidden touch-only:inline">
+              Send
+            </span>{' '}
+            again sends it as it is
           </output>
         ) : (
           <span className="min-w-0 flex-1 truncate text-fg/40">
