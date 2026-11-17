@@ -3,6 +3,7 @@ import {
   INBOX_MACHINE_HOST,
   type InboxMachineName,
   type InboxMachinePort,
+  MAX_ATTACHMENT_BYTES,
   type MachineCallRead,
   machineRef,
   machineText,
@@ -653,4 +654,104 @@ export const forwardInboxCall = <E extends InboxRefusal>(
     Effect.map((view) => machineView(view, ref)),
   );
   return kind === 'write' ? keep(forwarded) : forwarded;
+};
+
+// --- a kept file, read from the machine that holds it ---------------------
+
+// The most of one kept file Local reads from a machine: the most one file
+// may take (core's `MAX_ATTACHMENT_BYTES`), so a machine cannot fill Local's
+// memory with an answer no file could be.
+export const MACHINE_ATTACHMENT_LIMIT = MAX_ATTACHMENT_BYTES;
+
+// How long Local waits for a kept file's bytes once the machine has begun to
+// answer: a file of up to 20 MiB over a slow tunnel takes longer than an
+// answer the board waits on. Reaching the machine at all is bounded by the
+// read timeout (MACHINE_CALL_TIMEOUT), so one that is down is said within it.
+export const MACHINE_ATTACHMENT_BODY_TIMEOUT = Duration.seconds(60);
+
+// What reading one kept file from a machine came to: its bytes, the machine
+// saying it has no such file, or no usable answer (`Unavailable`): the
+// machine unreachable, or answering with what Local cannot use, as
+// `classifyMachineFailure` words it, naming the machine.
+export type MachineAttachmentRead =
+  | { readonly _tag: 'Found'; readonly bytes: Uint8Array }
+  | { readonly _tag: 'Missing' }
+  | {
+      readonly _tag: 'Unavailable';
+      readonly status: 'unreachable' | 'incompatible';
+      readonly message: string;
+    };
+
+// `GET /api/attachments/<inbox>/<hash>/<name>` on the machine that holds the
+// Inbox, as every call to a machine is sent (`machineApi`): over
+// `node:http`, naming `Host: 127.0.0.1:7184`, with `local=true`, so the
+// machine reads its own folder and never sends the read on. The route is a
+// plain one beside the API, so this is the client's raw request, not the
+// derived client's: a serve that predates forwarded file reads answers it
+// as it always has, from its own folder. Reaching the machine and its
+// status are bounded by the read timeout, the bytes after it by
+// MACHINE_ATTACHMENT_BODY_TIMEOUT, and no more than
+// MACHINE_ATTACHMENT_LIMIT bytes are read. Only the bytes are kept: what
+// type the file is sent back as, and every header, are Local's own
+// (`serve-attachments.ts`), never the machine's.
+export const fetchMachineAttachment = (
+  machine: Pick<InboxMachineName, 'label' | 'port'>,
+  segments: readonly [string, string, string],
+  options?: MachineCallOptions & {
+    // Overrides MACHINE_ATTACHMENT_BODY_TIMEOUT; tests shorten it.
+    readonly bodyTimeout?: Duration.Input;
+  },
+): Effect.Effect<MachineAttachmentRead> => {
+  const { port } = machine;
+  const timeout = readTimeout(options);
+  const maxBytes = options?.maxBytes ?? MACHINE_ATTACHMENT_LIMIT;
+  const request = HttpClientRequest.get(
+    `http://127.0.0.1:${port}/api/attachments/${segments.map(encodeURIComponent).join('/')}`,
+  ).pipe(
+    HttpClientRequest.setHeader('host', INBOX_MACHINE_HOST),
+    HttpClientRequest.setUrlParam('local', 'true'),
+  );
+  const unavailable = (failure: Failure): MachineAttachmentRead => ({
+    _tag: 'Unavailable',
+    status: failure.status,
+    message:
+      failure.status === 'unreachable'
+        ? `the Inbox machine ${machine.label} could not be reached: ${failure.detail}`
+        : `the Inbox machine ${machine.label} answered with something Local cannot use: ${failure.detail}`,
+  });
+  return Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    const response = yield* client
+      .execute(request)
+      .pipe(Effect.timeout(timeout));
+    if (response.status === 404) return { _tag: 'Missing' } as const;
+    if (response.status !== 200) {
+      const failure = httpFailure(
+        port,
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.StatusCodeError({
+            request,
+            response,
+          }),
+        }),
+      );
+      return unavailable(failure);
+    }
+    const capped = yield* cappedResponse(
+      maxBytes,
+      undefined,
+    )(response).pipe(
+      Effect.timeout(options?.bodyTimeout ?? MACHINE_ATTACHMENT_BODY_TIMEOUT),
+    );
+    const bytes = new Uint8Array(yield* capped.arrayBuffer);
+    return { _tag: 'Found', bytes } as const;
+  }).pipe(
+    Effect.provide(NodeHttpClient.layerNodeHttp),
+    Effect.catchDefect((defect) =>
+      Effect.fail(new MachineAnswerDefect({ defect })),
+    ),
+    Effect.catch((error) =>
+      Effect.succeed(unavailable(classifyMachineFailure(port, error, timeout))),
+    ),
+  );
 };

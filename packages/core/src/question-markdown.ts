@@ -375,8 +375,7 @@ const questionParts = (markdown: string): ReadonlyArray<QuestionBodyPart> => {
  * of it by this machine's own escaping renderers. Local's serve renders its
  * own questions with this, and every question a machine sends again with it,
  * so the page only ever shows HTML Local wrote. `images` resolves the body's
- * `attachment:<name>` images; left out, each renders as its alt text, as it
- * does for a Question another machine holds, whose files are not here.
+ * `attachment:<name>` images; left out, each renders as its alt text.
  * `bodyImages` names the files the body shows in place, each an image the
  * resolver gave a URL; it is left out when there are none.
  */

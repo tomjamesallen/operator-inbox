@@ -191,16 +191,17 @@ export const attachmentUrl = (a: Attachment): string | undefined => {
  * those the body already shows in place. `bodyImages` names those (serve
  * reads them from the body's markdown, core's `renderedQuestionBody`), and
  * each name is drawn from the first image of that name
- * (`imageAttachmentNamed`), as serve draws it. Where the page cannot read a
- * file back (`readable` false, or a path `attachmentUrl` cannot read), the
- * body cannot draw it, so it stays in the strip.
+ * (`imageAttachmentNamed`), as serve draws it. A file whose path
+ * `attachmentUrl` cannot read cannot be drawn by the body, so it stays in
+ * the strip. Every file is read back through this page's own serve, which
+ * reads one another machine keeps from that machine, so where a file is kept
+ * does not matter here.
  */
 export const attachmentsBesideBody = (
   bodyImages: ReadonlyArray<string>,
   attachments: ReadonlyArray<Attachment>,
-  readable: boolean,
 ): ReadonlyArray<Attachment> => {
-  if (!readable || bodyImages.length === 0) return attachments;
+  if (bodyImages.length === 0) return attachments;
   const inline = new Set(
     bodyImages.flatMap((name) => {
       const file = imageAttachmentNamed(attachments, name);
@@ -219,6 +220,16 @@ export const attachmentsBesideBody = (
  */
 export const bodyImageOpenAtom = Atom.family((_key: string) =>
   Atom.make<string | undefined>(undefined),
+);
+
+/**
+ * A kept image this page could not load, by its URL: serve said why (its
+ * machine unreachable, say), and the thumbnail shows the file's card in its
+ * place. Held only while the thumbnail is shown, so showing it again tries
+ * again.
+ */
+export const unloadedImageAtom = Atom.family((_url: string) =>
+  Atom.make(false),
 );
 
 /** Files are being dragged over the box at the foot. */

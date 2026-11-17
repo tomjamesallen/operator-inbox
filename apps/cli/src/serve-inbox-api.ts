@@ -409,25 +409,42 @@ const routedQuestionRead = <A, R>(
       Effect.catchIf(
         (e) => Predicate.isTagged(e, 'InboxNotFound'),
         (lacked) =>
-          Effect.gen(function* () {
-            const { claims } = yield* SubscriptionRef.get(served.lastOwners);
-            const keys = ownersOfClaims(claims, entries).get(inboxId) ?? [];
-            const machines = yield* machinesAmong(entries, keys);
-            const [owner, second] = machines;
-            if (second !== undefined)
-              return yield* Effect.fail(
-                new InboxUnavailable({
-                  message: inboxClashSentence(inboxId, machines),
-                  clashedOn: machines.map(machineRef),
-                }),
-              );
-            if (owner === undefined) return yield* Effect.fail(lacked);
-            if (Result.isFailure(owner.resolved))
-              return yield* Effect.fail(neverCalled(inboxId, [owner]));
-            return yield* forwardInboxRead(owner, forward, served.callOptions);
-          }),
+          Effect.flatMap(recordedOwnerOf(inboxId, entries, lacked), (owner) =>
+            forwardInboxRead(owner, forward, served.callOptions),
+          ),
       ),
     );
+  });
+
+// The machine a read of an Inbox Local's log lacks goes to: the one the
+// latest board or index read recorded as claiming it (`ownersOfClaims`).
+// None is `lacked`, the Inbox not found; two is the clash, refused with
+// nothing sent; one whose entry names no usable Herdr machine is
+// unreachable, and is never called. The page's reads of a Question
+// (`routedQuestionRead`) and of a kept file (`serve-attachments.ts`) both
+// find their machine here.
+export const recordedOwnerOf = (
+  inboxId: InboxId,
+  entries: ReadonlyArray<InboxMachineEntry>,
+  lacked: InboxNotFound,
+): Effect.Effect<InboxMachineEntry, InboxNotFound | InboxUnavailable> =>
+  Effect.gen(function* () {
+    const served = yield* ServedInboxMachines;
+    const { claims } = yield* SubscriptionRef.get(served.lastOwners);
+    const keys = ownersOfClaims(claims, entries).get(inboxId) ?? [];
+    const machines = yield* machinesAmong(entries, keys);
+    const [owner, second] = machines;
+    if (second !== undefined)
+      return yield* Effect.fail(
+        new InboxUnavailable({
+          message: inboxClashSentence(inboxId, machines),
+          clashedOn: machines.map(machineRef),
+        }),
+      );
+    if (owner === undefined) return yield* Effect.fail(lacked);
+    if (Result.isFailure(owner.resolved))
+      return yield* Effect.fail(neverCalled(inboxId, [owner]));
+    return owner;
   });
 
 // A write's view, read back after its append. A read-back that fails says

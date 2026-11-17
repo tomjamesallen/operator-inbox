@@ -280,7 +280,6 @@ const Said = ({
   macros = [],
   comments = [],
   attachments = [],
-  readable,
   className,
 }: {
   readonly label: string;
@@ -288,8 +287,6 @@ const Said = ({
   readonly macros?: ReadonlyArray<MacroInvoked>;
   readonly comments?: ReadonlyArray<QuestionComment>;
   readonly attachments?: ReadonlyArray<Attachment>;
-  // Whether its files can be read back from here (`AttachmentList`).
-  readonly readable: boolean;
   readonly className: string;
 }) => (
   <div className={`${className} max-w-measure text-14 leading-prose`}>
@@ -299,9 +296,7 @@ const Said = ({
     )}
     {comments.length > 0 && <SentComments comments={comments} />}
     {macros.length > 0 && <SentMacros macros={macros} />}
-    {attachments.length > 0 && (
-      <AttachmentList attachments={attachments} readable={readable} />
-    )}
+    {attachments.length > 0 && <AttachmentList attachments={attachments} />}
   </div>
 );
 
@@ -333,19 +328,12 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   const send = useAtomSet(inboxReaderAtoms.send);
   const { title, caption, followsUp } = headOf(item);
   const answer = answerOf(item);
-  // The files are kept on the machine that holds the Inbox, and only
-  // Local's can be read back from this page.
-  const readable = item.machine === LOCAL_MACHINE_KEY;
   // An operator's question's files, or the agent's own on its question.
   const asked = isAsked(item.question)
     ? attachmentsOf(item.question)
     : askedAttachmentsOf(item.question);
   // Under the body, the files it does not already show in place.
-  const beside = attachmentsBesideBody(
-    item.question.bodyImages ?? [],
-    asked,
-    readable,
-  );
+  const beside = attachmentsBesideBody(item.question.bodyImages ?? [], asked);
   const state = isSending(item)
     ? 'sending'
     : 'answeredSeq' in item.question || 'processedSeq' in item.question
@@ -375,11 +363,7 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
       <BodyFrame item={item} state={state} comments={answer?.comments ?? []}>
         {/* Where listen mode finds the body's parts (`readout/locate.ts`). */}
         <div data-readout-body>
-          <BodyImages
-            itemKey={item.key}
-            attachments={asked}
-            readable={readable}
-          >
+          <BodyImages itemKey={item.key} attachments={asked}>
             <QuestionBody
               question={item.question}
               className="mt-s4 text-14 leading-prose text-fg/80"
@@ -393,9 +377,7 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
           </BodyImages>
         </div>
       </BodyFrame>
-      {beside.length > 0 && (
-        <AttachmentList attachments={beside} readable={readable} />
-      )}
+      {beside.length > 0 && <AttachmentList attachments={beside} />}
       {answer !== undefined &&
         (answer.text !== '' ||
           answer.macros.length > 0 ||
@@ -408,7 +390,6 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
             macros={answer.macros}
             comments={answer.comments}
             attachments={answer.attachments}
-            readable={readable}
           />
         )}
       {followUpsOf(queues, item).map((f) => (
@@ -418,7 +399,6 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
           label="You followed up:"
           text={f.text}
           attachments={f.attachments}
-          readable={readable}
         />
       ))}
     </>
