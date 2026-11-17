@@ -1,4 +1,3 @@
-import { Input } from '@base-ui/react/input';
 import { NumberField } from '@base-ui/react/number-field';
 import { Popover } from '@base-ui/react/popover';
 import { Radio } from '@base-ui/react/radio';
@@ -283,13 +282,19 @@ const Field = ({
   switch (param.type) {
     case 'text':
       return (
-        <Input
+        // A textarea, not an input: a value often runs to several lines, so it
+        // wraps and grows as the answer box does. Enter is a new line; the
+        // send keys reach the page as they do from the answer box.
+        <textarea
           data-macro-stop={stop}
           aria-label={param.name}
+          rows={1}
           value={typeof value === 'string' ? value : ''}
           placeholder={param.placeholder ?? ''}
-          onValueChange={(v) => set(v === '' ? undefined : v)}
-          className="h-field w-full border-b border-fg/20 bg-transparent font-reading text-13 text-fg outline-none placeholder:text-fg/25 focus:border-fg/60 pointer-coarse:text-field"
+          onChange={(e) =>
+            set(e.target.value === '' ? undefined : e.target.value)
+          }
+          className="field-sizing-content block max-h-body w-full resize-none border-b border-fg/20 bg-transparent py-field-pad font-reading text-13 leading-card text-fg outline-none placeholder:text-fg/25 focus:border-fg/60 pointer-coarse:text-field"
         />
       );
     case 'number':
