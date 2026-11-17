@@ -326,6 +326,183 @@ describe('the floating button and the menu', () => {
   });
 });
 
+describe('a word or a paragraph picked by clicking', () => {
+  // The ranges a browser makes, as measured in Chromium and WebKit: a
+  // double-click selects the word's text; a triple-click selects a paragraph
+  // from its text's start to the start of whatever follows it, which after a
+  // body's last paragraph is outside the body (the highlights' layer).
+  const PARAS = ['The first paragraph.', 'The second, in the middle.', 'Last.'];
+  const PARTS = ['Words of the first part.', 'Words of the second part.'];
+  const ONE = `${A}/1`;
+  const PARTED = `${A}/3`;
+
+  const withParagraphs = async () => {
+    serve.board = board([
+      {
+        ...VIEW_A,
+        awaitingOperator: [
+          {
+            ...asked(1, 'First', 2),
+            body: PARAS.join('\n\n'),
+            bodyHtml: PARAS.map((p) => `<p>${p}</p>`).join('\n'),
+          },
+          {
+            ...asked(3, 'Third', 9),
+            bodyParts: PARTS.map((p) => ({
+              kind: 'html',
+              html: `<p>${p}</p>`,
+            })),
+          },
+        ],
+      },
+      VIEW_B,
+    ]);
+    await mounted(`/inbox/${A}`);
+    await settle();
+  };
+
+  const laidOut = () =>
+    vi
+      .spyOn(Range.prototype, 'getClientRects')
+      .mockImplementation(
+        () => [new DOMRect(40, 100, 120, 18)] as unknown as DOMRectList,
+      );
+
+  const wrapperOf = (key: string) =>
+    document.querySelector(`[data-commentable="${key}"]`) as HTMLElement;
+  const partsOf = (key: string) => [
+    ...wrapperOf(key).querySelectorAll<HTMLElement>('[data-question-body]'),
+  ];
+  const parasOf = (key: string) => [
+    ...wrapperOf(key).querySelectorAll<HTMLElement>('[data-question-body] p'),
+  ];
+  const textOf = (el: Element | undefined): Text => el?.firstChild as Text;
+  // What follows a body's last part inside its frame: the highlights' layer.
+  const pastBody = (key: string): Element =>
+    partsOf(key).at(-1)?.closest('[data-readout-body]')
+      ?.nextElementSibling as Element;
+
+  const selectRange = (
+    start: Node,
+    startOffset: number,
+    end: Node,
+    endOffset: number,
+  ) =>
+    act(() => {
+      document
+        .getSelection()
+        ?.setBaseAndExtent(start, startOffset, end, endOffset);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+
+  const button = () =>
+    screen.queryByRole('button', { name: 'Comment on the selection' });
+
+  /** Comments on the selection with the button, and gives its card's text. */
+  const quoted = async (): Promise<string> => {
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Comment on the selection' }),
+    );
+    await waitFor(() => expect(commentCards()).toHaveLength(1));
+    return commentCards()[0]?.textContent ?? '';
+  };
+
+  it('a double-clicked word: the range lies in its text', async () => {
+    laidOut();
+    await withParagraphs();
+    const t = textOf(parasOf(ONE)[1]);
+    selectRange(t, 4, t, 10);
+    expect(await quoted()).toContain('“second”');
+  });
+
+  it('a triple-clicked paragraph that ends at the start of the next', async () => {
+    laidOut();
+    await withParagraphs();
+    const [, middle, last] = parasOf(ONE);
+    selectRange(textOf(middle), 0, last as HTMLElement, 0);
+    expect(await quoted()).toContain(`“${PARAS[1]}”`);
+  });
+
+  it('a triple-clicked last paragraph, which ends past the body, quotes the paragraph exactly', async () => {
+    laidOut();
+    await withParagraphs();
+    const after = pastBody(ONE);
+    expect(after.getAttribute('aria-hidden')).toBe('true');
+    selectRange(textOf(parasOf(ONE).at(-1)), 0, after, 0);
+    const text = partsOf(ONE)[0]?.textContent ?? '';
+    const start = text.indexOf('Last.');
+    expect(await quoted()).toContain('“Last.”');
+    write(1, 'Why?');
+    fireEvent.change(box(), { target: { value: 'Fine.' } });
+    send();
+    await waitFor(() => expect(serve.posts).toHaveLength(1));
+    expect(serve.posts[0]?.body).toMatchObject({
+      comments: [
+        {
+          quote: 'Last.',
+          suffix: '',
+          at: { part: 0, start, end: start + 'Last.'.length },
+        },
+      ],
+    });
+  });
+
+  it('a paragraph that ends at its own element, after its last child', async () => {
+    laidOut();
+    await withParagraphs();
+    const last = parasOf(ONE).at(-1) as HTMLElement;
+    selectRange(textOf(last), 0, last, last.childNodes.length);
+    expect(await quoted()).toContain('“Last.”');
+  });
+
+  it('a paragraph that starts at the end of the one before it', async () => {
+    laidOut();
+    await withParagraphs();
+    const [first, middle] = parasOf(ONE);
+    const t = textOf(middle);
+    selectRange(first as HTMLElement, 1, t, t.length);
+    expect(await quoted()).toContain(`“${PARAS[1]}”`);
+  });
+
+  it('right-click on a triple-clicked last paragraph offers Comment', async () => {
+    laidOut();
+    await withParagraphs();
+    selectRange(textOf(parasOf(ONE).at(-1)), 0, pastBody(ONE), 0);
+    fireEvent.contextMenu(wrapperOf(ONE), { clientX: 50, clientY: 50 });
+    expect(
+      await screen.findByRole('menuitem', { name: /^Comment/ }),
+    ).toBeTruthy();
+  });
+
+  it('a part’s triple-clicked paragraph that ends in the next part', async () => {
+    laidOut();
+    await withParagraphs();
+    const [first, second] = partsOf(PARTED);
+    selectRange(
+      textOf(first?.querySelector('p') ?? undefined),
+      0,
+      second as HTMLElement,
+      0,
+    );
+    expect(await quoted()).toContain(`“${PARTS[0]}”`);
+  });
+
+  it('a span whose words reach into two parts is still none', async () => {
+    laidOut();
+    await withParagraphs();
+    const [first, second] = partsOf(PARTED);
+    selectRange(
+      textOf(first?.querySelector('p') ?? undefined),
+      6,
+      textOf(second?.querySelector('p') ?? undefined),
+      5,
+    );
+    await settle();
+    expect(document.getSelection()?.toString()).not.toBe('');
+    expect(button()).toBeNull();
+  });
+});
+
 describe('an answered Question', () => {
   it('shows the comments its answer carried, numbered, under the answer', async () => {
     serve.board = board([
