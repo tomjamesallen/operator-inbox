@@ -357,16 +357,20 @@ const activeAwaiting = (rows: ReadonlyArray<InboxSummaryDto>): number =>
     .reduce((n, s) => n + s.awaitingOperator, 0);
 
 // A question with its body rendered by Local, from its raw `body`: the
-// `bodyHtml` and `bodyParts` the machine sent are discarded, never passed on.
+// `bodyHtml`, `bodyParts` and `bodyImages` the machine sent are discarded,
+// never passed on. Local holds none of the machine's files, so its body shows
+// none in place.
 const renderedOnLocal = <
   Q extends {
     readonly body: string;
     readonly bodyHtml: string;
     readonly bodyParts?: InboxViewDto['awaitingOperator'][number]['bodyParts'];
+    readonly bodyImages?: ReadonlyArray<string>;
   },
->(
-  q: Q,
-): Q => ({ ...q, ...renderedQuestionBody(q.body) });
+>({
+  bodyImages: _sent,
+  ...q
+}: Q): Omit<Q, 'bodyImages'> => ({ ...q, ...renderedQuestionBody(q.body) });
 
 // A machine's view as Local passes it to the page: tagged with the
 // machine, and every question's body rendered again here. The page renders

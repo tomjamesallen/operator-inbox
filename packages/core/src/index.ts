@@ -3,6 +3,7 @@
 // (`@operator-inbox/core/keymap`).
 
 export * from './attachment';
+export * from './attachment-images';
 export * from './claude-settings';
 export * from './comments';
 export * from './config';

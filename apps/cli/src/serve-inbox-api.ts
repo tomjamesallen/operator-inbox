@@ -27,9 +27,9 @@ import {
   type InboxQuestion,
   type InboxRefusal,
   type InboxState,
+  imageAttachmentNamed,
   inboxState,
   inboxStateStamped,
-  isImageAttachment,
   type LocalInboxBoard,
   type LocalInboxIndex,
   type MachineRead,
@@ -258,9 +258,7 @@ const askedAttachmentsDto = (
 const attachmentImages =
   (q: InboxQuestion) =>
   (name: string): string | undefined => {
-    const file = (q.askedAttachments ?? []).find(
-      (a) => a.name === name && isImageAttachment(a.type),
-    );
+    const file = imageAttachmentNamed(q.askedAttachments ?? [], name);
     if (file === undefined) return undefined;
     const parts = file.path.split('/').slice(-3);
     if (parts.length < 3 || parts.some((p) => p === '')) return undefined;

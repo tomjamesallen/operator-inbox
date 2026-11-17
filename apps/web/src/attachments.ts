@@ -1,6 +1,7 @@
 import {
   type Attachment,
   type AttachmentUpload,
+  imageAttachmentNamed,
   isImageAttachment,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
@@ -184,6 +185,41 @@ export const attachmentUrl = (a: Attachment): string | undefined => {
   if (parts.length < 3 || parts.some((p) => p === '')) return undefined;
   return `/api/attachments/${parts.map(encodeURIComponent).join('/')}`;
 };
+
+/**
+ * The files to show in the strip under a question's body: all of them but
+ * those the body already shows in place. `bodyImages` names those (serve
+ * reads them from the body's markdown, core's `renderedQuestionBody`), and
+ * each name is drawn from the first image of that name
+ * (`imageAttachmentNamed`), as serve draws it. Where the page cannot read a
+ * file back (`readable` false, or a path `attachmentUrl` cannot read), the
+ * body cannot draw it, so it stays in the strip.
+ */
+export const attachmentsBesideBody = (
+  bodyImages: ReadonlyArray<string>,
+  attachments: ReadonlyArray<Attachment>,
+  readable: boolean,
+): ReadonlyArray<Attachment> => {
+  if (!readable || bodyImages.length === 0) return attachments;
+  const inline = new Set(
+    bodyImages.flatMap((name) => {
+      const file = imageAttachmentNamed(attachments, name);
+      return file === undefined || attachmentUrl(file) === undefined
+        ? []
+        : [file];
+    }),
+  );
+  return attachments.filter((a) => !inline.has(a));
+};
+
+/**
+ * The image a question's body shows in place that is open whole over the
+ * page, by the question's key: the name the body's image gives it
+ * (`data-attachment-image`), or undefined while none is.
+ */
+export const bodyImageOpenAtom = Atom.family((_key: string) =>
+  Atom.make<string | undefined>(undefined),
+);
 
 /** Files are being dragged over the box at the foot. */
 export const dragOverAtom = Atom.make(false);

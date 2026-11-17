@@ -157,7 +157,7 @@ To show the operator a screenshot, a rendered page or any local file, **attach i
 operator-inbox ask --title "Does the lightbox look right?" --body-file body.md --attach shot.png --attach build.log
 ```
 
-Each file is copied into the app's store, beside the Inbox, before the Question is logged, so it stays readable after your scratch file is gone. Under the body, an image (PNG, JPEG, GIF, WebP or AVIF) shows as a thumbnail the operator can click to open full size, and any other file as its name, to download. To show an attached image in place in the body, write a line `![alt text](attachment:shot.png)`, naming the file as it was attached; it shows the image there too.
+Each file is copied into the app's store, beside the Inbox, before the Question is logged, so it stays readable after your scratch file is gone. Under the body, an image (PNG, JPEG, GIF, WebP or AVIF) shows as a thumbnail the operator can click to open full size, and any other file as its name, to download. To show an attached image in place in the body, write a line `![alt text](attachment:shot.png)`, naming the file as it was attached; it shows the image there instead, and the operator can click it to open full size. An image the body shows in place is left out of the files under the body.
 
 **Never link a private image by URL**: an image on a private GitHub repo (a `github.com/…/blob/…?raw=true` link) or behind any sign-in never loads in the app, and the operator sees a broken box. Only a public `https://` image loads by URL. At most 10 files per Question, 20 MiB each, 40 MiB together. `edit` takes `--attach` too, and adds the file to the ones the Question has; an edit never removes one.
 
