@@ -8,12 +8,20 @@ import {
 import {
   type Attachment,
   attachmentSize,
+  imageAttachmentNamed,
   isImageAttachment,
 } from '@operator-inbox/core/api';
-import { type DragEvent, type ReactNode, useRef } from 'react';
+import {
+  type DragEvent,
+  type ReactNode,
+  type RefObject,
+  type SyntheticEvent,
+  useRef,
+} from 'react';
 import {
   addFilesAtom,
   attachmentUrl,
+  bodyImageOpenAtom,
   dragOverAtom,
   type PendingFile,
   pendingFilesAtom,
@@ -249,11 +257,9 @@ export const AttachmentList = ({
 );
 
 /**
- * An attached image: its thumbnail, which opens the image over the page,
- * fitted to the window. Escape, a click on the backdrop and CLOSE dismiss
- * it; "Open original" opens the file itself in a new tab. One for every
- * card that shows files: an answer's, a follow-up's and an operator's
- * question's.
+ * An attached image: its thumbnail, which opens the image over the page
+ * (`Lightbox`). One for every card that shows files: an answer's, a
+ * follow-up's and a question's.
  */
 export const ImageLightbox = ({
   attachment,
@@ -278,43 +284,165 @@ export const ImageLightbox = ({
         className="block max-h-40 max-w-60 object-contain"
       />
     </Dialog.Trigger>
-    <Dialog.Portal>
-      <Dialog.Backdrop className="fixed inset-0 z-30 bg-fg/20" />
-      <Dialog.Popup
-        className="fixed inset-s4 z-40 flex flex-col border border-fg/20 bg-bg p-s3"
-        data-zen-lightbox
-      >
-        <div className="flex items-center gap-s3">
-          <Dialog.Title className={`min-w-0 flex-1 truncate ${label}`}>
-            {attachment.name}
-          </Dialog.Title>
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className={`flex shrink-0 items-center gap-s1 text-11 text-fg/40 hover:text-fg ${focusRing}`}
-          >
-            <Icon d={ICON_EXTERNAL} />
-            Open original
-          </a>
-          <Dialog.Close className={`${headerButton()} ${focusRing}`}>
-            CLOSE
-          </Dialog.Close>
-        </div>
-        {/* A click beside the image, inside the frame, dismisses it too. */}
-        <Dialog.Close
-          render={<div />}
-          nativeButton={false}
-          className="mt-s2 flex min-h-0 flex-1 cursor-zoom-out items-center justify-center"
-          aria-label={`Close ${attachment.name}`}
-        >
-          <img
-            src={url}
-            alt={attachment.name}
-            className="max-h-full max-w-full object-contain"
-          />
-        </Dialog.Close>
-      </Dialog.Popup>
-    </Dialog.Portal>
+    <Lightbox attachment={attachment} url={url} />
   </Dialog.Root>
 );
+
+// A press in the lightbox is the lightbox's. It is portalled to the end of
+// the page, but React carries its events up the component tree, through the
+// card that opened it, whose article lights on a click. So they stop at the
+// portal's two roots, the backdrop and the popup. Base UI's dismissal on a
+// press outside listens on the document in the capture phase, before these
+// run, and a link's default (Open original) is not propagation, so both still
+// work.
+const stopHere = (e: SyntheticEvent) => e.stopPropagation();
+const keptInLightbox = {
+  onClick: stopHere,
+  onPointerDown: stopHere,
+  onMouseDown: stopHere,
+};
+
+/**
+ * An attached image over the page, fitted to the window, in the `Dialog.Root`
+ * around it: its name, "Open original", which opens the file itself in a new
+ * tab, and CLOSE. Escape and a click on the backdrop or beside the image
+ * dismiss it too. A thumbnail opens it (`ImageLightbox`), and so does an
+ * image a question's body shows in place (`BodyImages`).
+ */
+const Lightbox = ({
+  attachment,
+  url,
+  finalFocus,
+}: {
+  readonly attachment: Attachment;
+  readonly url: string;
+  // Where the focus goes back to once it closes; a thumbnail's is its own.
+  readonly finalFocus?: RefObject<HTMLElement | null>;
+}) => (
+  <Dialog.Portal>
+    <Dialog.Backdrop
+      {...keptInLightbox}
+      className="fixed inset-0 z-30 bg-fg/20"
+      data-zen-lightbox-backdrop
+    />
+    <Dialog.Popup
+      {...keptInLightbox}
+      {...(finalFocus === undefined ? {} : { finalFocus })}
+      className="fixed inset-s4 z-40 flex flex-col border border-fg/20 bg-bg p-s3"
+      data-zen-lightbox
+    >
+      <div className="flex items-center gap-s3">
+        <Dialog.Title className={`min-w-0 flex-1 truncate ${label}`}>
+          {attachment.name}
+        </Dialog.Title>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className={`flex shrink-0 items-center gap-s1 text-11 text-fg/40 hover:text-fg ${focusRing}`}
+        >
+          <Icon d={ICON_EXTERNAL} />
+          Open original
+        </a>
+        <Dialog.Close className={`${headerButton()} ${focusRing}`}>
+          CLOSE
+        </Dialog.Close>
+      </div>
+      {/* A click beside the image, inside the frame, dismisses it too. */}
+      <Dialog.Close
+        render={<div />}
+        nativeButton={false}
+        className="mt-s2 flex min-h-0 flex-1 cursor-zoom-out items-center justify-center"
+        aria-label={`Close ${attachment.name}`}
+      >
+        <img
+          src={url}
+          alt={attachment.name}
+          className="max-h-full max-w-full object-contain"
+        />
+      </Dialog.Close>
+    </Dialog.Popup>
+  </Dialog.Portal>
+);
+
+// The image a question's body shows in place that an event is on: its
+// element and the name it carries. Core's renderer marks each one
+// (`data-attachment-image`); one inside a link's anchor is the link's.
+const bodyImageAt = (
+  e: SyntheticEvent<HTMLElement>,
+): { readonly element: HTMLElement; readonly name: string } | undefined => {
+  const element =
+    e.target instanceof HTMLElement
+      ? e.target.closest<HTMLElement>('[data-attachment-image]')
+      : null;
+  if (element === null || !e.currentTarget.contains(element)) return undefined;
+  if (element.closest('a') !== null) return undefined;
+  const name = element.getAttribute('data-attachment-image');
+  return name === null || name === '' ? undefined : { element, name };
+};
+
+/**
+ * A question's body, around which each image it shows in place from the
+ * question's files opens that file over the page, as its thumbnail would:
+ * on a click, or on Enter or Space once focused. The images are core's HTML,
+ * so the body catches their clicks and keys here, and styles them from here.
+ */
+export const BodyImages = ({
+  itemKey,
+  attachments,
+  readable,
+  children,
+}: {
+  readonly itemKey: string;
+  // The question's files, which its body's images name.
+  readonly attachments: ReadonlyArray<Attachment>;
+  readonly readable: boolean;
+  readonly children: ReactNode;
+}) => {
+  const [open, setOpen] = useAtom(bodyImageOpenAtom(itemKey));
+  const opener = useRef<HTMLElement | null>(null);
+  const fileOf = (name: string) => {
+    const file = readable ? imageAttachmentNamed(attachments, name) : undefined;
+    const url = file === undefined ? undefined : attachmentUrl(file);
+    return file === undefined || url === undefined ? undefined : { file, url };
+  };
+  const show = (e: SyntheticEvent<HTMLElement>): boolean => {
+    const at = bodyImageAt(e);
+    if (at === undefined || fileOf(at.name) === undefined) return false;
+    // The card under it lights on a click; the image is not the card's.
+    e.stopPropagation();
+    e.preventDefault();
+    opener.current = at.element;
+    setOpen(at.name);
+    return true;
+  };
+  const shown = open === undefined ? undefined : fileOf(open);
+  return (
+    <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: it only catches the clicks and keys of the body's images, each a focusable button in core's HTML. */}
+      <div
+        onClick={show}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') show(e);
+        }}
+        className="**:data-attachment-image:cursor-zoom-in **:data-attachment-image:focus-visible:outline-1 **:data-attachment-image:focus-visible:outline-offset-1 **:data-attachment-image:focus-visible:outline-blue"
+      >
+        {children}
+      </div>
+      <Dialog.Root
+        open={shown !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setOpen(undefined);
+        }}
+      >
+        {shown !== undefined && (
+          <Lightbox
+            attachment={shown.file}
+            url={shown.url}
+            finalFocus={opener}
+          />
+        )}
+      </Dialog.Root>
+    </>
+  );
+};

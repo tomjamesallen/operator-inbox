@@ -78,6 +78,11 @@ export const QuestionBodyPartDto = Schema.Union([
 ]);
 export type QuestionBodyPartDto = typeof QuestionBodyPartDto.Type;
 const bodyParts = Schema.optionalKey(Schema.Array(QuestionBodyPartDto));
+// The names of the Question's files its body shows in place, as images
+// (core's `renderedQuestionBody`), so the page leaves them out of the files
+// under the body. Left out when there are none, and on a Question another
+// machine holds, whose files are not drawn here.
+const bodyImages = Schema.optionalKey(Schema.Array(Schema.String));
 
 // The Question's drawings, by id (core's `InboxQuestion.drawings`): each its
 // scene's hash and size, and the revision that last set it. The scenes come
@@ -125,6 +130,7 @@ export const InboxOperatorQuestionDto = Schema.Struct({
   body: Schema.String,
   bodyHtml: Schema.String,
   bodyParts,
+  bodyImages,
   askedSeq: Schema.Int,
   askedAt: at,
   highlight: Schema.optionalKey(InboxHighlightDto),
@@ -162,6 +168,7 @@ export const InboxAgentQuestionDto = Schema.Struct({
   body: Schema.String,
   bodyHtml: Schema.String,
   bodyParts,
+  bodyImages,
   response: Schema.String,
   answeredSeq: Schema.Int,
   answeredAt: at,
@@ -195,6 +202,7 @@ export const InboxProcessedQuestionDto = Schema.Struct({
   body: Schema.String,
   bodyHtml: Schema.String,
   bodyParts,
+  bodyImages,
   response: Schema.optionalKey(Schema.String),
   withdrawn: Schema.Boolean,
   reason: Schema.optionalKey(Schema.String),

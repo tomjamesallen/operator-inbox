@@ -287,7 +287,7 @@ describe('an attached image shown in the body', () => {
       images,
     );
     expect(bodyHtml).toContain(
-      '<img src="/api/attachments/i/h/shot.png" alt="the lightbox" loading="lazy" data-attachment-image>',
+      '<img src="/api/attachments/i/h/shot.png" alt="the lightbox" loading="lazy" data-attachment-image="shot.png" role="button" tabindex="0" aria-haspopup="dialog">',
     );
     expect(bodyParts).toStrictEqual([{ kind: 'html', html: bodyHtml }]);
   });

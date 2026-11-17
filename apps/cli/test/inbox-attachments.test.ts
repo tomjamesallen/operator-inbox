@@ -486,8 +486,10 @@ describe('the agent’s own files on its question (`ask --attach`, `edit --attac
           const [image] = q?.askedAttachments ?? [];
           const url = `/api/attachments/${image?.path.split('/').slice(-3).join('/')}`;
           expect(q?.bodyHtml).toContain(
-            `<img src="${url}" alt="the page" loading="lazy" data-attachment-image>`,
+            `<img src="${url}" alt="the page" loading="lazy" data-attachment-image="shot.png" role="button" tabindex="0" aria-haspopup="dialog">`,
           );
+          // The page leaves the image the body shows out of the files under it.
+          expect(q?.bodyImages).toStrictEqual(['shot.png']);
           const got = yield* get(port, url);
           expect(got.status).toBe(200);
           expect(got.headers['content-type']).toBe('image/png');

@@ -18,7 +18,12 @@
 //   text; any other source renders as the alt text. The one exception is an
 //   `attachment:<name>` source, a file the Question carries: it is an `<img>`
 //   only when the caller resolves the name to a URL (`AttachmentImages`),
-//   which the caller builds, never the body; otherwise it is the alt text;
+//   which the caller builds, never the body; otherwise it is the alt text.
+//   Such an `<img>` carries the file's name, escaped, in
+//   `data-attachment-image`, so the page can open the file in its lightbox;
+//   outside a link's anchor it is also a focusable button (`role`,
+//   `tabindex` and `aria-haspopup`, each a fixed value, and, when its alt
+//   text is empty, an `aria-label` naming the file, escaped);
 // - a task-list checkbox is disabled;
 // - a ```svg fence whose body is an SVG document renders as a diagram, as an
 //   `<img>` with a base64 `data:` URL. An SVG loaded as an image runs no script
@@ -48,13 +53,17 @@ import {
   type Tokens,
   type TokensList,
 } from 'marked';
+import {
+  attachmentImageNames,
+  attachmentSrcName,
+  isAttachmentSrc,
+} from './attachment-images';
 import { highlightCode } from './code-highlight';
 import type { HtmlBlockWidth } from './html-block';
 import { escapeHtml } from './html-escape';
 
 const LINK_HREF = /^(https?:\/\/|mailto:)/i;
 const IMAGE_SRC = /^https?:\/\//i;
-const ATTACHMENT_SRC = /^attachment:/i;
 
 /**
  * Where an `attachment:<name>` image in a body is read from: the URL of the
@@ -73,21 +82,19 @@ const withAttachmentImages = <A>(
   render: () => A,
 ): A => {
   attachmentImages = images;
+  anchorDepth = 0;
   try {
     return render();
   } finally {
     attachmentImages = undefined;
+    anchorDepth = 0;
   }
 };
 
-const attachmentName = (href: string): string => {
-  const raw = href.replace(ATTACHMENT_SRC, '');
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-};
+// How deep the render under way is inside a link's anchor; reset with the
+// resolver. An attachment image in an anchor is the link's: a click on it
+// follows the link, so it is not a control of its own.
+let anchorDepth = 0;
 
 // An svg fence is drawn only when its body is an SVG document (an optional
 // `<?xml …?>` prolog, then `<svg`), and only up to this size; past it, or
@@ -200,17 +207,30 @@ const marked: Marked = new Marked({
       return escapeHtml(text);
     },
     link({ href, title, tokens }: Tokens.Link) {
-      const text = this.parser.parseInline(tokens);
-      if (!LINK_HREF.test(href)) return text;
+      if (!LINK_HREF.test(href)) return this.parser.parseInline(tokens);
+      anchorDepth++;
+      let text: string;
+      try {
+        text = this.parser.parseInline(tokens);
+      } finally {
+        anchorDepth--;
+      }
       const t = title ? ` title="${escapeHtml(title)}"` : '';
       return `<a href="${escapeHtml(href)}"${t} rel="noreferrer" target="_blank">${text}</a>`;
     },
     image({ href, title, text }: Tokens.Image) {
       const t = title ? ` title="${escapeHtml(title)}"` : '';
-      if (ATTACHMENT_SRC.test(href)) {
-        const src = attachmentImages?.(attachmentName(href));
+      if (isAttachmentSrc(href)) {
+        const name = attachmentSrcName(href);
+        const src = attachmentImages?.(name);
         if (src === undefined) return escapeHtml(text);
-        return `<img src="${escapeHtml(src)}" alt="${escapeHtml(text)}"${t} loading="lazy" data-attachment-image>`;
+        // The page opens it whole over the page on a click, or on Enter or
+        // Space once focused, so outside a link it is a button.
+        const control =
+          anchorDepth > 0
+            ? ''
+            : ` role="button" tabindex="0" aria-haspopup="dialog"${text === '' ? ` aria-label="Show ${escapeHtml(name)}"` : ''}`;
+        return `<img src="${escapeHtml(src)}" alt="${escapeHtml(text)}"${t} loading="lazy" data-attachment-image="${escapeHtml(name)}"${control}>`;
       }
       if (!IMAGE_SRC.test(href)) return escapeHtml(text);
       return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${t} loading="lazy">`;
@@ -357,6 +377,8 @@ const questionParts = (markdown: string): ReadonlyArray<QuestionBodyPart> => {
  * so the page only ever shows HTML Local wrote. `images` resolves the body's
  * `attachment:<name>` images; left out, each renders as its alt text, as it
  * does for a Question another machine holds, whose files are not here.
+ * `bodyImages` names the files the body shows in place, each an image the
+ * resolver gave a URL; it is left out when there are none.
  */
 export const renderedQuestionBody = (
   body: string,
@@ -365,8 +387,16 @@ export const renderedQuestionBody = (
   readonly body: string;
   readonly bodyHtml: string;
   readonly bodyParts: ReadonlyArray<QuestionBodyPart>;
-} => ({
-  body,
-  bodyHtml: renderQuestionMarkdown(body, images),
-  bodyParts: renderQuestionParts(body, images),
-});
+  readonly bodyImages?: ReadonlyArray<string>;
+} => {
+  const shown =
+    images === undefined
+      ? []
+      : attachmentImageNames(body).filter((name) => images(name) !== undefined);
+  return {
+    body,
+    bodyHtml: renderQuestionMarkdown(body, images),
+    bodyParts: renderQuestionParts(body, images),
+    ...(shown.length === 0 ? {} : { bodyImages: shown }),
+  };
+};

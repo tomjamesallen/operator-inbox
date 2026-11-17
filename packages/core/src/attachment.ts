@@ -116,6 +116,16 @@ const IMAGE_TYPES = new Set([
 export const isImageAttachment = (type: string): boolean =>
   IMAGE_TYPES.has(type.toLowerCase());
 
+/**
+ * The file a body's `![alt](attachment:<name>)` image is drawn from: the
+ * first of the Question's files of that name that is an image, if any.
+ */
+export const imageAttachmentNamed = (
+  attachments: ReadonlyArray<Attachment>,
+  name: string,
+): Attachment | undefined =>
+  attachments.find((a) => a.name === name && isImageAttachment(a.type));
+
 /** A file's size as a person reads it: `812 B`, `14 KB`, `2.3 MB`. */
 export const attachmentSize = (bytes: number): string =>
   bytes < 1024

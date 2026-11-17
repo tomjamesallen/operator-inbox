@@ -494,6 +494,39 @@ describe('a machine’s question HTML is never passed on', () => {
   });
 });
 
+describe('a machine’s body images are never passed on', () => {
+  it('machineView drops the names of the files a machine’s body showed in place', () => {
+    const BODY = '![a](attachment:shot.png)';
+    const question = {
+      number: QuestionNumber.make(1),
+      revision: QuestionRevision.make(1),
+      metadata: {},
+      title: 'q',
+      body: BODY,
+      bodyHtml: '',
+      bodyImages: ['shot.png'],
+    };
+    const out = machineView(
+      {
+        ...view('H'),
+        awaitingOperator: [{ ...question, askedSeq: 1 }],
+        awaitingAgent: [{ ...question, response: 'a', answeredSeq: 2 }],
+        processed: [{ ...question, withdrawn: false, processedSeq: 3 }],
+      },
+      ref('laptop', 3010),
+    );
+    for (const q of [
+      ...out.awaitingOperator,
+      ...out.awaitingAgent,
+      ...out.processed,
+    ]) {
+      expect('bodyImages' in q).toBe(false);
+      // Local holds none of the machine's files: the image is its alt text.
+      expect(q.bodyHtml).toBe('<p>a</p>\n');
+    }
+  });
+});
+
 describe('inboxMachineLabels — every section its own label', () => {
   const ok = (label: string, port: number) =>
     Result.succeed({

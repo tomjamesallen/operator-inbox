@@ -8,6 +8,7 @@ import {
   questionRef,
 } from '@operator-inbox/core/api';
 import { memo, type ReactNode } from 'react';
+import { attachmentsBesideBody } from '../../attachments';
 import {
   copyMarkAtom,
   copyQuestionAtom,
@@ -35,7 +36,7 @@ import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { keyHintAtom } from '../../keymap';
 import { QuestionBody } from '../question-body';
 import { focusRing } from '../styles';
-import { AttachmentList } from './attachments';
+import { AttachmentList, BodyImages } from './attachments';
 import { Colophon } from './colophon';
 import { CommentableBody, CommentedBody } from './comment-body';
 import { ICON_DONE, ICON_FAILED, Icon, Tip } from './icon';
@@ -339,6 +340,12 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   const asked = isAsked(item.question)
     ? attachmentsOf(item.question)
     : askedAttachmentsOf(item.question);
+  // Under the body, the files it does not already show in place.
+  const beside = attachmentsBesideBody(
+    item.question.bodyImages ?? [],
+    asked,
+    readable,
+  );
   const state = isSending(item)
     ? 'sending'
     : 'answeredSeq' in item.question || 'processedSeq' in item.question
@@ -368,20 +375,26 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
       <BodyFrame item={item} state={state} comments={answer?.comments ?? []}>
         {/* Where listen mode finds the body's parts (`readout/locate.ts`). */}
         <div data-readout-body>
-          <QuestionBody
-            question={item.question}
-            className="mt-s4 text-14 leading-prose text-fg/80"
-            drawingHost={{
-              inboxId: item.inboxId,
-              number: item.question.number,
-              key: item.key,
-              state,
-            }}
-          />
+          <BodyImages
+            itemKey={item.key}
+            attachments={asked}
+            readable={readable}
+          >
+            <QuestionBody
+              question={item.question}
+              className="mt-s4 text-14 leading-prose text-fg/80"
+              drawingHost={{
+                inboxId: item.inboxId,
+                number: item.question.number,
+                key: item.key,
+                state,
+              }}
+            />
+          </BodyImages>
         </div>
       </BodyFrame>
-      {asked.length > 0 && (
-        <AttachmentList attachments={asked} readable={readable} />
+      {beside.length > 0 && (
+        <AttachmentList attachments={beside} readable={readable} />
       )}
       {answer !== undefined &&
         (answer.text !== '' ||
