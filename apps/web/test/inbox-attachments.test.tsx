@@ -6,6 +6,8 @@ import {
   asked,
   board,
   box,
+  LAPTOP,
+  M,
   mounted,
   onQueue,
   press,
@@ -545,5 +547,105 @@ describe('an agent’s question with its own files', () => {
         expect(card(image).hasAttribute('data-zen-lit')).toBe(false);
       });
     }
+  });
+});
+
+describe('the files of a Question another machine holds', () => {
+  // The paths are the machine's; the URLs are this page's serve's, which
+  // reads each file from that machine.
+  const root = `/far/state/operator-inbox/attachments/${M}`;
+  const SHOT = {
+    path: `${root}/0123456789abcdef/shot.png`,
+    name: 'shot.png',
+    type: 'image/png',
+    bytes: 2048,
+  };
+  const DETAIL = {
+    path: `${root}/abcdef0123456789/detail.png`,
+    name: 'detail.png',
+    type: 'image/png',
+    bytes: 1024,
+  };
+  const LOG = {
+    path: `${root}/fedcba9876543210/run.log`,
+    name: 'run.log',
+    type: 'text/plain',
+    bytes: 16,
+  };
+  const URL_OF_SHOT = `/api/attachments/${M}/0123456789abcdef/shot.png`;
+  const URL_OF_DETAIL = `/api/attachments/${M}/abcdef0123456789/detail.png`;
+  // The body as Local renders a machine's Question again (core's
+  // `machineView`), its image drawn from the Question's own file.
+  const inline = `<p>Look:</p>\n<p><img src="${URL_OF_SHOT}" alt="the page" loading="lazy" data-attachment-image="shot.png" role="button" tabindex="0" aria-haspopup="dialog"></p>\n`;
+  const lightbox = () => document.querySelector('[data-zen-lightbox]');
+
+  const showing = async () => {
+    serve.board = board([
+      VIEW_A,
+      {
+        ...VIEW_A,
+        inboxId: M,
+        machine: LAPTOP,
+        awaitingOperator: [
+          {
+            ...asked(1, 'Does it look right?', 30),
+            body: 'Look:\n\n![the page](attachment:shot.png)',
+            bodyHtml: inline,
+            bodyParts: [{ kind: 'html', html: inline }],
+            bodyImages: ['shot.png'],
+            askedAttachments: [SHOT, DETAIL, LOG],
+          },
+        ],
+        awaitingAgent: [],
+        processed: [],
+      },
+    ]);
+    await mounted(`/inbox/${M}`);
+    return screen.findByRole('button', { name: 'the page' });
+  };
+
+  it('reads each back through serve: the body’s image, a thumbnail, a download', async () => {
+    const image = await showing();
+    expect(image.getAttribute('src')).toBe(URL_OF_SHOT);
+    // Shown in place, so not in the strip as well.
+    expect(screen.queryByRole('button', { name: 'Show shot.png' })).toBeNull();
+    const thumbnail = await screen.findByRole('button', {
+      name: 'Show detail.png',
+    });
+    const other = screen.getByText('run.log').closest('a');
+    expect(other?.getAttribute('href')).toBe(
+      `/api/attachments/${M}/fedcba9876543210/run.log`,
+    );
+    fireEvent.click(thumbnail);
+    await screen.findByRole('dialog');
+    expect(lightbox()?.querySelector('img')?.getAttribute('src')).toBe(
+      URL_OF_DETAIL,
+    );
+  });
+
+  it('opens the body’s image in the lightbox', async () => {
+    fireEvent.click(await showing());
+    await screen.findByRole('dialog');
+    expect(lightbox()?.querySelector('img')?.getAttribute('src')).toBe(
+      URL_OF_SHOT,
+    );
+  });
+
+  it('shows a thumbnail serve could not read as its card, saying so', async () => {
+    await showing();
+    const thumbnail = await screen.findByRole('button', {
+      name: 'Show detail.png',
+    });
+    const img = thumbnail.querySelector('img');
+    if (img === null) throw new Error('no image');
+    fireEvent.error(img);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Show detail.png' }),
+      ).toBeNull(),
+    );
+    const card = screen.getByText('detail.png').closest('a');
+    expect(card?.hasAttribute('href')).toBe(false);
+    expect(card?.textContent).toContain('could not be read');
   });
 });
