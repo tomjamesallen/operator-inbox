@@ -24,7 +24,12 @@ import {
   Option,
 } from 'effect';
 import { Command } from 'effect/cli';
-import { FetchHttpClient, type HttpClient, HttpServer } from 'effect/http';
+import {
+  FetchHttpClient,
+  type HttpClient,
+  HttpServer,
+  HttpServerResponse,
+} from 'effect/http';
 import { HttpApiClient } from 'effect/http-api';
 import { NetAddress } from 'effect/net';
 import { TestClock } from 'effect/testing';
@@ -44,6 +49,7 @@ import {
   judgeLocalRequest,
   makeServeLayer,
   SERVE_HOST,
+  withFramingHeaders,
 } from '../src/serve-server';
 import { cacheControlFor, classifyStaticPath } from '../src/serve-static';
 
@@ -292,6 +298,7 @@ describe('operator-inbox serve answers only local requests', () => {
         const host = `127.0.0.1:${port}`;
         const answers = {
           allowed: yield* rawGet(url, { host }),
+          shell: yield* rawGet(url, { host }, '/'),
           misdirected: yield* rawGet(url, { host: 'rebound.example' }),
           crossSite: yield* rawGet(url, {
             host,
@@ -299,6 +306,7 @@ describe('operator-inbox serve answers only local requests', () => {
           }),
         };
         expect(answers.allowed.status).toBe(200);
+        expect(answers.shell.status).toBe(200);
         expect(answers.misdirected.status).toBe(421);
         expect(answers.crossSite.status).toBe(403);
         for (const [name, answer] of Object.entries(answers)) {
@@ -310,6 +318,29 @@ describe('operator-inbox serve answers only local requests', () => {
       }),
     ),
   );
+
+  it('adds the framing policy to a route’s own, never replacing it', () => {
+    const csp = (headers: Record<string, string>) =>
+      withFramingHeaders(HttpServerResponse.text('x', { headers })).headers;
+    expect(csp({})).toMatchObject({
+      'content-security-policy': "frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+    });
+    expect(
+      csp({ 'content-security-policy': "sandbox; default-src 'none'" }),
+    ).toMatchObject({
+      'content-security-policy':
+        "sandbox; default-src 'none', frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+    });
+    // A route's own `frame-ancestors` stays in its policy, and the framing
+    // policy still binds beside it: a browser enforces both.
+    expect(
+      csp({ 'content-security-policy': 'frame-ancestors *' })[
+        'content-security-policy'
+      ],
+    ).toBe("frame-ancestors *, frame-ancestors 'none'");
+  });
 
   it('judges a request by Host first, then Origin', () => {
     const at = (host: string | undefined, origin?: string) =>
