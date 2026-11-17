@@ -11,7 +11,6 @@ import {
   type Line,
   readWidgetOutput,
   toneFill,
-  toneText,
   type WidgetOutput,
 } from '../../widget-output';
 import {
@@ -195,8 +194,9 @@ const Refresh = ({ v }: { readonly v: View }) => {
 };
 
 /**
- * The chip's output: exactly `lines` rows, the first in its tone and the rest
- * muted; on a failure, what failed. Padded with blank rows, so a shorter
+ * The chip's output: exactly `lines` rows, muted, with only the strip in its
+ * tone (a line's own ANSI colours still show); red when the output was not
+ * the envelope a `json` widget promised; on a failure, what failed. Padded with blank rows, so a shorter
  * output never moves what is below.
  */
 const Output = ({ v }: { readonly v: View }) => {
@@ -206,14 +206,10 @@ const Output = ({ v }: { readonly v: View }) => {
   else if (v.out === undefined)
     rows.push(<span className="text-fg/30">…</span>);
   else {
-    const { tone } = v.out;
-    for (const [i, line] of v.out.lines.slice(0, v.w.lines).entries())
+    const colour = v.out.note !== undefined ? 'text-red/80' : 'text-fg/70';
+    for (const line of v.out.lines.slice(0, v.w.lines))
       rows.push(
-        <span
-          className={
-            i === 0 && tone !== undefined ? toneText[tone] : 'text-fg/70'
-          }
-        >
+        <span className={colour}>
           <Spans line={line} />
         </span>,
       );
@@ -334,7 +330,7 @@ const Chip = ({
                 {v.out.lines.map((line, i) => (
                   <div
                     key={i}
-                    className={`font-app whitespace-pre ${i === 0 && v.out?.tone !== undefined ? toneText[v.out.tone] : 'text-fg/80'}`}
+                    className={`font-app whitespace-pre ${v.out?.note !== undefined ? 'text-red/80' : 'text-fg/80'}`}
                   >
                     {line.length === 0 ? ' ' : <Spans line={line} />}
                   </div>

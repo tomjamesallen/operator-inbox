@@ -190,12 +190,3 @@ export const toneFill: Readonly<Record<WidgetTone, string>> = {
   info: 'bg-blue',
   muted: 'bg-fg/30',
 };
-
-/** A tone's colour as text (the first line of output). */
-export const toneText: Readonly<Record<WidgetTone, string>> = {
-  ok: 'text-green',
-  warn: 'text-orange',
-  bad: 'text-red',
-  info: 'text-blue',
-  muted: 'text-fg/40',
-};

@@ -171,6 +171,45 @@ describe('a chip in each state', () => {
     expect(trigger('broken').textContent).toContain('last run failed: exit 7');
   });
 
+  it('leaves the tone to the strip: no output line takes its colour, bar output that is not an envelope', async () => {
+    const env = JSON.stringify({
+      text: '5h 19/85',
+      tone: 'ok',
+      detail: 'wk 16/95',
+    });
+    await showing(
+      widgetsOf(
+        local([
+          widget('limits', {
+            format: 'json',
+            lines: 2,
+            lastRun: run(1_000, { stdout: env }),
+            lastOk: run(1_000, { stdout: env }),
+          }),
+          widget('garbled', {
+            format: 'json',
+            lastRun: run(1_000, { stdout: 'not json' }),
+            lastOk: run(1_000, { stdout: 'not json' }),
+          }),
+        ]),
+      ),
+      'limits',
+    );
+    const rowClasses = (id: string) =>
+      [...(chip(id)?.querySelectorAll('[data-widget-row] > span') ?? [])].map(
+        (s) => s.className,
+      );
+    expect(
+      chip('limits')?.querySelector('[data-widget-strip]')?.className,
+    ).toContain('bg-green');
+    expect(rows('limits')).toEqual(['5h 19/85', 'wk 16/95']);
+    for (const cls of rowClasses('limits')) {
+      expect(cls).toContain('text-fg/70');
+      expect(cls).not.toContain('text-green');
+    }
+    expect(rowClasses('garbled')[0]).toContain('text-red/80');
+  });
+
   it('pads the output to `lines` rows, and cuts it there', async () => {
     const out = run(1_000, { stdout: 'one\ntwo\nthree\nfour\nfive' });
     await showing(
