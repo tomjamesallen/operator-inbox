@@ -1,4 +1,4 @@
-import { RegistryProvider, useAtomValue } from '@effect/atom-react';
+import { useAtomValue } from '@effect/atom-react';
 import { InboxId } from '@operator-inbox/core/api';
 import { KEYMAP_ACTIONS } from '@operator-inbox/core/keymap';
 import {
@@ -14,6 +14,7 @@ import { InboxPage } from '../src/components/inbox/page';
 import { strayWritesAtom } from '../src/inbox';
 import { isActionHandled } from '../src/keymap';
 import { json } from './fixture';
+import { TestRegistry } from './registry';
 
 // Every key on the real page, machine and Atoms, over a fetch that answers as
 // serve does. All names are invented.
@@ -130,10 +131,10 @@ const Strays = () => (
 
 const mount = async () => {
   render(
-    <RegistryProvider>
+    <TestRegistry>
       <InboxPage />
       <Strays />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
   await screen.findByRole('heading', { name: 'Question 1' });
   await waitFor(() => expect(lit()).toBe('Question 1'));
