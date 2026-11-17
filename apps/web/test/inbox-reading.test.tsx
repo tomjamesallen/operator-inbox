@@ -626,6 +626,9 @@ describe('the board moving under the reader', () => {
     // A reader's wheel: it takes the list from whatever was placing it.
     fireEvent.wheel(flow);
     flow.scrollTop = 40;
+    // The browser says so with a `scroll`, which is how the anchor learns of
+    // it: with no event it only hears of it on some later render.
+    fireEvent.scroll(flow);
     // Asked before the lit one, so it comes in over it.
     const next = withThree(asked(7, 'Seventh', 1));
     await reread(next);
@@ -643,6 +646,9 @@ describe('the board moving under the reader', () => {
     // A reader's wheel: it takes the list from whatever was placing it.
     fireEvent.wheel(flow);
     flow.scrollTop = 40;
+    // The browser says so with a `scroll`, which is how the anchor learns of
+    // it: with no event it only hears of it on some later render.
+    fireEvent.scroll(flow);
     await reread(withThree(ARRIVAL));
     await waitFor(() => expect(items()).toHaveLength(3));
     expect(flow.scrollTop).toBe(40);
