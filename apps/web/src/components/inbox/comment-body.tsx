@@ -171,7 +171,7 @@ const FloatingButton = ({
       <span aria-hidden="true">❝</span>
       Comment
       {hint.first !== undefined && (
-        <span className="text-fg/35">{hint.first}</span>
+        <span className="text-fg/35 touch-only:hidden">{hint.first}</span>
       )}
     </button>
   );
@@ -322,7 +322,7 @@ export const CommentableBody = ({
 const CommentKeys = () => {
   const hint = useAtomValue(keyHintAtom('comment_selection'));
   return hint.first === undefined ? null : (
-    <span className="text-fg/30">{hint.first}</span>
+    <span className="text-fg/30 touch-only:hidden">{hint.first}</span>
   );
 };
 

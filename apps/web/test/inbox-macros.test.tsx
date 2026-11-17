@@ -262,6 +262,17 @@ describe('a macro card', () => {
     expect(held?.dataset.macroHeld).toBe('true');
     expect(held?.className).toContain('border-orange');
     expect(held?.querySelector('output')?.textContent).toContain('needs item');
+    // It names the send key, which a touch-only device has instead as the
+    // Send button.
+    const heldKeys = held?.querySelector('[data-macro-held-keys]');
+    expect(heldKeys?.textContent).not.toBe('Send');
+    expect(heldKeys?.classList).toContain('touch-only:hidden');
+    const heldTouch = held?.querySelector('[data-macro-held-touch]');
+    expect(heldTouch?.textContent).toBe('Send');
+    expect([...(heldTouch?.classList ?? [])]).toEqual([
+      'hidden',
+      'touch-only:inline',
+    ]);
     await waitFor(() =>
       expect(active()?.getAttribute('aria-label')).toBe('item'),
     );

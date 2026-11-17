@@ -295,6 +295,10 @@ describe('the floating button and the menu', () => {
     });
     // Its keys come from the keymap.
     expect(button.getAttribute('aria-keyshortcuts')).toContain('C');
+    // Its keys are a hint a touch-only device never shows.
+    const keys = button.lastElementChild;
+    expect(keys?.textContent).not.toBe('Comment');
+    expect(keys?.classList).toContain('touch-only:hidden');
     // A press is cancelled, so the selection it is about stays.
     expect(fireEvent.mouseDown(button)).toBe(false);
     fireEvent.click(button);
@@ -320,6 +324,7 @@ describe('the floating button and the menu', () => {
     ) as HTMLElement;
     fireEvent.contextMenu(trigger, { clientX: 50, clientY: 50 });
     const item = await screen.findByRole('menuitem', { name: /^Comment/ });
+    expect(item.lastElementChild?.classList).toContain('touch-only:hidden');
     fireEvent.click(item);
     await waitFor(() => expect(commentCards()).toHaveLength(1));
     await waitFor(() => expect(active()).toBe(fieldOf(1)));

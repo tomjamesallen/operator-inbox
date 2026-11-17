@@ -1,3 +1,4 @@
+import { keysLabel, resolveKeymap } from '@operator-inbox/core/keymap';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -74,6 +75,10 @@ describe('the inbox picker', () => {
     await waitFor(() => expect(picker()).toBeNull());
     await openPicker('s');
     expect(picker()).not.toBeNull();
+    // The line of its keys is a hint a touch-only device never shows.
+    const keys = document.querySelector('[data-inbox-picker-keys]');
+    expect(keys?.textContent).toContain('Ctrl+↩');
+    expect(keys?.classList).toContain('touch-only:hidden');
   });
 
   it('lists the empty state’s order, the rest after, archived last, then All', async () => {
@@ -210,6 +215,32 @@ describe('a sidebar row’s menu', () => {
     expect(within(card).getByText('pears')).toBeDefined();
     fireEvent.keyDown(card, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('names each line’s keys, which a touch-only device never shows', async () => {
+    serve.board = board([
+      VIEW_A,
+      { ...linkedB, metadata: { ...linkedB.metadata, topic: 'pears' } },
+    ]);
+    await menu(VIEW_B.label);
+    const menuEl = screen.getByRole('menu');
+    const keymap = resolveKeymap(undefined);
+    const actions = [
+      'open_session',
+      'toggle_metadata',
+      'rename_inbox',
+      'toggle_priority',
+      'toggle_archive',
+    ];
+    for (const action of actions) {
+      const keys = keysLabel(keymap, action, 1);
+      expect(keys, action).toBeDefined();
+      const hint = [...menuEl.querySelectorAll('span')].find(
+        (s) => s.textContent === keys,
+      );
+      expect(hint, action).toBeDefined();
+      expect(hint?.classList, action).toContain('touch-only:hidden');
+    }
   });
 
   it('offers neither to an Inbox with nothing to show', async () => {

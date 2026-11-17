@@ -32,7 +32,7 @@ import { focusRing } from '../styles';
 // pulls and when is `inbox-priority.ts`. Each control shows at most one key
 // hint, outside any underline, and nothing that could be read as a key.
 
-const HINT = 'text-fg/40 pointer-coarse:hidden';
+const HINT = 'text-fg/40 touch-only:hidden';
 
 const hintOf = (keys: string | undefined) =>
   keys === undefined ? null : <span className={HINT}>{keys}</span>;
@@ -117,7 +117,7 @@ export const PriorityItem = ({
             ? 'Mark as priority'
             : 'Make priority instead'}
       </span>
-      <span className="text-fg/30">{keys.first}</span>
+      <span className="text-fg/30 touch-only:hidden">{keys.first}</span>
     </Menu.Item>
   );
 };

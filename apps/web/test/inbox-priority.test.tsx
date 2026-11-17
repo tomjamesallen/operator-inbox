@@ -293,6 +293,12 @@ describe('the interjection', () => {
     await waitFor(() => expect(card()).not.toBeNull());
     expect(card()?.textContent).toContain('quarry has a question waiting');
     expect(card()?.textContent).toContain('Quarry one');
+    // Its keys are hints a touch-only device never shows.
+    const hints = [
+      ...(card()?.querySelectorAll<HTMLElement>('button > span') ?? []),
+    ].filter((s) => s.textContent === '↩' || s.textContent === 'Esc');
+    expect(hints).toHaveLength(2);
+    for (const h of hints) expect(h.classList).toContain('touch-only:hidden');
     // The card takes the focus, so ↩ reaches Go there; Esc carries on.
     expect(document.activeElement?.hasAttribute('data-priority-card-go')).toBe(
       true,
@@ -363,7 +369,11 @@ describe('the boomerang', () => {
     await waitFor(() =>
       expect(pill()?.textContent).toContain('1 priority left'),
     );
-    fireEvent.click(document.querySelector('[data-priority-back]') as Element);
+    const back = document.querySelector('[data-priority-back]') as Element;
+    const backKeys = back.lastElementChild;
+    expect(backKeys?.textContent).not.toBe('');
+    expect(backKeys?.classList).toContain('touch-only:hidden');
+    fireEvent.click(back);
     await waitFor(() => expect(location.pathname).toBe(`/inbox/${A}`));
     expect(pill()).toBeNull();
   });

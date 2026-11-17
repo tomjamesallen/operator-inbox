@@ -98,7 +98,7 @@ const UndoToast = ({
         Undo
       </Toast.Action>
       {hint.first !== undefined && (
-        <span aria-hidden className="text-fg/30 pointer-coarse:hidden">
+        <span aria-hidden className="text-fg/30 touch-only:hidden">
           {hint.first}
         </span>
       )}

@@ -274,7 +274,7 @@ export const Elsewhere = () => {
       <p
         id={HINT_ID}
         data-elsewhere-keys
-        className="invisible mt-s2 text-10 text-fg/35 group-focus-within/elsewhere:visible"
+        className="invisible mt-s2 text-10 text-fg/35 group-focus-within/elsewhere:visible touch-only:hidden"
       >
         {hintOf(cursor)}
       </p>

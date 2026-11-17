@@ -39,6 +39,18 @@ const build = async (candidates: string[]): Promise<string> => {
 };
 
 describe('the stylesheet', () => {
+  // A key hint hides on a touch-only device: a finger for its pointer and
+  // nothing that can hover, so a tablet with a trackpad keeps its hints.
+  it('emits touch-only: inside a coarse-pointer, nothing-hovers media query', async () => {
+    const css = await build(['touch-only:hidden', 'touch-only:inline']);
+    const block = css.slice(
+      css.indexOf('@media (pointer: coarse) and (any-hover: none) {'),
+    );
+    expect(block).toMatch(
+      /^@media \(pointer: coarse\) and \(any-hover: none\) \{\s*\.touch-only\\:hidden \{\s*display: none;\s*\}\s*\.touch-only\\:inline \{\s*display: inline;/,
+    );
+  });
+
   // Tailwind v4 puts `hover:` and `group-hover:` inside `@media (hover:
   // hover)`, where a touch screen never matches. The minimap's labels are
   // revealed by `group-hover:`, so a hover utility wrapped that way would

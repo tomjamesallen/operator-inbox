@@ -180,6 +180,10 @@ describe('undoing a removed comment', () => {
     await waitFor(() => expect(commentCards()).toHaveLength(0));
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(notice()?.textContent).toContain('Comment removed');
+    // Its keys, after Undo, are a hint a touch-only device never shows.
+    const undoKeys = notice()?.lastElementChild;
+    expect(undoKeys?.textContent).not.toBe('');
+    expect(undoKeys?.classList).toContain('touch-only:hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(commentCards()).toHaveLength(1));
     expect(fieldOf(1).value).toBe('One.');
