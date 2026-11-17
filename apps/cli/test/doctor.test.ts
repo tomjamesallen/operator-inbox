@@ -19,6 +19,11 @@ import {
   storeCheck,
   versionAtLeast,
   voiceCheck,
+  type WidgetCommandHead,
+  widgetCandidates,
+  widgetCommandHead,
+  widgetSearchPath,
+  widgetsCheck,
 } from '../src/doctor';
 
 // `operator-inbox doctor`'s rules, pure: each observation the command makes,
@@ -255,6 +260,157 @@ describe('doctor: the desktop window and the voice', () => {
     expect(
       voiceCheck({ kind: 'unsupported', platform: 'linux-x64' }).status,
     ).toBe('ok');
+  });
+});
+
+describe('doctor: widgets', () => {
+  const HOME = '/home/me';
+  const head = (command: string) => widgetCommandHead(command, HOME);
+
+  it('looks a plain first word up on the search path', () => {
+    expect(head('uptime')).toEqual({ kind: 'search', word: 'uptime' });
+    expect(head('  df -h / | tail -1')).toEqual({ kind: 'search', word: 'df' });
+    expect(head('queue-tool --json;echo')).toEqual({
+      kind: 'search',
+      word: 'queue-tool',
+    });
+  });
+
+  it('takes a word with a slash as a path, from the home folder where widgets run', () => {
+    expect(head('/usr/bin/uptime')).toMatchObject({
+      kind: 'path',
+      file: '/usr/bin/uptime',
+    });
+    expect(head('~/bin/quota --json')).toMatchObject({
+      kind: 'path',
+      file: '/home/me/bin/quota',
+    });
+    expect(head('bin/quota')).toMatchObject({
+      kind: 'path',
+      file: '/home/me/bin/quota',
+    });
+  });
+
+  it('leaves unchecked what bash makes something of first', () => {
+    for (const command of [
+      'echo hi',
+      'if true; then uptime; fi',
+      'for d in a b; do df $d; done',
+      '[ -f x ] && cat x',
+      'exec uptime',
+      'LC_ALL=C df -h',
+      'X+=1 uptime',
+      '"$HOME/bin/quota"',
+      "'quota' --json",
+      '$TOOL --json',
+      '`which df`',
+      '(cd /tmp && ls)',
+      '{ uptime; }',
+      '< in cat',
+      '~other/bin/x',
+      '~',
+      'q*',
+    ])
+      expect(head(command).kind, command).toBe('unchecked');
+    expect(widgetCommandHead('~/bin/x', undefined).kind).toBe('unchecked');
+    expect(widgetCommandHead('bin/x', undefined).kind).toBe('unchecked');
+  });
+
+  it("searches the file's path before serve's, as serve puts it in front", () => {
+    expect(
+      widgetSearchPath(
+        ['~/bin', '/opt/t/bin', 'tools', '~'],
+        '/usr/bin:/bin',
+        HOME,
+      ),
+    ).toEqual([
+      '/home/me/bin',
+      '/opt/t/bin',
+      '/home/me/tools',
+      '/home/me',
+      '/usr/bin',
+      '/bin',
+    ]);
+    // No PATH of serve's own: the system's, behind the file's, as serve does.
+    expect(widgetSearchPath(['/opt/t/bin'], undefined, HOME)).toEqual([
+      '/opt/t/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+    ]);
+    expect(widgetSearchPath([], '', HOME)).toEqual([]);
+    // A relative PATH entry of serve's, or a `~` with no home, is not searched.
+    expect(widgetSearchPath(['~/bin'], 'rel:/bin', undefined)).toEqual([
+      '/bin',
+    ]);
+  });
+
+  it('lists the files a head could run, in order', () => {
+    const search: WidgetCommandHead = { kind: 'search', word: 'df' };
+    expect(widgetCandidates(search, ['/a/', '/b'])).toEqual(['/a/df', '/b/df']);
+    expect(
+      widgetCandidates({ kind: 'path', word: '/x/y', file: '/x/y' }, ['/a']),
+    ).toEqual(['/x/y']);
+    expect(widgetCandidates({ kind: 'unchecked', why: '' }, ['/a'])).toEqual(
+      [],
+    );
+  });
+
+  const decoded = (
+    over: Partial<
+      Extract<Parameters<typeof widgetsCheck>[0], { kind: 'decoded' }>
+    > = {},
+  ) =>
+    widgetsCheck({
+      kind: 'decoded',
+      path: '/c/widgets.json',
+      widgets: [
+        { id: 'load', head: head('uptime') },
+        { id: 'quota', head: head('~/bin/quota --json') },
+        { id: 'greet', head: head('echo hi') },
+      ],
+      problems: [],
+      searchPath: ['/usr/bin'],
+      pathOf: "the launch agent's",
+      runnable: (p) => p === '/usr/bin/uptime' || p === '/home/me/bin/quota',
+      ...over,
+    });
+
+  it('is ok with no file, and with every command found', () => {
+    expect(widgetsCheck({ kind: 'absent', path: '/c/widgets.json' })).toEqual({
+      id: 'widgets',
+      status: 'ok',
+      detail: 'no /c/widgets.json, so no widgets',
+    });
+    expect(decoded()).toEqual({
+      id: 'widgets',
+      status: 'ok',
+      detail:
+        "3 widgets in /c/widgets.json; each command is found on the launch agent's PATH (not checked: greet)",
+    });
+    expect(decoded({ widgets: [] }).detail).toBe(
+      '/c/widgets.json has no widgets',
+    );
+  });
+
+  it('warns, never fails, on a broken file, a problem or a command not found', () => {
+    const broken = widgetsCheck({
+      kind: 'broken',
+      message: 'widgets.json at /c is not valid JSON',
+    });
+    expect(broken.status).toBe('warn');
+    expect(broken.fix).toContain('operator-inbox widgets');
+
+    const missing = decoded({
+      problems: ['widgets.3.intervalSeconds — at least 5'],
+      runnable: () => false,
+    });
+    expect(missing.status).toBe('warn');
+    expect(missing.detail).toBe(
+      "3 widgets in /c/widgets.json; widgets.3.intervalSeconds — at least 5; load: uptime is not on the launch agent's PATH or the file's path; quota: ~/bin/quota is not there to run (not checked: greet)",
+    );
+    expect(missing.fix).toContain('"path"');
   });
 });
 

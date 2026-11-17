@@ -1,6 +1,11 @@
 import { Input } from '@base-ui/react/input';
 import { Toggle } from '@base-ui/react/toggle';
-import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react';
+import {
+  useAtom,
+  useAtomMount,
+  useAtomSet,
+  useAtomValue,
+} from '@effect/atom-react';
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -32,10 +37,12 @@ import {
 import { railStateAtom } from '../../inbox-reader';
 import { inboxReaderAtoms } from '../../inbox-reader-machine';
 import { inParens, keyHintAtom, keymapHelpOpenAtom } from '../../keymap';
+import { widgetsFeedAtom } from '../../widgets';
 import { INSIDE_END, KeyBadge } from '../keymap-help';
 import { ArchivedFold, MachineFold } from './rail-folds';
 import { InboxRows, PinIcon, plainClick, RailRow } from './rail-rows';
 import { SideNotes } from './side-notes';
+import { MachineWidgets } from './widget-chip';
 
 // The sidebar: search, what is wrong, the Inboxes by machine, and the credit.
 // It lies over the page, so opening it does not move the question,
@@ -148,6 +155,11 @@ const List = () => {
   );
   return (
     <nav aria-label="Inboxes" className="px-s1 pb-s4">
+      {/* With one machine its widgets lead, under the search; with several,
+          each machine's open its own fold. */}
+      {parts.length === 1 && only !== undefined && (
+        <MachineWidgets machine={only.section.key} />
+      )}
       <AllRow />
       {/* One machine is nothing machine-shaped: no heading, no fold. */}
       {parts.length === 1 && only !== undefined ? (
@@ -159,6 +171,7 @@ const List = () => {
             section={part.section}
             searching={searching}
           >
+            <MachineWidgets machine={part.section.key} />
             <Inboxes part={part} />
           </MachineFold>
         ))
@@ -282,6 +295,8 @@ const Aside = () => {
   const stored = useAtomValue(inboxRailWidthAtom);
   const [focusAsked, setFocusAsked] = useAtom(railFocusAskedAtom);
   const self = useRef<HTMLElement>(null);
+  // The widgets are read, and run, only while the sidebar is out.
+  useAtomMount(widgetsFeedAtom);
   // A key's request, once the sidebar is drawn. Only an element can take focus.
   useLayoutEffect(() => {
     const side = self.current;

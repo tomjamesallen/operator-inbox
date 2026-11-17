@@ -6,6 +6,7 @@ import { InboxConfigApiGroup } from './inbox-config-api';
 import { KeybindingsApiGroup } from './keybindings-api';
 import { MacrosApiGroup } from './macros-api';
 import { ReadoutApiGroup } from './readout-api';
+import { WidgetsApiGroup } from './widgets-api';
 
 // The local app's HTTP contract: the `HttpApi` that `operator-inbox serve`
 // implements and the web client derives its Atoms from (`AtomHttpApi`).
@@ -101,5 +102,6 @@ export class OperatorInboxApi extends HttpApi.make('operator-inbox')
   .add(KeybindingsApiGroup)
   .add(MacrosApiGroup)
   .add(ReadoutApiGroup)
+  .add(WidgetsApiGroup)
   .middleware(RequestDecodeErrors)
   .prefix('/api') {}

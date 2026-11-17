@@ -15,8 +15,10 @@ import {
   loadConfig,
   loadMetadataRules,
   loadXdgConfigHome,
+  macrosPath,
   metadataPath,
   readoutVoiceOf,
+  widgetsPath,
 } from '../src/config';
 import {
   BUILT_IN_METADATA_KEYS,
@@ -54,6 +56,11 @@ describe('where the files are', () => {
     expect(configPath('/c')).toBe('/c/operator-inbox/config.json');
     expect(metadataPath('/c')).toBe('/c/operator-inbox/metadata.json');
     expect(keybindingsPath('/c')).toBe('/c/operator-inbox/keybindings');
+  });
+
+  it('puts macros.json and widgets.json beside them', () => {
+    expect(macrosPath('/c')).toBe('/c/operator-inbox/macros.json');
+    expect(widgetsPath('/c')).toBe('/c/operator-inbox/widgets.json');
   });
 
   it('counts a blank or relative XDG_CONFIG_HOME as unset, so it stays absolute', () => {

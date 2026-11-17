@@ -25,6 +25,8 @@ import { makeMacrosApiLive } from './serve-macros-api';
 import { makeReadoutApiLive, readoutAudioRouteLive } from './serve-readout-api';
 import { staticRoutesLive } from './serve-static';
 import { vendorRoutesLive } from './serve-vendor';
+import { WidgetRunnerLive } from './serve-widgets';
+import { makeWidgetsApiLive } from './serve-widgets-api';
 
 // The HTTP server behind `operator-inbox serve`: the `OperatorInboxApi`
 // contract, its groups' live layers, the web build's static routes, and a
@@ -284,6 +286,9 @@ export const localOnly = localOnlyWith(undefined);
 // provides LAZILY (`InboxLogLazy`), so the store never gates start-up. The
 // readout group's `Readout` is lazy in the same way (`ReadoutLive`): nothing
 // of listen mode is built, and no voice started, until a page asks. The
+// widgets group's `WidgetRunner` reads and runs nothing until a page reads
+// either (`WidgetRunnerLive`), and is serve's, so stopping serve ends every
+// widget's process. The
 // API declares the `RequestDecodeErrors` middleware, which answers a request
 // that does not decode with a 400 and a JSON body; its live layer is
 // provided here, or the API does not build.
@@ -294,6 +299,9 @@ export const OperatorInboxApiLive = HttpApiBuilder.layer(OperatorInboxApi).pipe(
   Layer.provide(makeMacrosApiLive(OperatorInboxApi)),
   Layer.provide(
     makeReadoutApiLive(OperatorInboxApi).pipe(Layer.provide(ReadoutLive)),
+  ),
+  Layer.provide(
+    makeWidgetsApiLive(OperatorInboxApi).pipe(Layer.provide(WidgetRunnerLive)),
   ),
   Layer.provide(RequestDecodeErrorsLive),
 );

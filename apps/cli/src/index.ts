@@ -12,6 +12,7 @@ import { serveCommand } from './commands/serve';
 import { skillCommand } from './commands/skill';
 import { statsCommand } from './commands/stats';
 import { machineTunnelCommand } from './commands/tunnel';
+import { widgetsCommand } from './commands/widgets';
 import { processEnvProvider } from './env-config';
 import { describeError } from './error-message';
 import { InboxLogLazy } from './inbox-store';
@@ -41,6 +42,7 @@ const mainCommand = Command.make('operator-inbox', {}).pipe(
     infoCommand,
     doctorCommand,
     macrosCommand,
+    widgetsCommand,
     skillCommand,
     statsCommand,
   ]),

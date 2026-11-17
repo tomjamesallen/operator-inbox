@@ -138,6 +138,9 @@
   /* The cards under the answer box, comments and macros: about three before
      the stack scrolls, so the box itself never leaves the screen. */
   --max-height-cards: min(32vh, calc(220px * var(--ui-scale)));
+  /* A sidebar widget's popover: every line of its output, scrolling past
+     twelve, in the popover's own line height. */
+  --max-height-widget-lines: 12lh;
   /* The tallest a picture in a question's body is drawn inline: an Excalidraw
      drawing's preview and a Mermaid diagram alike. A taller one scales down
      to fit, and its full-screen view shows it larger. */

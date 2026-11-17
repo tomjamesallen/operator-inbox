@@ -24,6 +24,7 @@ What is here:
 - `dto-inbox-board-archived-groups.json`: the board read with a view's `archivedGroups`, pinned apart for the same reason.
 - `dto-inbox-board-priority.json`: the board read with an Inbox's `priority` on its row, pinned apart for the same reason.
 - `dto-payload-*.json`: the inbox API's write payloads (answer, pin, archive, a group's archive, rename, priority), the answer and ask payloads with `highlightReply`, the answer payload with `drawings`, the answer payload with `macros` and no text, and the ask payload with `macros` and no text.
+- `dto-widgets.json`: the widgets API's read, every endpoint's answer: a text widget mid-run whose last run timed out, a templated json widget, one whose templates failed, a problem, and a machine that could not be read. `dto-payload-widget-run.json` and `dto-payload-widget-run-local.json`: the run payload with a machine and without.
 - `http-error-bodies.json`: the body of every error the inbox API sends. The messages of `InboxConfigUnreadable`, `KeybindingsUnreadable` and `MacrosUnreadable` name the app's own config paths.
 - `http-status.json`: the status of every error the inbox API sends, and every endpoint's method, path, successes and errors.
 

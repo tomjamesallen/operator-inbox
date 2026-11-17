@@ -23,3 +23,5 @@ export * from './question-markdown';
 export * from './schema';
 export * from './schema-issues';
 export * from './watcher';
+export * from './widget-template';
+export * from './widgets';
