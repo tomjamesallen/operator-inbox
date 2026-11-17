@@ -152,7 +152,7 @@ A machine that cannot be reached keeps its last output, greyed and marked stale,
 | State | Line one | The output |
 | :-- | :-- | :-- |
 | Waiting: the first run is going | `running…` | Blank. |
-| Fresh | The output's age: `4s`, `5m`, `2h 3m` | The output, the first line in its tone and the rest muted. |
+| Fresh | The output's age: `4s`, `5m`, `2h 3m` | The output, muted; the widget's tone is the strip along the top, and a line's own ANSI colours still show. |
 | Running: a later run is going | `running…` | The last output; the strip pulses and the refresh spins. |
 | Stale: the output is older than twice the interval plus the timeout | `stale · 5m` | The last output, faded. |
 | Failed: the last run failed | `failed` | What failed: `exit 2: <the last line of stderr>`, `timed out after 10s`, `command not found`, `could not start: …`, `template: no value at used`. The popover keeps the last good output under it. |
