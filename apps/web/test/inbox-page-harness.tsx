@@ -1,4 +1,3 @@
-import { RegistryProvider } from '@effect/atom-react';
 import {
   act,
   cleanup,
@@ -12,6 +11,7 @@ import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import { InboxPage } from '../src/components/inbox/page';
 import { json } from './fixture';
+import { TestRegistry } from './registry';
 
 // The inbox page end to end in the DOM, for the test files split by concern:
 // the real typed client decodes wire payloads through the shared contract, with
@@ -305,15 +305,13 @@ export const useInboxPage = (): void => {
 
 export const mount = (
   path = `/inbox/${A}`,
-  initialValues?: ComponentProps<typeof RegistryProvider>['initialValues'],
+  initialValues?: ComponentProps<typeof TestRegistry>['initialValues'],
 ) => {
   history.replaceState(null, '', path);
   return render(
-    <RegistryProvider
-      {...(initialValues === undefined ? {} : { initialValues })}
-    >
+    <TestRegistry {...(initialValues === undefined ? {} : { initialValues })}>
       <InboxPage />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
 };
 

@@ -1,4 +1,3 @@
-import { RegistryProvider } from '@effect/atom-react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { Profiler } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +20,7 @@ import {
   useInboxPage,
   VIEW_A,
 } from './inbox-page-harness';
+import { TestRegistry } from './registry';
 
 // How much of a question shows: by how much of it is in the reading area, on
 // one spring, painted past React.
@@ -273,11 +273,11 @@ describe('on the page', () => {
     history.replaceState(null, '', `/inbox/${A}`);
     const commits = vi.fn();
     render(
-      <RegistryProvider>
+      <TestRegistry>
         <Profiler id="page" onRender={commits}>
           <InboxPage />
         </Profiler>
-      </RegistryProvider>,
+      </TestRegistry>,
     );
     await waitFor(() => expect(litKey()).toBeDefined());
     await waitFor(() => expect(opacity(FIRST)).toBe(1));

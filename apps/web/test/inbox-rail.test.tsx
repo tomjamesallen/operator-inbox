@@ -1,8 +1,4 @@
-import {
-  RegistryProvider,
-  useAtomRefresh,
-  useAtomSet,
-} from '@effect/atom-react';
+import { useAtomRefresh, useAtomSet } from '@effect/atom-react';
 import { InboxId, InboxMachineKey } from '@operator-inbox/core/api';
 import { keysLabel, resolveKeymap } from '@operator-inbox/core/keymap';
 import {
@@ -30,6 +26,7 @@ import {
   sideNotesOf,
 } from '../src/inbox-rail';
 import { json } from './fixture';
+import { TestRegistry } from './registry';
 import { fromRowMenu, openRowMenu } from './row-menu';
 
 // The sidebar and the page around it, on the real machine and Atoms, over a
@@ -217,10 +214,10 @@ const Controls = () => {
 const mount = async (path = '/inbox') => {
   history.replaceState(null, '', path);
   render(
-    <RegistryProvider>
+    <TestRegistry>
       <InboxPage />
       <Controls />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
   await waitFor(() =>
     expect(document.querySelector('[data-zen-lit]')).not.toBeNull(),

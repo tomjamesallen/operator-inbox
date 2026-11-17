@@ -1,4 +1,3 @@
-import { RegistryProvider } from '@effect/atom-react';
 import type { InboxId } from '@operator-inbox/core/api';
 import { cleanup, render } from '@testing-library/react';
 import { Clock } from 'effect';
@@ -6,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { nowMillis } from '../src/clock';
 import { freshMark, MarkShape } from '../src/components/inbox/marks';
 import { FRESH_MS } from '../src/inbox-queues';
+import { TestRegistry } from './registry';
 
 const halfwayMark = (spent: boolean) => ({
   key: 'inbox-a/1',
@@ -16,9 +16,9 @@ const halfwayMark = (spent: boolean) => ({
 
 const drawn = (spent: boolean) => {
   const { container } = render(
-    <RegistryProvider>
+    <TestRegistry>
       <MarkShape mark={freshMark(halfwayMark(spent))} className="size-1" />
-    </RegistryProvider>,
+    </TestRegistry>,
   );
   const el = container.querySelector<HTMLElement>('[data-zen-fresh]');
   if (el === null) throw new Error('no mark');
