@@ -1,6 +1,12 @@
 import path from 'node:path';
 import * as NodeHttpClient from '@effect/platform-node/NodeHttpClient';
-import { claudeSettingsPath, loadConfig } from '@operator-inbox/core';
+import {
+  claudeSettingsPath,
+  decodeWidgetsFile,
+  loadConfig,
+  loadXdgConfigHome,
+  widgetsPath,
+} from '@operator-inbox/core';
 import { SERVE_DEFAULT_PORT } from '@operator-inbox/core/api';
 import {
   Config,
@@ -10,6 +16,7 @@ import {
   FileSystem,
   Layer,
   Option,
+  Result,
   Stream,
 } from 'effect';
 import { Command, Flag } from 'effect/cli';
@@ -34,6 +41,10 @@ import {
   skillCheck,
   storeCheck,
   voiceCheck,
+  widgetCandidates,
+  widgetCommandHead,
+  widgetSearchPath,
+  widgetsCheck,
 } from '../doctor';
 import { InputError } from '../errors';
 import { readHome } from '../home-dir';
@@ -318,6 +329,70 @@ const voiceRow = (host: DoctorHost) =>
         ),
       );
 
+// The widgets' file, decoded as serve decodes it, and each command's first
+// word looked for on the PATH serve runs widgets with: the launch agent's,
+// from its plist (launchd's own default when the plist sets none), or, with
+// no plist, this shell's, as `operator-inbox serve` run by hand would have.
+// It runs no widget: it only asks whether a file is there to run.
+const LAUNCHD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+const widgetsRow = (home: string | undefined, plistText: string | null) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const xdg = yield* Effect.result(loadXdgConfigHome);
+    if (Result.isFailure(xdg))
+      return widgetsCheck({
+        kind: 'broken',
+        message: `widgets.json cannot be found: ${xdg.failure.message}`,
+      });
+    const file = widgetsPath(xdg.success);
+    if (!(yield* existsOr(fs, file)))
+      return widgetsCheck({ kind: 'absent', path: file });
+    const text = yield* Effect.result(fs.readFileString(file));
+    if (Result.isFailure(text))
+      return widgetsCheck({
+        kind: 'broken',
+        message: `${file} could not be read: ${text.failure.message}`,
+      });
+    const decoded = decodeWidgetsFile(text.success, file);
+    if (Result.isFailure(decoded))
+      return widgetsCheck({ kind: 'broken', message: decoded.failure });
+    const shellPath = yield* Config.String('PATH').pipe(
+      Effect.orElseSucceed(() => ''),
+    );
+    const servePath =
+      plistText === null
+        ? shellPath
+        : (plistString(plistText, 'PATH') ?? LAUNCHD_PATH);
+    const searchPath = widgetSearchPath(decoded.success.path, servePath, home);
+    const widgets = decoded.success.widgets.map((w) => ({
+      id: w.id,
+      head: widgetCommandHead(w.command, home),
+    }));
+    const runnable = new Set<string>();
+    for (const w of widgets)
+      for (const candidate of widgetCandidates(w.head, searchPath)) {
+        const info = yield* Effect.option(fs.stat(candidate));
+        if (
+          Option.isSome(info) &&
+          info.value.type === 'File' &&
+          (info.value.mode & 0o111) !== 0
+        ) {
+          runnable.add(candidate);
+          break;
+        }
+      }
+    return widgetsCheck({
+      kind: 'decoded',
+      path: file,
+      widgets,
+      problems: decoded.success.problems,
+      searchPath,
+      pathOf: plistText === null ? "this shell's" : "the launch agent's",
+      runnable: (p) => runnable.has(p),
+    });
+  });
+
 // --- the whole run ----------------------------------------------------------
 
 export const runDoctor = (host: DoctorHost, port: number) =>
@@ -352,6 +427,7 @@ export const runDoctor = (host: DoctorHost, port: number) =>
         skillRow(home),
         desktopRow(host.moduleDir, home),
         voiceRow(host),
+        widgetsRow(home, plistText),
       ],
       { concurrency: 'unbounded' },
     );
@@ -387,6 +463,6 @@ export const doctorCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    'Check this install: Node, the bin on PATH, config.json, the store, the server, the launch agent, the Claude Code hooks, the skill, the desktop window and listen mode. Each row is ok, warn or fail with a fix; exits non-zero on any fail. Changes nothing',
+    'Check this install: Node, the bin on PATH, config.json, the store, the server, the launch agent, the Claude Code hooks, the skill, the desktop window, listen mode and the widgets. Each row is ok, warn or fail with a fix; exits non-zero on any fail. Changes nothing',
   ),
 );

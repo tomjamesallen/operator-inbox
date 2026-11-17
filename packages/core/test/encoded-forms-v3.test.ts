@@ -31,6 +31,10 @@ import {
   PriorityRefused,
   RenamePayload,
   RenameRefused,
+  WidgetNotFound,
+  WidgetRunPayload,
+  WidgetsDto,
+  WidgetsUnavailable,
 } from '../src/api';
 import {
   InboxEvent,
@@ -43,7 +47,7 @@ import {
   QuestionNumber,
   QuestionRevision,
 } from '../src/inbox';
-import { InboxCode, InboxId, SessionId } from '../src/schema';
+import { InboxCode, InboxId, InboxMachineKey, SessionId } from '../src/schema';
 
 // Golden fixtures for every inbox form core encodes or decodes, in the v3
 // encoding: a clean type-check cannot see a silent change to the bytes. Each
@@ -1247,6 +1251,109 @@ const INBOX_INDEX: InboxIndexDto = {
   totalAwaitingOperator: 1,
 };
 
+// The widgets read: Local with a text widget mid-run whose last run failed,
+// and a templated json widget that ran clean; and a machine that could not be
+// read, which sends no widgets.
+const LOAD_RUN = {
+  startedAt: 1_767_225_600_000,
+  finishedAt: 1_767_225_600_042,
+  durationMs: 42,
+  exitCode: 0,
+  signal: null,
+  timedOut: false,
+  spawnError: null,
+  stdout: '0.42 0.37 0.30\n',
+  stderrTail: '',
+  truncated: false,
+  ok: true,
+};
+const WIDGETS: WidgetsDto = {
+  machines: [
+    {
+      key: InboxMachineKey.make('local'),
+      label: 'Local',
+      status: 'local',
+      widgets: [
+        {
+          id: 'load',
+          label: 'Load',
+          format: 'text',
+          lines: 1,
+          intervalSeconds: 60,
+          timeoutSeconds: 10,
+          running: true,
+          runningSince: 1_767_225_660_000,
+          refreshQueued: true,
+          lastRun: {
+            ...LOAD_RUN,
+            startedAt: 1_767_225_630_000,
+            finishedAt: 1_767_225_640_000,
+            durationMs: 10_000,
+            exitCode: null,
+            signal: 'SIGTERM',
+            timedOut: true,
+            stdout: '',
+            stderrTail: 'uptime: still waiting',
+            ok: false,
+          },
+          lastOk: LOAD_RUN,
+          nextRunAt: null,
+        },
+        {
+          id: 'quota',
+          label: 'Quota',
+          format: 'json',
+          lines: 2,
+          intervalSeconds: 30,
+          timeoutSeconds: 10,
+          running: false,
+          runningSince: null,
+          refreshQueued: false,
+          lastRun: {
+            ...LOAD_RUN,
+            stdout: '{"text":"41 of 100","tone":"ok"}',
+            raw: '{"used": 41, "of": 100}\n',
+          },
+          lastOk: null,
+          nextRunAt: 1_767_225_630_042,
+        },
+        {
+          id: 'disk',
+          label: 'Disk',
+          format: 'json',
+          lines: 1,
+          intervalSeconds: 60,
+          timeoutSeconds: 10,
+          running: false,
+          runningSince: null,
+          refreshQueued: false,
+          lastRun: {
+            ...LOAD_RUN,
+            stdout: '{"mounts":[]}',
+            raw: '{"mounts":[]}',
+            ok: false,
+            templateError: 'no value at mounts.0.pct',
+          },
+          lastOk: null,
+          nextRunAt: 1_767_225_660_042,
+        },
+      ],
+      problems: ['widgets.3.intervalSeconds — at least 5'],
+      now: 1_767_225_661_000,
+    },
+    {
+      key: InboxMachineKey.make('3010'),
+      label: 'build-box',
+      status: 'unreachable',
+      reason: 'tunnel-down',
+      detail: 'Nothing answered on port 3010.',
+      widgets: [],
+      problems: [],
+      now: 1_767_225_661_000,
+    },
+  ],
+};
+
 // One DTO case: the golden, its schema and the literal value it holds. A
 // helper rather than a tuple table so each case keeps its own schema type.
 const dtoCase = <T, E>(name: string, schema: Schema.Codec<T, E>, value: T) => ({
@@ -1308,6 +1415,14 @@ const DTOS = [
   }),
   dtoCase('dto-payload-rename.json', RenamePayload, { label: 'New name' }),
   dtoCase('dto-payload-priority.json', PriorityPayload, { priority: true }),
+  dtoCase('dto-widgets.json', WidgetsDto, WIDGETS),
+  dtoCase('dto-payload-widget-run.json', WidgetRunPayload, {
+    machine: InboxMachineKey.make('3010'),
+    id: 'quota',
+  }),
+  dtoCase('dto-payload-widget-run-local.json', WidgetRunPayload, {
+    id: 'load',
+  }),
 ];
 
 describe('HTTP DTOs', () => {
@@ -1399,6 +1514,18 @@ const ERRORS = [
     MacrosUnreadable,
     new MacrosUnreadable({
       message: 'Could not read /c/operator-inbox/macros.json.',
+    }),
+  ),
+  errorCase(
+    WidgetNotFound,
+    new WidgetNotFound({ message: 'No widget quota on build-box.' }),
+  ),
+  errorCase(
+    WidgetsUnavailable,
+    new WidgetsUnavailable({
+      message:
+        'the Inbox machine build-box could not be reached: nothing answered on port 3010',
+      machine: { key: InboxMachineKey.make('3010'), label: 'build-box' },
     }),
   ),
 ];

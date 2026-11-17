@@ -126,9 +126,9 @@ After an update, reinstall the skill (see [First use](#first-use-with-claude-cod
 
 | What | Where |
 | :-- | :-- |
-| Settings: `config.json`, `metadata.json`, `keybindings`, `macros.json` | `~/.config/operator-inbox/` (under `$XDG_CONFIG_HOME` when that is set) |
+| Settings: `config.json`, `metadata.json`, `keybindings`, `macros.json`, `widgets.json` | `~/.config/operator-inbox/` (under `$XDG_CONFIG_HOME` when that is set) |
 | The event log, a SQLite file | `~/.local/state/operator-inbox/inbox.sqlite` (under `$XDG_STATE_HOME`; `databasePath` in `config.json` or `OPERATOR_INBOX_DATABASE_PATH` moves it) |
-| Attachments, listen mode's audio cache, the server's log | beside the event log, in `~/.local/state/operator-inbox/` |
+| Attachments, listen mode's audio cache, the widgets' last runs, the server's log | beside the event log, in `~/.local/state/operator-inbox/` |
 | The launch agent | `~/Library/LaunchAgents/com.operator-inbox.serve.plist` |
 | The hooks | `~/.claude/settings.json` |
 | The skill | `~/.claude/skills/operator-inbox/SKILL.md` |
@@ -144,7 +144,7 @@ Start with:
 operator-inbox doctor
 ```
 
-It checks Node, the bin on `PATH`, `config.json`, the event log, the server, the launch agent, the Claude Code hooks, the skill, the desktop window and listen mode's voice. Each row reads `ok`, `warn` or `fail`, with a one-line fix under any that is not ok. It exits non-zero when a row fails, and `--json` prints the report as JSON. It changes nothing: it never writes `settings.json`, never makes the event log, and never builds or launches anything. `--port` checks a server on another port.
+It checks Node, the bin on `PATH`, `config.json`, the event log, the server, the launch agent, the Claude Code hooks, the skill, the desktop window, listen mode's voice and the widgets' commands. Each row reads `ok`, `warn` or `fail`, with a one-line fix under any that is not ok. It exits non-zero when a row fails, and `--json` prints the report as JSON. It changes nothing: it never writes `settings.json`, never makes the event log, and never builds or launches anything. `--port` checks a server on another port.
 
 Common cases:
 
@@ -153,6 +153,7 @@ Common cases:
 - **The launch agent's `node` is gone** after a Node upgrade: `bash scripts/setup.sh rebuild` points it at the current one.
 - **An agent says `operator-inbox: command not found`.** pnpm's global bin folder is not on that shell's `PATH`; run `pnpm setup`, open a new shell, and re-run `bash scripts/setup.sh`.
 - **The hooks do nothing.** Sessions read hooks when they start, so start a new one. The hooks act only once a session has run `operator-inbox mode on`.
+- **A widget says `command not found`.** Serve runs widgets with the launch agent's `PATH`, which is shorter than your shell's. Add the tool's folder to `path` in `widgets.json`; `doctor`'s `widgets` row says which commands it cannot find ([`widgets.md`](widgets.md#checking-a-file)).
 - **`install-claude-hooks` refuses to write.** `~/.claude/settings.json` does not parse; fix it by hand, then re-run.
 
 ## Stopping and uninstalling

@@ -53,7 +53,9 @@ export { answerKey };
 // seconds of being asked.
 export const INBOX_POLL_INTERVAL_MS = 5_000;
 
-const inboxPollSignalAtom = tickEvery(INBOX_POLL_INTERVAL_MS);
+// The one poll: the board reads on it, and so do the sidebar's widgets
+// (`widgets.ts`), so the page keeps one timer.
+export const inboxPollSignalAtom = tickEvery(INBOX_POLL_INTERVAL_MS);
 
 // --- the path: All, or one Inbox ---------------------------------------------------
 

@@ -28,6 +28,10 @@ import {
   PinRefused,
   PriorityRefused,
   RenameRefused,
+  type WidgetId,
+  WidgetNotFound,
+  type WidgetsDto,
+  WidgetsUnavailable,
 } from '@operator-inbox/core/api';
 import {
   type Cause,
@@ -207,9 +211,13 @@ const cappedResponse =
           : refusalOn(read, machine);
       const { 'content-length': _, ...headers } = response.headers;
       const body = refusal ?? read;
+      // Handed over as a Blob, never the bytes themselves: the Response
+      // detaches a typed array it reads, and a failure that keeps this
+      // response (a 404 whose body is not the declared JSON) is hashed with
+      // it, which a detached array makes throw.
       return HttpClientResponse.fromWeb(
         response.request,
-        new Response(body.length === 0 ? null : body, {
+        new Response(body.length === 0 ? null : new Blob([body]), {
           status: response.status,
           headers,
         }),
@@ -512,6 +520,112 @@ export const fetchMachineIndex = (
   options?: MachineCallOptions,
 ): Effect.Effect<MachineCallRead<InboxIndexDto>> =>
   classified(port, (api) => api.inbox.index({ query: {} }), options);
+
+// --- widgets ----------------------------------------------------------------
+
+// What Local asks a machine's widgets endpoint: a read (`watching` when the
+// read Local answers is the open sidebar's, the only read that keeps a
+// machine's scheduled runs going), or `opened`, the sidebar opening.
+export type MachineWidgetsAsk = 'read' | 'watching' | 'opened';
+
+// A machine with no widgets endpoint answers as if it had none.
+const NO_WIDGETS: WidgetsDto = { machines: [] };
+
+// The answer of a serve that predates widgets, or whose widgets contract is
+// not this one: a 404 (an older serve answers any API route it lacks so), an
+// answer that does not decode, or the machine saying it cannot decode
+// Local's request. None of these is the machine failing, so none of them
+// makes it `incompatible`: it has no widgets, and its heading reads as the
+// board reads it. Anything else (421, an answer over the byte limit, another
+// status, a connection that fails) is classified as every read is.
+const lacksWidgets = (error: ClientFailure): boolean => {
+  if (error._tag === 'SchemaError' || error._tag === 'HttpApiDecodeError')
+    return true;
+  const { reason } = error;
+  if (!('response' in reason)) return false;
+  if (
+    reason._tag === 'DecodeError' &&
+    reason.cause instanceof MachineResponseTooLarge
+  )
+    return false;
+  const { status } = reason.response;
+  return status === 404 || (status >= 200 && status < 300);
+};
+
+// The machine's own widgets (asked with `local=true`, as every call is), for
+// Local's widgets read and `opened`: the same client, timeout and byte limit
+// as its board. A machine with no widgets endpoint answers no machines
+// (`lacksWidgets`).
+export const fetchMachineWidgets = (
+  port: InboxMachinePort,
+  ask: MachineWidgetsAsk,
+  options?: MachineCallOptions,
+): Effect.Effect<MachineCallRead<WidgetsDto>> =>
+  classified(
+    port,
+    (api) =>
+      (ask === 'opened'
+        ? api.widgets.opened({ query: {} })
+        : api.widgets.read({
+            query: ask === 'watching' ? { watching: 'true' } : {},
+          })
+      ).pipe(Effect.catchIf(lacksWidgets, () => Effect.succeed(NO_WIDGETS))),
+    options,
+  );
+
+// A run of one of the machine's widgets, forwarded by its id alone: the
+// command is always the machine's own, from its own `widgets.json`. Sent as
+// a forwarded write is (`keep`, serve's `keepWrite`, and the write timeout),
+// so a run once sent is not cut off when the page goes away. Answers the
+// machine's own widgets. The machine saying it has no such widget, or
+// answering 404 as a serve with no widgets does, is WidgetNotFound; no usable
+// answer is WidgetsUnavailable, naming the machine, in Local's words.
+export const forwardWidgetRun = (
+  machine: Pick<InboxMachineName, 'key' | 'label' | 'port'>,
+  id: WidgetId,
+  options?: MachineCallOptions,
+  keep: KeepWrite = detachedWrite,
+): Effect.Effect<WidgetsDto, WidgetNotFound | WidgetsUnavailable> => {
+  const timeout = writeTimeout(options);
+  const notFound = new WidgetNotFound({
+    message: `The Inbox machine ${machine.label} has no widget ${id}.`,
+  });
+  const unavailable = (message: string) =>
+    new WidgetsUnavailable({ message, machine: machineRef(machine) });
+  // Why the run reached no answer, in Local's words.
+  const refused = (
+    error: TransportFailure | WidgetNotFound | WidgetsUnavailable,
+  ): WidgetNotFound | WidgetsUnavailable => {
+    if (error._tag === 'WidgetNotFound') return notFound;
+    // Only a serve that forwards answers so, and a machine asked with
+    // `local=true` never forwards.
+    if (error._tag === 'WidgetsUnavailable')
+      return unavailable(
+        `the Inbox machine ${machine.label} answered with something Local cannot use: it says a machine of its own is unavailable`,
+      );
+    if (
+      error._tag === 'HttpClientError' &&
+      'response' in error.reason &&
+      error.reason.response.status === 404
+    )
+      return notFound;
+    const failure = classifyMachineFailure(machine.port, error, timeout);
+    return unavailable(
+      failure.reason === 'timed-out'
+        ? `the Inbox machine ${machine.label} did not answer within ${Duration.format(Duration.fromInputUnsafe(timeout))}; the widget may be running there all the same`
+        : failure.status === 'unreachable'
+          ? `the Inbox machine ${machine.label} could not be reached: ${failure.detail}`
+          : `the Inbox machine ${machine.label} answered with something Local cannot use: ${failure.detail}`,
+    );
+  };
+  const run = callMachine(
+    machine.port,
+    (api) => api.widgets.run({ query: {}, payload: { id } }),
+    timeout,
+    options,
+  ).pipe(Effect.mapError(refused));
+  return keep(run);
+};
 
 // A write that failed this way was never acted on: the connection was
 // refused, so nothing was sent (the tunnel is down), or the far end refused

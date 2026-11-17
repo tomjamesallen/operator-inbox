@@ -352,6 +352,182 @@ export const voiceCheck = (o: VoiceObservation): DoctorCheck => {
   }
 };
 
+// --- Widgets ----------------------------------------------------------------
+
+// The words bash takes before looking anything up on PATH: a builtin runs
+// whatever PATH says, and a keyword starts a construct whose commands come
+// later, so neither first word says whether the widget's tools are there.
+const SHELL_OWN: ReadonlySet<string> = new Set(
+  [
+    '! . : [ [[ alias bg bind break builtin caller case cd command compgen',
+    'complete compopt continue coproc declare dirs disown do done echo elif',
+    'else enable esac eval exec exit export false fc fg fi for function',
+    'getopts hash help history if in jobs kill let local logout mapfile popd',
+    'printf pushd pwd read readarray readonly return select set shift shopt',
+    'source suspend test then time times trap true type typeset ulimit umask',
+    'unalias unset until wait while { }',
+  ]
+    .join(' ')
+    .split(' '),
+);
+
+/**
+ * Where a widget's command will be looked for: the first word of its command
+ * as bash would look it up, or why it is not judged. A first word that is
+ * quoted, expanded, an assignment, a builtin or a keyword, or a command that
+ * opens with a subshell or a redirection, is `unchecked`: what runs depends
+ * on what bash makes of it, and doctor raises no false alarm. A word with a
+ * `/` is a path (`~/` read as the home folder, a relative one from the home
+ * folder, where widgets run); any other is looked for on the search path.
+ */
+export type WidgetCommandHead =
+  | { readonly kind: 'path'; readonly word: string; readonly file: string }
+  | { readonly kind: 'search'; readonly word: string }
+  | { readonly kind: 'unchecked'; readonly why: string };
+
+export const widgetCommandHead = (
+  command: string,
+  home: string | undefined,
+): WidgetCommandHead => {
+  const trimmed = command.trimStart();
+  const word = /^[^\s;&|<>()]*/.exec(trimmed)?.[0] ?? '';
+  if (word === '')
+    return {
+      kind: 'unchecked',
+      why: 'it opens with a subshell or a redirection',
+    };
+  if (/^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=/.test(word))
+    return { kind: 'unchecked', why: 'it opens with a variable assignment' };
+  if (/["'`$\\*?[\]{}!]/.test(word) && !SHELL_OWN.has(word))
+    return { kind: 'unchecked', why: `bash expands ${word} first` };
+  if (SHELL_OWN.has(word))
+    return { kind: 'unchecked', why: `${word} is bash's own` };
+  if (word.startsWith('~'))
+    return word.startsWith('~/') && home !== undefined
+      ? { kind: 'path', word, file: `${home}/${word.slice(2)}` }
+      : { kind: 'unchecked', why: `bash expands ${word} first` };
+  if (!word.includes('/')) return { kind: 'search', word };
+  if (word.startsWith('/')) return { kind: 'path', word, file: word };
+  return home === undefined
+    ? {
+        kind: 'unchecked',
+        why: `${word} is relative to a home folder doctor cannot find`,
+      }
+    : { kind: 'path', word, file: `${home}/${word}` };
+};
+
+/**
+ * The folders a widget's command is looked for in, in order: the file's
+ * `path` entries, as serve puts them in front (`~/` read as the home folder,
+ * a relative one from the home folder, where widgets run), then serve's own
+ * `PATH`, or the system's when it has none and the file adds some.
+ */
+export const widgetSearchPath = (
+  entries: ReadonlyArray<string>,
+  servePath: string | undefined,
+  home: string | undefined,
+): ReadonlyArray<string> => {
+  const fromHome = (entry: string): string | undefined =>
+    entry === '~'
+      ? home
+      : entry.startsWith('~/')
+        ? home === undefined
+          ? undefined
+          : `${home}/${entry.slice(2)}`
+        : entry.startsWith('/')
+          ? entry
+          : home === undefined
+            ? undefined
+            : `${home}/${entry}`;
+  const own =
+    servePath === undefined || servePath.trim() === ''
+      ? entries.length === 0
+        ? []
+        : ['/usr/bin', '/bin', '/usr/sbin', '/sbin']
+      : servePath.split(':');
+  return [
+    ...entries.flatMap((e) => {
+      const dir = fromHome(e);
+      return dir === undefined ? [] : [dir];
+    }),
+    ...own.filter((d) => d.startsWith('/')),
+  ];
+};
+
+/** The files a head could run, in the order bash tries them. */
+export const widgetCandidates = (
+  head: WidgetCommandHead,
+  searchPath: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  head.kind === 'path'
+    ? [head.file]
+    : head.kind === 'search'
+      ? searchPath.map((dir) => `${dir.replace(/\/+$/, '')}/${head.word}`)
+      : [];
+
+export type WidgetsObservation =
+  | { readonly kind: 'absent'; readonly path: string }
+  | { readonly kind: 'broken'; readonly message: string }
+  | {
+      readonly kind: 'decoded';
+      readonly path: string;
+      readonly widgets: ReadonlyArray<{
+        readonly id: string;
+        readonly head: WidgetCommandHead;
+      }>;
+      readonly problems: ReadonlyArray<string>;
+      readonly searchPath: ReadonlyArray<string>;
+      /** Whose PATH serve runs on: `the launch agent's` or `this shell's`. */
+      readonly pathOf: string;
+      /** Is there an executable file at this path? Asked of each candidate. */
+      readonly runnable: (p: string) => boolean;
+    };
+
+/**
+ * The widgets are optional, so nothing here is worse than a warn: a file that
+ * does not decode, an entry that is dropped or a command that will not be
+ * found costs that widget alone. No file is no widgets, and fine.
+ */
+export const widgetsCheck = (o: WidgetsObservation): DoctorCheck => {
+  const id = 'widgets';
+  const look =
+    'run operator-inbox widgets to see what it reads, then fix widgets.json';
+  if (o.kind === 'absent') return ok(id, `no ${o.path}, so no widgets`);
+  if (o.kind === 'broken') return warn(id, o.message, look);
+  const missing: Array<string> = [];
+  const unchecked: Array<string> = [];
+  for (const w of o.widgets) {
+    if (w.head.kind === 'unchecked') {
+      unchecked.push(w.id);
+      continue;
+    }
+    if (!widgetCandidates(w.head, o.searchPath).some(o.runnable))
+      missing.push(
+        w.head.kind === 'path'
+          ? `${w.id}: ${w.head.word} is not there to run`
+          : `${w.id}: ${w.head.word} is not on ${o.pathOf} PATH or the file's path`,
+      );
+  }
+  const count = `${o.widgets.length} widget${o.widgets.length === 1 ? '' : 's'}`;
+  const notChecked =
+    unchecked.length === 0 ? '' : ` (not checked: ${unchecked.join(', ')})`;
+  if (missing.length === 0 && o.problems.length === 0)
+    return ok(
+      id,
+      o.widgets.length === 0
+        ? `${o.path} has no widgets`
+        : `${count} in ${o.path}; each command is found on ${o.pathOf} PATH${notChecked}`,
+    );
+  return warn(
+    id,
+    [`${count} in ${o.path}`, ...o.problems, ...missing].join('; ') +
+      notChecked,
+    missing.length === 0
+      ? look
+      : `install what is missing, or add its folder to widgets.json's "path"; ${look}`,
+  );
+};
+
 // --- The report -------------------------------------------------------------
 
 export interface DoctorReport {

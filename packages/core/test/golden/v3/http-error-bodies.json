@@ -55,5 +55,17 @@
   "MacrosUnreadable": {
     "message": "Could not read /c/operator-inbox/macros.json.",
     "_tag": "MacrosUnreadable"
+  },
+  "WidgetNotFound": {
+    "message": "No widget quota on build-box.",
+    "_tag": "WidgetNotFound"
+  },
+  "WidgetsUnavailable": {
+    "message": "the Inbox machine build-box could not be reached: nothing answered on port 3010",
+    "machine": {
+      "key": "3010",
+      "label": "build-box"
+    },
+    "_tag": "WidgetsUnavailable"
   }
 }

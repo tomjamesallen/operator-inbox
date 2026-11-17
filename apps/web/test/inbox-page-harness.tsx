@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, vi } from 'vitest';
 import { InboxPage } from '../src/components/inbox/page';
 import { json } from './fixture';
 import { TestRegistry } from './registry';
+import { NO_WIDGETS } from './widget-fixture';
 
 // The inbox page end to end in the DOM, for the test files split by concern:
 // the real typed client decodes wire payloads through the shared contract, with
@@ -233,6 +234,13 @@ export const serve: {
   config: unknown;
   posts: Array<Posted>;
   reads: number;
+  // What `/api/widgets` answers, read, opened and run alike. Their reads and
+  // asks are counted apart from the board's, so no other test sees them.
+  widgets: unknown;
+  widgetPosts: Array<Posted>;
+  widgetReads: Array<string>;
+  // Answers a widget's run in place of `widgets`, to refuse it.
+  widgetRun: (() => Response) | undefined;
 } = {
   board: BOARD,
   post: () => json(VIEW_A),
@@ -242,12 +250,32 @@ export const serve: {
   config: NO_CHASE,
   posts: [],
   reads: 0,
+  widgets: NO_WIDGETS,
+  widgetPosts: [],
+  widgetReads: [],
+  widgetRun: undefined,
 };
 
 const fetchStub: typeof fetch = async (input, init) => {
   const request = input instanceof Request ? input : undefined;
   const url = new URL(request?.url ?? String(input), 'http://x');
-  if ((request?.method ?? init?.method ?? 'GET') === 'POST') {
+  const method = request?.method ?? init?.method ?? 'GET';
+  if (url.pathname.startsWith('/api/widgets')) {
+    if (method === 'POST') {
+      const text =
+        request === undefined
+          ? await new Response(init?.body ?? null).text()
+          : await request.clone().text();
+      serve.widgetPosts.push({
+        path: url.pathname,
+        body: text === '' ? undefined : JSON.parse(text),
+      });
+      if (url.pathname === '/api/widgets/run' && serve.widgetRun !== undefined)
+        return serve.widgetRun();
+    } else serve.widgetReads.push(url.search);
+    return json(serve.widgets);
+  }
+  if (method === 'POST') {
     const text =
       request === undefined
         ? await new Response(init?.body ?? null).text()
@@ -287,6 +315,10 @@ export const useInboxPage = (): void => {
       config: NO_CHASE,
       posts: [],
       reads: 0,
+      widgets: NO_WIDGETS,
+      widgetPosts: [],
+      widgetReads: [],
+      widgetRun: undefined,
     });
     vi.stubGlobal('fetch', fetchStub);
     Element.prototype.scrollTo = vi.fn();

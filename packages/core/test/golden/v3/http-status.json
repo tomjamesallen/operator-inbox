@@ -14,7 +14,9 @@
     "OpenSessionRefused": 409,
     "PinRefused": 409,
     "PriorityRefused": 409,
-    "RenameRefused": 409
+    "RenameRefused": 409,
+    "WidgetNotFound": 404,
+    "WidgetsUnavailable": 503
   },
   "endpoints": [
     {
@@ -378,6 +380,51 @@
       "errors": {
         "400": [
           "HttpApiDecodeError"
+        ]
+      }
+    },
+    {
+      "endpoint": "widgets.read",
+      "method": "GET",
+      "path": "/api/widgets",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ]
+      }
+    },
+    {
+      "endpoint": "widgets.opened",
+      "method": "POST",
+      "path": "/api/widgets/opened",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ]
+      }
+    },
+    {
+      "endpoint": "widgets.run",
+      "method": "POST",
+      "path": "/api/widgets/run",
+      "successes": [
+        200
+      ],
+      "errors": {
+        "400": [
+          "HttpApiDecodeError"
+        ],
+        "404": [
+          "WidgetNotFound"
+        ],
+        "503": [
+          "WidgetsUnavailable"
         ]
       }
     }

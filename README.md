@@ -52,7 +52,7 @@ bash scripts/setup.sh rebuild
 operator-inbox doctor
 ```
 
-checks the install: Node, the bin on `PATH`, `config.json`, the event log, the server, the launch agent, the Claude Code hooks, the skill, the desktop window and listen mode's voice. Each row reads `ok`, `warn` or `fail`, with a one-line fix. It changes nothing, exits non-zero when a row fails, and takes `--json`. [`docs/install.md`](docs/install.md#troubleshooting) covers the common cases.
+checks the install: Node, the bin on `PATH`, `config.json`, the event log, the server, the launch agent, the Claude Code hooks, the skill, the desktop window, listen mode's voice and the widgets' commands. Each row reads `ok`, `warn` or `fail`, with a one-line fix. It changes nothing, exits non-zero when a row fails, and takes `--json`. [`docs/install.md`](docs/install.md#troubleshooting) covers the common cases.
 
 ## Configure
 
@@ -61,6 +61,7 @@ Nothing is needed to start. To change anything, edit the files in `~/.config/ope
 - `config.json`: this machine's settings, such as `databasePath` to move the store, `serve.tailnet` to reach the app from your other devices through `tailscale serve`, and `inboxMachines` to show another machine's Inboxes here. `readout.voice` is listen mode's voice. Display settings live there too: `chaseAfterMinutes`, and `diagramSize` (diagram size: `"box"`, the default, fills the box a picture may take; `"area"` also limits its area, so a tall or a wide picture takes about the same room), and `priorityPull`, how the page pulls you back to the priority Inbox after an answer elsewhere (`"interjection"`, the default, shows a card saying what waits there; `"boomerang"` goes straight there and back), and `wideBlocks`, how a table or a picture wider than the text widens (`"both"`, the default, centres it on the text and grows it both ways while there is room, then to the right; `"right"` keeps it to the text's left edge and grows it right only, as code blocks always do).
 - `metadata.json`: the metadata keys your Inboxes and Questions carry. `operator-inbox keys` shows the rules in force.
 - `keybindings`: your own key bindings for the page.
+- `widgets.json`: small commands whose output the sidebar shows, such as the load or a disk's use, each with a label, a command and how often it runs; its output is text, or JSON mapped through templates. Serve runs them only while the sidebar is open. `operator-inbox widgets` checks the file and prints what will run, and [`docs/widgets.md`](docs/widgets.md) has every field. A widget's output is visible to every peer `serve.tailnet.allowFrom` names, so a command that prints a secret should not be one.
 - `macros.json`: your macros, slash commands for the answer box and the ask box. Each has a name, a line saying what it is for, an instruction for the agent and its parameters, each a closed list of options (one of them, or with `"multiple": true` any of them), text or a number; every parameter is required unless it says `"required": false`. Type `/` at the start of a word in the answer box, or in the box where you ask the agent a question, to pick one. `operator-inbox macros` checks the file and prints what it offers.
 
 ```json

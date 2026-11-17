@@ -15,6 +15,7 @@ import { strayWritesAtom } from '../src/inbox';
 import { isActionHandled } from '../src/keymap';
 import { json } from './fixture';
 import { TestRegistry } from './registry';
+import { NO_WIDGETS } from './widget-fixture';
 
 // Every key on the real page, machine and Atoms, over a fetch that answers as
 // serve does. All names are invented.
@@ -93,6 +94,8 @@ beforeEach(() => {
   fetchMock.mockImplementation(async (input, init) => {
     const request = input instanceof Request ? input : undefined;
     const url = new URL(request?.url ?? String(input), 'http://x');
+    // The sidebar's widgets: none, and their asks are not the writes here.
+    if (url.pathname.startsWith('/api/widgets')) return json(NO_WIDGETS);
     if ((request?.method ?? init?.method ?? 'GET') === 'POST') {
       const text =
         request === undefined

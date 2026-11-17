@@ -97,6 +97,7 @@ import {
   steppedRate,
   toggleListenAtom,
 } from './readout/readout';
+import { widgetsOpenedAtom } from './widgets';
 
 // The inbox screen's keymap: the defaults from
 // `@operator-inbox/core/keymap`, with the operator's keybindings file applied, read
@@ -662,10 +663,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     get.set(toggleAskAtom, undefined);
     return true;
   },
+  // Ctrl+R also runs every widget, as the sidebar opening does, but only
+  // with the sidebar out: only the open sidebar counts as looking at them.
   refresh: (get) => {
     get.refresh(keybindingsFileAtom);
     get.refresh(macrosFileAtom);
     get.refresh(inboxBoardAtom);
+    if (get.once(railStateAtom) !== 'shut')
+      get.set(widgetsOpenedAtom, undefined);
     return true;
   },
   toggle_group: (get, e) => toggleGroup(get, e),

@@ -143,6 +143,8 @@ describe('operator-inbox doctor, on a fake machine', () => {
         skill: 'ok',
         // Not built in the fake Applications folder (and not checked off macOS).
         desktop: process.platform === 'darwin' ? 'warn' : 'ok',
+        // No widgets.json is no widgets.
+        widgets: 'ok',
       });
       expect(report.ok).toBe(true);
       expect(listing(m.root)).toEqual(before);
@@ -170,6 +172,81 @@ describe('operator-inbox doctor, on a fake machine', () => {
         for (const c of report.checks) {
           if (c.status !== 'ok') expect(c.fix).toBeTruthy();
         }
+        expect(listing(m.root)).toEqual(before);
+      }),
+  );
+
+  it.effect(
+    "looks each widget's command up on the launch agent's PATH and the file's path, and runs none",
+    () =>
+      Effect.gen(function* () {
+        const m = machine(0);
+        const tools = path.join(m.root, 'tools');
+        const agentBin = path.join(m.root, 'agent-bin');
+        mkdirSync(tools);
+        mkdirSync(agentBin);
+        // Each tool would leave a mark if it ran.
+        const ran = path.join(m.root, 'ran');
+        for (const [dir, name] of [
+          [tools, 'quota'],
+          [agentBin, 'queue'],
+        ] as const) {
+          writeFileSync(path.join(dir, name), `#!/bin/sh\ntouch ${ran}\n`);
+          chmodSync(path.join(dir, name), 0o755);
+        }
+        // On this shell's PATH but not the launch agent's.
+        writeFileSync(path.join(m.env.PATH as string, 'shell-only'), '');
+        chmodSync(path.join(m.env.PATH as string, 'shell-only'), 0o755);
+        // There, but not executable.
+        writeFileSync(path.join(tools, 'plain'), '');
+        mkdirSync(m.env.OPERATOR_INBOX_LAUNCH_AGENTS_DIR as string);
+        writeFileSync(
+          path.join(
+            m.env.OPERATOR_INBOX_LAUNCH_AGENTS_DIR as string,
+            'com.operator-inbox.serve.plist',
+          ),
+          `<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>${agentBin}</string></dict></dict></plist>`,
+        );
+        mkdirSync(
+          path.join(m.env.XDG_CONFIG_HOME as string, 'operator-inbox'),
+          {
+            recursive: true,
+          },
+        );
+        writeFileSync(
+          path.join(
+            m.env.XDG_CONFIG_HOME as string,
+            'operator-inbox',
+            'widgets.json',
+          ),
+          JSON.stringify({
+            path: [tools],
+            widgets: [
+              { label: 'Quota', command: 'quota --json' },
+              { label: 'Queue', command: 'queue | head -1' },
+              { label: 'Shell', command: 'shell-only' },
+              { label: 'Plain', command: 'plain' },
+              { label: 'Greet', command: 'echo hi' },
+              { label: 'Fast', command: 'quota', intervalSeconds: 1 },
+            ],
+          }),
+        );
+        const port = yield* Effect.promise(() => listen(200));
+        const before = listing(m.root);
+
+        const report = yield* doctor(m, port);
+
+        const row = report.checks.find((c) => c.id === 'widgets');
+        expect(row?.status).toBe('warn');
+        expect(row?.detail).toContain('5 widgets in');
+        expect(row?.detail).toContain('widgets.5.intervalSeconds — at least 5');
+        expect(row?.detail).toContain(
+          "shell: shell-only is not on the launch agent's PATH",
+        );
+        expect(row?.detail).toContain('plain: plain is not on');
+        expect(row?.detail).not.toContain('quota:');
+        expect(row?.detail).not.toContain('queue:');
+        expect(row?.detail).toContain('(not checked: greet)');
         expect(listing(m.root)).toEqual(before);
       }),
   );

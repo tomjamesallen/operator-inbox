@@ -27,6 +27,7 @@ import {
 import { MACROS_FILE } from './macros';
 import { InboxMachinePort } from './schema/identifiers';
 import { joinSchemaIssuePath } from './schema-issues';
+import { WIDGETS_FILE } from './widgets';
 
 // The app's configuration: three files under
 // `$XDG_CONFIG_HOME/operator-inbox/` (default `~/.config/operator-inbox/`),
@@ -372,6 +373,9 @@ export const keybindingsPath = (xdgConfigHome: string): string =>
 
 export const macrosPath = (xdgConfigHome: string): string =>
   path.join(configDir(xdgConfigHome), MACROS_FILE);
+
+export const widgetsPath = (xdgConfigHome: string): string =>
+  path.join(configDir(xdgConfigHome), WIDGETS_FILE);
 
 // `$HOME`, read through `Config` like every other environment variable, so a
 // test's ConfigProvider decides it and no read reaches the real home folder
