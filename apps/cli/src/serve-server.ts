@@ -183,10 +183,31 @@ export const judgeLocalRequest = (
 // the older one, for any browser that ignores the first. Every answer
 // carries both, refusals included, so nothing this server sends can be
 // framed.
+const FRAME_ANCESTORS_POLICY = "frame-ancestors 'none'";
+
 export const FRAMING_HEADERS = {
-  'content-security-policy': "frame-ancestors 'none'",
+  'content-security-policy': FRAME_ANCESTORS_POLICY,
   'x-frame-options': 'DENY',
 } as const;
+
+// The framing headers put on a response the router sends, keeping any
+// Content-Security-Policy its route set (the attachment route's sandbox).
+// The framing rule goes on as a policy of its own, after a comma, and not as
+// one more directive in the route's: a browser enforces every policy in the
+// list, so the route's stays whole and nothing a route writes, a
+// `frame-ancestors` of its own included, can loosen this one.
+export const withFramingHeaders = (
+  response: HttpServerResponse.HttpServerResponse,
+): HttpServerResponse.HttpServerResponse => {
+  const own = response.headers['content-security-policy'];
+  return HttpServerResponse.setHeaders(response, {
+    ...FRAMING_HEADERS,
+    'content-security-policy':
+      own === undefined || own === ''
+        ? FRAME_ANCESTORS_POLICY
+        : `${own}, ${FRAME_ANCESTORS_POLICY}`,
+  });
+};
 
 // A refusal, framing headers and all. It needs them set here and not only by
 // the pre-response handler below: a refusal stands in for the app, so the
@@ -210,16 +231,15 @@ const refusal = (
 // before anything is judged, and NOT by mapping the response this returns:
 // `HttpRouter.serve`'s middleware wraps the sending too, so a change to the
 // response it hands back never reaches the client (that option's own doc
-// says so). The handler runs on every response the router sends; a refusal
-// is not one of those, so `refusal` sets them itself.
+// says so). The handler runs on every response the router sends, and adds
+// to a policy a route set rather than replacing it (`withFramingHeaders`); a
+// refusal is not one of those, so `refusal` sets them itself.
 export const localOnlyWith =
   (tailnet: ServeTailnet | undefined) =>
   <E, R>(app: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
     Effect.gen(function* () {
       yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-        Effect.succeed(
-          HttpServerResponse.setHeaders(response, FRAMING_HEADERS),
-        ),
+        Effect.succeed(withFramingHeaders(response)),
       );
       const request = yield* HttpServerRequest.HttpServerRequest;
       const { address } = yield* HttpServer.HttpServer;

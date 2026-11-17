@@ -17,7 +17,13 @@ import { ServedInboxMachines } from './serve-inbox-machines';
 // Only an image is sent as what it is, and only the raster types
 // (`isImageAttachment`): anything else, SVG and HTML included, is sent as
 // bytes to download, never to run in the page's origin. Every answer is
-// `nosniff`, and sandboxed, so a file opened in its own tab runs nothing.
+// `nosniff`, and carries a policy of `sandbox` and `default-src 'none'`, so a
+// file a browser renders as a document anyway, opened in its own tab, runs no
+// script, loads nothing and has no access to the app's origin. serve's
+// framing handler adds `frame-ancestors 'none'` to this policy and never
+// replaces it (`withFramingHeaders` in serve-server.ts). The policy binds
+// only the file as a document: the app's own `<img>` and lightbox still
+// draw an image from it.
 //
 // A file of an Inbox another machine holds is not in this machine's folder.
 // When this machine's log lacks the Inbox too, the read goes to the Inbox
@@ -35,7 +41,7 @@ const SEGMENT = /^[^/\\]+$/;
 const HEADERS = {
   'cache-control': 'private, max-age=31536000, immutable',
   'x-content-type-options': 'nosniff',
-  'content-security-policy': 'sandbox; default-src none',
+  'content-security-policy': "sandbox; default-src 'none'",
 } as const;
 
 const notFound = () => HttpServerResponse.text('not found\n', { status: 404 });

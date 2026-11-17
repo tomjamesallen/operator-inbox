@@ -310,6 +310,14 @@ describe('serve reads a kept file of another machine’s Inbox from that machine
       expect(page.headers['content-type']).toBe('application/octet-stream');
       expect(page.headers['content-disposition']).toMatch(/^attachment;/);
       expect(page.body).toStrictEqual(PAGE);
+      // Sandboxed and unframeable on Local as on its own machine: serve's
+      // framing handler adds to the route's policy, never replaces it.
+      for (const file of [image, page]) {
+        expect(file.headers['content-security-policy']).toBe(
+          "sandbox; default-src 'none', frame-ancestors 'none'",
+        );
+        expect(file.headers['x-frame-options']).toBe('DENY');
+      }
     }).pipe(Effect.scoped),
   );
 
@@ -387,6 +395,9 @@ describe('serve reads a kept file of another machine’s Inbox from that machine
       expect(got.headers['content-type']).toBe('application/octet-stream');
       expect(got.headers['content-disposition']).toMatch(/^attachment;/);
       expect(got.headers['set-cookie']).toBeUndefined();
+      expect(got.headers['content-security-policy']).toBe(
+        "sandbox; default-src 'none', frame-ancestors 'none'",
+      );
     }).pipe(Effect.scoped),
   );
 

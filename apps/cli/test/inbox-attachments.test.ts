@@ -309,6 +309,14 @@ describe('serve: files on an answer', () => {
             'application/octet-stream',
           );
           expect(other.headers['content-disposition']).toMatch(/^attachment;/);
+          // As sent through the whole server: the route's sandbox survives
+          // serve's framing handler, which adds its own policy beside it.
+          for (const file of [image, other]) {
+            expect(file.headers['content-security-policy']).toBe(
+              "sandbox; default-src 'none', frame-ancestors 'none'",
+            );
+            expect(file.headers['x-frame-options']).toBe('DENY');
+          }
           expect(
             (yield* get(port, '/api/attachments/x/y/missing.png')).status,
           ).toBe(404);
