@@ -7,10 +7,10 @@ import {
   removalLabel,
   undoCardRemovalAtom,
 } from '../../card-undo';
-import { composerAtom } from '../../inbox-reader';
+import { askPlaceOf, composerAtom } from '../../inbox-reader';
 import { keyHintAtom } from '../../keymap';
 
-// The notice a card's removal leaves over the answer box: "Comment removed ·
+// The notice a card's removal leaves over the answer box, or the ask box: "Comment removed ·
 // Undo", for a few seconds. It is Base UI's toast, as the chase's toasts were,
 // kept in step with the answer's newest removal (`card-undo.ts`): it goes once
 // that removal is undone, another replaces it, the answer is sent, or the box
@@ -29,8 +29,13 @@ interface UndoOffer {
 // The box on screen's newest removal.
 const undoOfferAtom = Atom.make((get): UndoOffer | undefined => {
   const composer = get(composerAtom);
-  if (composer._tag !== 'Answer' && composer._tag !== 'Held') return undefined;
-  const { key } = composer.item;
+  const key =
+    composer._tag === 'Answer' || composer._tag === 'Held'
+      ? composer.item.key
+      : composer._tag === 'Asking'
+        ? askPlaceOf(composer.inboxId)
+        : undefined;
+  if (key === undefined) return undefined;
   const removal = get(latestRemovalAtom(key));
   return removal === undefined ? undefined : { key, removal };
 });

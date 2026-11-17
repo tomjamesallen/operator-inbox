@@ -441,14 +441,24 @@ const FollowUpBox = ({
   );
 };
 
+// The question for the agent, with its macros as an answer has them: `/` at a
+// word's start opens the menu, and each macro picked is a card under the box.
+// Its cards are keyed by its place, as its files are.
 const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
   const [draft, setDraft] = useAtom(askDraftAtom(inboxId));
   const send = useAtomSet(inboxReaderAtoms.send);
   const step = useAtomSet(stepAskAtom);
   const place = askPlaceOf(inboxId);
   const { waiting } = useAtomValue(readerAskAtom(place));
+  const cards = useAtomValue(macroCardsAtom(place));
+  const askFocus = useAtomSet(askMacroFocusAtom);
   const self = useRef<HTMLTextAreaElement | null>(null);
-  const menu = useMacroMenu({ place, text: draft, setText: setDraft });
+  const menu = useMacroMenu({
+    place,
+    text: draft,
+    setText: setDraft,
+    macros: { key: place, inboxId },
+  });
   return (
     <div className="relative">
       <AskFailure place={place} inboxId={inboxId} />
@@ -475,17 +485,32 @@ const AskBox = ({ inboxId }: { readonly inboxId: InboxId }) => {
             attachTo={place}
             onKeyDown={(e) => {
               if (menu.onKeyDown(e)) return;
-              if (e.key === 'Escape') send({ type: 'AskClosed' });
+              // Tab goes from the text into the cards, while there are any.
+              const first = firstCardStop(cards);
+              if (
+                e.key === 'Tab' &&
+                !e.shiftKey &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.altKey &&
+                first !== undefined
+              ) {
+                e.preventDefault();
+                askFocus({ key: place, to: first });
+              } else if (e.key === 'Escape') send({ type: 'AskClosed' });
               else if (e.metaKey || draft !== '') return;
               // An empty box has no line for the arrows to move between.
               else if (e.key === 'ArrowDown') step(1);
               else if (e.key === 'ArrowUp') step(-1);
             }}
           />
-          <Actions label="Ask" ready={!waiting && draft.trim() !== ''} />
+          <Actions
+            label="Ask"
+            ready={!waiting && (draft.trim() !== '' || cards.length > 0)}
+          />
         </Frame>
       </AttachDrop>
-      <FileStrip place={place} />
+      <MacroCards itemKey={place} inboxId={inboxId} place={place} />
       <AttachRefusal place={place} />
     </div>
   );

@@ -4,8 +4,10 @@ import path from 'node:path';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
 import {
+  askEvents,
   CONFIG_DIR_NAME,
   decideAnswer,
+  decideOperatorAsk,
   InboxId,
   MACROS_FILE,
   type MacroInvoked,
@@ -338,6 +340,72 @@ describe('answers with macros', () => {
         ).not.toHaveProperty('macros');
       }),
     ),
+  );
+});
+
+describe('answers with an operator’s question that carries macros', () => {
+  const askWith = (text: string, macros: ReadonlyArray<MacroInvoked>) =>
+    decideAndAppend(ID, (state) =>
+      Result.map(
+        decideOperatorAsk(state, { inboxId: ID, text, macros }),
+        (event) => ({ events: askEvents(state, event), result: undefined }),
+      ),
+    );
+
+  it.effect(
+    'prints a block per macro after the question, as for an answer',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* opened;
+          yield* answer('Yes.', []);
+          yield* askWith('Wrap the rota up?', [AGENDA, PARK]);
+          const text = yield* dispatchAnswers({ inboxId: ID, json: false });
+          expect(text.split('\n\n')[1]).toBe(
+            [
+              '#2 (the operator asks) Wrap the rota up?',
+              '  Wrap the rota up?',
+              '  MACRO 1 of 2: /agenda',
+              '    instruction: Add the item to the named person’s agenda.',
+              '      Do not message them.',
+              '    person = "Mira"',
+              '    item = null',
+              '  MACRO 2 of 2: /park',
+              '    instruction: Stop work on this thread until asked.',
+              '    (no parameters)',
+            ].join('\n'),
+          );
+          const json = JSON.parse(
+            yield* dispatchAnswers({ inboxId: ID, json: true }),
+          );
+          expect(json[1]).toMatchObject({
+            operatorQuestion: true,
+            response: 'Wrap the rota up?',
+            macros: [AGENDA, PARK],
+          });
+        }),
+      ),
+  );
+
+  it.effect(
+    'a question of macros alone is titled by them, with no empty line',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* opened;
+          yield* answer('Yes.', []);
+          yield* askWith('', [PARK]);
+          const text = yield* dispatchAnswers({ inboxId: ID, json: false });
+          expect(text.split('\n\n')[1]).toBe(
+            [
+              '#2 (the operator asks) /park',
+              '  MACRO 1 of 1: /park',
+              '    instruction: Stop work on this thread until asked.',
+              '    (no parameters)',
+            ].join('\n'),
+          );
+        }),
+      ),
   );
 });
 

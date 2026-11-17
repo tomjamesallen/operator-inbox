@@ -19,9 +19,9 @@ import { failureText } from './failure';
 import { inboxBoardAtom } from './inbox';
 import { answerKey } from './inbox-queues';
 
-// Macros in the answer box: the operator's `macros.json` as serve read it, the
-// cards of the macros invoked on each answer (its draft, kept as the answer's
-// text is), and what the cards reveal. `/` at a word's start opens the menu;
+// Macros in the answer box and the ask box: the operator's `macros.json` as
+// serve read it, the cards of the macros invoked on each answer or ask (its
+// draft, kept as its text is), and what the cards reveal. `/` at a word's start opens the menu;
 // each macro picked becomes a card under the box, one field per parameter.
 // A send with a required field empty is held once, on that field; a second
 // send with the same fields empty sends them as `null`, for the agent.
@@ -172,13 +172,29 @@ export type MacroCard = typeof MacroCard.Type;
 // One answer's cards, naming its own Inbox and question as a response draft
 // does (`ResponseDraft` in `inbox.ts`), and kept the same way: in this tab's
 // sessionStorage, dropped when the cards are emptied, when the answer is sent,
-// and when the board no longer has the question waiting on the operator.
+// and when the board no longer has the question waiting on the operator. An
+// ask's cards name its Inbox and no question (`number` left out), and are
+// kept as its text is (`askDraftAtom`): until they are emptied or sent.
 export const MacroDraft = Schema.Struct({
   inboxId: InboxId,
-  number: InboxOperatorQuestionDto.fields.number,
+  number: Schema.optionalKey(InboxOperatorQuestionDto.fields.number),
   cards: Schema.Array(MacroCard),
 });
 export type MacroDraft = typeof MacroDraft.Type;
+
+/**
+ * The key of the ask box's cards for `inboxId`: the ask box's own place
+ * (`askPlaceOf` in `inbox-reader.ts`), so its files and its cards share one.
+ */
+export const askCardsKeyOf = (inboxId: InboxId): string =>
+  `${ASK_CARDS_PREFIX}${inboxId}`;
+export const ASK_CARDS_PREFIX = 'ask:';
+
+/** The key a draft's cards are found by: its answer's, or its ask's. */
+const draftKeyOf = (d: MacroDraft): string =>
+  d.number === undefined
+    ? askCardsKeyOf(d.inboxId)
+    : answerKey(d.inboxId, d.number);
 
 /** The drafts whose question still waits on the operator, as far as `board` can say. */
 export const macroDraftsStillWaiting = (
@@ -193,7 +209,9 @@ export const macroDraftsStillWaiting = (
   );
   const kept = drafts.filter(
     (d) =>
-      !onBoard.has(d.inboxId) || waiting.has(answerKey(d.inboxId, d.number)),
+      d.number === undefined ||
+      !onBoard.has(d.inboxId) ||
+      waiting.has(answerKey(d.inboxId, d.number)),
   );
   return kept.length === drafts.length ? drafts : kept;
 };
@@ -215,16 +233,18 @@ const macroDraftsAtom = Atom.make((get): ReadonlyArray<MacroDraft> => {
   return board === undefined ? drafts : macroDraftsStillWaiting(drafts, board);
 }).pipe(Atom.keepAlive);
 
-/** One answer's cards, by its key; writing an empty list drops the draft. */
+/**
+ * One answer's cards, or one ask's, by its key (`answerKey`, `askCardsKeyOf`);
+ * writing an empty list drops the draft.
+ */
 export const macroCardsAtom = Atom.family((key: string) =>
   Atom.writable(
     (get): ReadonlyArray<MacroCard> =>
-      get(macroDraftsAtom).find((d) => answerKey(d.inboxId, d.number) === key)
-        ?.cards ?? [],
+      get(macroDraftsAtom).find((d) => draftKeyOf(d) === key)?.cards ?? [],
     (ctx, draft: MacroDraft) => {
       const rest = ctx
         .get(macroDraftsAtom)
-        .filter((d) => answerKey(d.inboxId, d.number) !== key);
+        .filter((d) => draftKeyOf(d) !== key);
       ctx.set(
         storedMacroDraftsAtom,
         draft.cards.length === 0 ? rest : [...rest, draft],
@@ -232,6 +252,18 @@ export const macroCardsAtom = Atom.family((key: string) =>
     },
   ),
 );
+
+/**
+ * `moved` put after `cards`, each numbered past the others, as cards added
+ * one by one would be: an ask's cards going with its text to another Inbox.
+ */
+export const withCards = (
+  cards: ReadonlyArray<MacroCard>,
+  moved: ReadonlyArray<MacroCard>,
+): ReadonlyArray<MacroCard> => {
+  const top = cards.reduce((n, c) => Math.max(n, c.id), 0);
+  return [...cards, ...moved.map((c, i) => ({ ...c, id: top + i + 1 }))];
+};
 
 /** A card for `macro` at the end of the stack, numbered past the others. */
 export const withCard = (

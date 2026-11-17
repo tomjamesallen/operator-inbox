@@ -107,8 +107,8 @@ const sentDrawings = Schema.optionalKey(Drawings);
 // (`htmlBlocks`), fetched for the Question the page shows, so the board never
 // carries them. An optional key, so a machine on an older build still decodes.
 const htmls = Schema.optionalKey(HtmlBlocks);
-// The macros the operator invoked with their answer, in order (core's
-// `macros.ts`). An optional key, so a machine on an older build still decodes.
+// The macros the operator invoked with their answer, or with their own
+// question, in order (core's `macros.ts`). An optional key, so a machine on an older build still decodes.
 const macros = Schema.optionalKey(MacrosInvoked);
 // The operator's comments on the Question's text, in body order (core's
 // `comments.ts`). An optional key, for the same older machines.
@@ -643,6 +643,9 @@ export const AskPayload = Schema.Struct({
   highlightReply,
   // The files the operator attached, each sent whole.
   attachments: Schema.optionalKey(AttachmentUploads),
+  // The macros the operator invoked, in order, each with its instruction, as
+  // an answer carries them. With one, `text` may be empty.
+  macros,
 });
 export type AskPayload = typeof AskPayload.Type;
 

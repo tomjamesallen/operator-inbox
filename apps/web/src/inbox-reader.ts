@@ -100,12 +100,14 @@ import {
   readerQueuesOf,
 } from './inbox-reader-machine';
 import {
+  askCardsKeyOf,
   askMacroFocusAtom,
   firstMissingOf,
   macroCardsAtom,
   macroHeldAtom,
   macrosToSend,
   missingKeyOf,
+  withCards,
 } from './macros';
 
 // The zen inbox reader's Atoms: what joins the board, the machine and the
@@ -555,7 +557,8 @@ export const headOf = (item: ReaderItem): Head => {
   if (isAsked(q) && 'response' in q) {
     const { text, followsUp } = askedTextOf(q.response ?? '');
     return {
-      title: text,
+      // A question of macros alone has no text: its title names them.
+      title: text.trim() === '' ? q.title : text,
       caption: answerLabel(false, true),
       ...(followsUp === undefined
         ? {}
@@ -628,6 +631,12 @@ const macroText = (
   deferred && !(carried.length > 0 && response.trim() === '')
     ? deferralText(response)
     : response;
+
+/** The macros an operator's own question carries, in order. */
+export const askedMacrosOf = (
+  q: ReaderItem['question'],
+): ReadonlyArray<MacroInvoked> =>
+  isAsked(q) && 'macros' in q ? (q.macros ?? []) : [];
 
 /** The files a question's answer carries, or an operator's question itself. */
 export const attachmentsOf = (
@@ -980,6 +989,8 @@ interface AskWrite {
   readonly highlightReply: boolean;
   // The files the operator attached, in the order they added them.
   readonly files: ReadonlyArray<PendingFile>;
+  // The macros the operator invoked, in order: a plain ask's only.
+  readonly macros?: ReadonlyArray<MacroInvoked>;
 }
 
 /** The question just asked in `view`: the agent's newest of the operator's. */
@@ -992,7 +1003,8 @@ export const askedKeyOf = (view: InboxViewDto): string | undefined => {
     : answerKey(view.inboxId, asked.number);
 };
 
-export const askPlaceOf = (inboxId: InboxId): string => `ask:${inboxId}`;
+// The ask box's place is its cards' key too (`askCardsKeyOf`).
+export const askPlaceOf = (inboxId: InboxId): string => askCardsKeyOf(inboxId);
 export const followUpPlaceOf = (key: string): string => `follow:${key}`;
 
 export const placeOf = (composer: Composer): string | undefined => {
@@ -1046,11 +1058,20 @@ export const readerAskAtom = Atom.family((place: string) =>
               text: req.text,
               ...(req.highlightReply ? { highlightReply: true as const } : {}),
               ...(isNonEmpty(attachments) ? { attachments } : {}),
+              ...(req.macros !== undefined && isNonEmpty(req.macros)
+                ? { macros: req.macros }
+                : {}),
             },
           }),
           () => {
             registry.set(highlightReplyAtom(place), false);
             clearSentFiles(registry, place, req.files);
+            // The macros went with it; a failed send keeps their cards.
+            if (followUp === undefined) {
+              registry.set(macroCardsAtom(place), { inboxId, cards: [] });
+              registry.set(macroHeldAtom(place), undefined);
+              registry.set(cardRemovalsAtom(place), []);
+            }
             const box =
               followUp === undefined
                 ? askDraftAtom(inboxId)
@@ -1156,15 +1177,35 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       });
     } else if (composer._tag === 'Asking' && !deferred) {
       const { inboxId } = composer;
-      const write = readerAskAtom(askPlaceOf(inboxId));
+      const place = askPlaceOf(inboxId);
+      const write = readerAskAtom(place);
       const text = ctx.get(askDraftAtom(inboxId));
-      if (text.trim() === '' || ctx.get(write).waiting) return;
+      const cards = ctx.get(macroCardsAtom(place));
+      // A macro is a whole request on its own, as it is a whole answer.
+      if ((text.trim() === '' && cards.length === 0) || ctx.get(write).waiting)
+        return;
+      // Held once on an empty required field, as an answer is.
+      const missing = missingKeyOf(cards);
+      const first = firstMissingOf(cards);
+      if (
+        missing !== undefined &&
+        first !== undefined &&
+        ctx.get(macroHeldAtom(place)) !== missing
+      ) {
+        ctx.set(macroHeldAtom(place), missing);
+        ctx.set(askMacroFocusAtom, {
+          key: place,
+          to: { _tag: 'Field', ...first },
+        });
+        return;
+      }
       ctx.set(write, {
         inboxId,
         text,
         draft: text,
-        highlightReply: ctx.get(highlightReplyAtom(askPlaceOf(inboxId))),
-        files: ctx.get(pendingFilesAtom(askPlaceOf(inboxId))),
+        highlightReply: ctx.get(highlightReplyAtom(place)),
+        files: ctx.get(pendingFilesAtom(place)),
+        macros: macrosToSend(cards),
       });
     } else if (composer._tag === 'FollowUp' && !composer.held && !deferred) {
       const { key, inboxId, question } = composer.item;
@@ -1213,6 +1254,19 @@ export const pickAskInboxAtom = Atom.writable<void, InboxId>(
           held === '' ? text : `${held}\n\n${text}`,
         );
         ctx.set(askDraftAtom(from), '');
+      }
+      // Its macros go with it, after any the Inbox holds.
+      const moving = ctx.get(macroCardsAtom(askPlaceOf(from)));
+      if (moving.length > 0) {
+        ctx.set(macroCardsAtom(askPlaceOf(inboxId)), {
+          inboxId,
+          cards: withCards(
+            ctx.get(macroCardsAtom(askPlaceOf(inboxId))),
+            moving,
+          ),
+        });
+        ctx.set(macroCardsAtom(askPlaceOf(from)), { inboxId: from, cards: [] });
+        ctx.set(macroHeldAtom(askPlaceOf(from)), undefined);
       }
     }
     ctx.set(inboxReaderAtoms.send, { type: 'AskInboxPicked', inboxId });

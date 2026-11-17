@@ -183,6 +183,11 @@ export const QuestionAsked = Schema.TaggedStruct('QuestionAsked', {
   // answer carries (`InboxQuestion.askedAttachments`). Optional for the same
   // reason.
   attachments: Schema.optionalKey(Attachments),
+  // On an operator's question only: the macros they invoked with it, in the
+  // order they stacked them, each with its instruction copied in, as an
+  // answer carries them (`QuestionAnswered`). With macros, `body` may be ''.
+  // Optional for the same reason.
+  macros: Schema.optionalKey(MacrosInvoked),
 });
 export type QuestionAsked = typeof QuestionAsked.Type;
 
@@ -646,7 +651,8 @@ export interface InboxQuestion {
   // The agent's HTML blocks, by id: each its document's hash and size. The
   // operator's answer never changes one.
   readonly htmls?: HtmlBlocks;
-  // The macros the operator invoked with their answer, in order.
+  // The macros the operator invoked with their answer, or with their own
+  // question, in order.
   readonly macros?: MacrosInvoked;
   // The operator's comments on its text, sent with their answer, in body order.
   readonly comments?: QuestionComments;
@@ -837,6 +843,7 @@ export const evolveInbox = (
               ...(event.attachments === undefined
                 ? {}
                 : { attachments: event.attachments }),
+              ...(event.macros === undefined ? {} : { macros: event.macros }),
               ...(stamp === undefined
                 ? {}
                 : { askedStamp: stamp, answeredStamp: stamp }),
@@ -1809,27 +1816,51 @@ export const decideOperatorAsk = (
     readonly highlightReply?: true;
     // The files they attached, already kept on disk.
     readonly attachments?: ReadonlyArray<Attachment>;
+    // The macros they invoked, in order, each with its instruction. With one,
+    // the text may be empty: a macro is a complete request on its own, as it
+    // is a complete answer.
+    readonly macros?: ReadonlyArray<MacroInvoked>;
   },
 ): Result.Result<QuestionAsked, InboxRefusal> => {
   if (!state.opened) return notFound(input.inboxId);
   const text = input.text.trim();
-  if (text.length === 0) return refuse('empty', 'a question cannot be empty');
+  const macros = input.macros ?? [];
+  if (text.length === 0 && macros.length === 0)
+    return refuse('empty', 'a question cannot be empty');
   const attached = checkAttachments(input.attachments ?? []);
   if (Result.isFailure(attached))
     return refuse('bad-attachment', attached.failure);
+  const badMacro = macrosProblem(macros, 'a question');
+  if (badMacro !== undefined) return refuse('bad-macro', badMacro);
   const highest = state.questions.reduce((n, q) => Math.max(n, q.number), 0);
   return Result.succeed({
     _tag: 'QuestionAsked',
     inboxId: input.inboxId,
     number: QuestionNumber.make(highest + 1),
-    title: operatorQuestionTitle(text),
+    // A question of macros alone is titled by them, so a list shows it.
+    title: operatorQuestionTitle(
+      text.length > 0 ? text : macros.map((m) => `/${m.macro}`).join(' '),
+    ),
     body: text,
     operatorQuestion: true,
     ...(input.highlightReply === undefined
       ? {}
       : { highlightReply: input.highlightReply }),
     ...attachmentsOf(attached.success),
+    ...(isNonEmptyMacros(macros) ? { macros } : {}),
   });
+};
+
+// Why `macros` cannot ride on a write, if they cannot: too many, or one with
+// no instruction, which would tell the agent nothing.
+const macrosProblem = (
+  macros: ReadonlyArray<MacroInvoked>,
+  carrier: string,
+): string | undefined => {
+  if (macros.length > MAX_MACROS_PER_ANSWER)
+    return `${carrier} carries at most ${MAX_MACROS_PER_ANSWER} macros, not ${macros.length}`;
+  const blank = macros.find((m) => m.instruction.trim().length === 0);
+  return blank === undefined ? undefined : `/${blank.macro} has no instruction`;
 };
 
 // Attachments as an event carries them: the key left out for none.
@@ -1967,14 +1998,8 @@ export const decideAnswer = (
     );
   const badComment = comments.map(commentProblem).find((p) => p !== undefined);
   if (badComment !== undefined) return refuse('bad-comment', badComment);
-  if (macros.length > MAX_MACROS_PER_ANSWER)
-    return refuse(
-      'bad-macro',
-      `an answer carries at most ${MAX_MACROS_PER_ANSWER} macros, not ${macros.length}`,
-    );
-  const blank = macros.find((m) => m.instruction.trim().length === 0);
-  if (blank !== undefined)
-    return refuse('bad-macro', `/${blank.macro} has no instruction`);
+  const badMacro = macrosProblem(macros, 'an answer');
+  if (badMacro !== undefined) return refuse('bad-macro', badMacro);
   const unknown = Object.keys(input.drawings ?? {}).find(
     (id) => q.drawings?.[id] === undefined,
   );
@@ -1999,7 +2024,7 @@ export const decideAnswer = (
   }));
 };
 
-/** The most macros one answer may carry. */
+/** The most macros one answer, or one operator's question, may carry. */
 export const MAX_MACROS_PER_ANSWER = 20;
 
 const isNonEmptyComments = (

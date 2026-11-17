@@ -21,6 +21,7 @@ import { pickCrumbAtom } from '../../inbox-rail';
 import {
   answerOf,
   askedAttachmentsOf,
+  askedMacrosOf,
   attachmentsOf,
   followUpsOf,
   headOf,
@@ -332,6 +333,8 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
   const asked = isAsked(item.question)
     ? attachmentsOf(item.question)
     : askedAttachmentsOf(item.question);
+  // The macros an operator's own question carried.
+  const askedMacros = askedMacrosOf(item.question);
   // Under the body, the files it does not already show in place.
   const beside = attachmentsBesideBody(item.question.bodyImages ?? [], asked);
   const state = isSending(item)
@@ -378,6 +381,7 @@ const Content = ({ item }: { readonly item: ReaderItem }) => {
         </div>
       </BodyFrame>
       {beside.length > 0 && <AttachmentList attachments={beside} />}
+      {askedMacros.length > 0 && <SentMacros macros={askedMacros} />}
       {answer !== undefined &&
         (answer.text !== '' ||
           answer.macros.length > 0 ||

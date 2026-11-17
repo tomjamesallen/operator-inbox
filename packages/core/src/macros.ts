@@ -3,7 +3,8 @@ import { schemaIssueLines } from './schema-issues';
 
 // Macros: slash commands the operator configures in `macros.json`, each with an
 // instruction for the agent and typed parameters. The operator invokes them in
-// the answer box; the answer then carries, for each one, its name, its
+// the answer box or the ask box; the answer, or the operator's question, then
+// carries, for each one, its name, its
 // instruction as the config held it, and its arguments, enough for the agent to
 // act on it without asking what it means.
 //

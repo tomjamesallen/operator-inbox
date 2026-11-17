@@ -959,6 +959,66 @@ describe('macros as stored in the log', () => {
   });
 });
 
+// Macros on an operator's own question: with its text, and alone (an empty
+// body, titled by its macros), and carried by a move, which came after
+// `inbox-macro-events.jsonl` was pinned and so have their own file.
+const ASK_MACRO_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(3),
+    title: 'Can you check the rota?',
+    body: 'Can you check the rota?',
+    operatorQuestion: true,
+    macros: [AGENDA, LABEL],
+  },
+  {
+    _tag: 'QuestionAsked',
+    inboxId: INBOX_A,
+    number: q(4),
+    title: '/park',
+    body: '',
+    operatorQuestion: true,
+    macros: [PARK],
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(4),
+    toInboxId: INBOX_B,
+    toNumber: q(2),
+    question: {
+      title: '/park',
+      body: '',
+      revision: rev(1),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: '',
+      withdrawn: false,
+      operatorQuestion: true,
+      macros: [PARK],
+    },
+  },
+];
+
+describe('macros on an operator’s question as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = ASK_MACRO_EVENTS.map((e) => `${encodeEvent(e)}\n`).join('');
+    expectGolden('inbox-ask-macro-events.jsonl', lines);
+    const read = golden('inbox-ask-macro-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(ASK_MACRO_EVENTS);
+  });
+
+  it('reads an operator’s question logged before macros with none', () => {
+    const decoded = decodeEvent(
+      `{"_tag":"QuestionAsked","inboxId":"${INBOX_A}","number":3,"title":"Why?","body":"Why?","operatorQuestion":true}`,
+    );
+    expect(decoded).not.toHaveProperty('macros');
+  });
+});
+
 // Group archives, which came after the event goldens above were pinned and so
 // have their own file.
 const GROUP_ARCHIVE_EVENTS: ReadonlyArray<InboxEvent> = [
@@ -1231,6 +1291,10 @@ const DTOS = [
   dtoCase('dto-payload-ask-highlight-reply.json', AskPayload, {
     text: 'Can you check X?',
     highlightReply: true,
+  }),
+  dtoCase('dto-payload-ask-macros.json', AskPayload, {
+    text: '',
+    macros: [AGENDA, PARK],
   }),
   dtoCase('dto-payload-pin-group.json', PinPayload, {
     pinned: true,

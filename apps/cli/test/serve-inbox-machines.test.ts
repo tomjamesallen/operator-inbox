@@ -483,6 +483,37 @@ describe('operator-inbox serve — Inbox machines', () => {
   );
 
   it.live(
+    'an ask to the machine’s Inbox lands in the machine’s log with its macros',
+    () =>
+      Effect.gen(function* () {
+        const { local, machine } = yield* twoMachines;
+        yield* local.api.inbox.board({ query: {} });
+        const PARK = {
+          macro: 'park',
+          instruction: 'Stop work on this thread until asked.',
+          args: {},
+        };
+        const view = yield* local.api.inbox.ask({
+          query: {},
+          params: { inboxId: LAPTOP_ID },
+          payload: { text: 'Wrap this up?', macros: [PARK] },
+        });
+        expect(view.machine?.label).toBe('laptop');
+        const asked = view.awaitingAgent.find(
+          (q) => q.operatorQuestion === true,
+        );
+        expect(asked?.macros).toEqual([PARK]);
+        const onMachine = yield* inboxView(LAPTOP_ID).pipe(
+          Effect.provide(machine.context),
+        );
+        expect(
+          onMachine.awaitingAgent.find((q) => q.operatorQuestion === true)
+            ?.macros,
+        ).toEqual([PARK]);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live(
     'rename, pin and archive of the machine’s Inbox land on the machine',
     () =>
       Effect.gen(function* () {
