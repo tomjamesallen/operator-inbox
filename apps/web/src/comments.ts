@@ -41,11 +41,49 @@ export interface Anchor {
   readonly at: CommentAnchor;
 }
 
+// Whether the stretch between two points holds no words.
+const blank = (from: Node, fromOffset: number, to: Node, toOffset: number) => {
+  const r = document.createRange();
+  r.setStart(from, fromOffset);
+  r.setEnd(to, toOffset);
+  return r.toString().trim() === '';
+};
+
+// The one part a range's words lie in, and the range cut to that part. A
+// triple-click selects a paragraph by ending the range at the start of
+// whatever follows it: the next paragraph, or, after a part's last block,
+// something outside the part (the next part, the highlights' layer). So an
+// end outside the part is brought back to the part's end, and a start outside
+// it to the part's start, as long as only white space is cut off. A span whose
+// words reach into two parts lies in neither.
+const cutToPart = (
+  parts: ReadonlyArray<Element>,
+  range: Range,
+): { readonly part: number; readonly range: Range } | undefined => {
+  for (const [part, root] of parts.entries()) {
+    if (!range.intersectsNode(root)) continue;
+    const cut = document.createRange();
+    cut.selectNodeContents(root);
+    if (root.contains(range.startContainer))
+      cut.setStart(range.startContainer, range.startOffset);
+    else if (!blank(range.startContainer, range.startOffset, root, 0)) continue;
+    if (root.contains(range.endContainer))
+      cut.setEnd(range.endContainer, range.endOffset);
+    else if (
+      !blank(root, root.childNodes.length, range.endContainer, range.endOffset)
+    )
+      continue;
+    return { part, range: cut };
+  }
+  return undefined;
+};
+
 /**
- * A selection's anchor, when it lies inside one rendered part of `wrapper`.
- * White space at either end of the span is left out, so a drag that starts or
- * ends between words quotes the words alone. A span across parts (text, a
- * diagram, text) is not one.
+ * A selection's anchor, when its words lie inside one rendered part of
+ * `wrapper`. White space at either end of the span is left out, so a drag
+ * that starts or ends between words quotes the words alone, and a
+ * triple-clicked paragraph quotes the paragraph alone. A span across parts
+ * (text, a diagram, text) is not one.
  */
 export const anchorIn = (
   wrapper: Element,
@@ -53,14 +91,13 @@ export const anchorIn = (
 ): Anchor | undefined => {
   if (range.collapsed) return undefined;
   const parts = partsOf(wrapper);
-  const part = parts.findIndex(
-    (p) => p.contains(range.startContainer) && p.contains(range.endContainer),
-  );
-  const root = parts[part];
-  if (root === undefined) return undefined;
+  const cut = cutToPart(parts, range);
+  const root = cut === undefined ? undefined : parts[cut.part];
+  if (cut === undefined || root === undefined) return undefined;
+  const { part } = cut;
   const text = root.textContent ?? '';
-  let start = offsetIn(root, range.startContainer, range.startOffset);
-  let end = offsetIn(root, range.endContainer, range.endOffset);
+  let start = offsetIn(root, cut.range.startContainer, cut.range.startOffset);
+  let end = offsetIn(root, cut.range.endContainer, cut.range.endOffset);
   while (start < end && /\s/.test(text[start] ?? '')) start++;
   while (end > start && /\s/.test(text[end - 1] ?? '')) end--;
   if (end <= start) return undefined;
@@ -122,20 +159,33 @@ export interface CommentSelection {
 const visibleRects = (range: Range): ReadonlyArray<DOMRect> =>
   [...range.getClientRects()].filter((r) => r.width > 0.5);
 
+const wrapperOf = (node: Node): Element | undefined =>
+  (node instanceof Element ? node : node.parentElement)?.closest(
+    `[${COMMENTABLE}]`,
+  ) ?? undefined;
+
 /** The document's selection, when it lies in one commentable body. Reads the page. */
 export const readCommentSelection = (): CommentSelection | undefined => {
   const sel = document.getSelection();
   if (sel === null || sel.rangeCount === 0) return undefined;
   const range = sel.getRangeAt(0);
-  const from = range.commonAncestorContainer;
-  const at = from instanceof Element ? from : from.parentElement;
-  const wrapper = at?.closest(`[${COMMENTABLE}]`);
-  const key = wrapper?.getAttribute(COMMENTABLE);
-  if (wrapper === null || wrapper === undefined || key == null)
-    return undefined;
-  const anchor = anchorIn(wrapper, range);
-  if (anchor === undefined) return undefined;
-  const last = visibleRects(range).at(-1);
+  // The body is the one the range's start is in, or else its end's: a
+  // triple-clicked last paragraph ends past its body, at whatever follows.
+  const found = [range.startContainer, range.endContainer]
+    .map(wrapperOf)
+    .flatMap((wrapper) => {
+      const anchor =
+        wrapper === undefined ? undefined : anchorIn(wrapper, range);
+      return wrapper === undefined || anchor === undefined
+        ? []
+        : [{ wrapper, anchor }];
+    })[0];
+  const key = found?.wrapper.getAttribute(COMMENTABLE);
+  if (found === undefined || key == null) return undefined;
+  const { wrapper, anchor } = found;
+  // The button goes at the end of the quoted words, not of the white space
+  // or the next block the selection reached into.
+  const last = visibleRects(rangeIn(wrapper, anchor) ?? range).at(-1);
   const origin = wrapper.getBoundingClientRect();
   return {
     key,
