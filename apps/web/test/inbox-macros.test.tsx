@@ -176,6 +176,31 @@ describe('the macro menu', () => {
 });
 
 describe('a macro card', () => {
+  it('wraps a text value over several lines and sends it whole', async () => {
+    await withMacros();
+    await invoke('agenda', 'Go ahead. ');
+    fireEvent.click(screen.getByRole('radio', { name: 'Tobin' }));
+    const item = screen.getByRole('textbox', { name: 'item' });
+    // A textarea, so a long or multi-line value wraps as the answer box does.
+    expect(item).toBeInstanceOf(HTMLTextAreaElement);
+    // Enter in it is a new line: nothing claims the key.
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    item.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    expect(serve.posts).toHaveLength(0);
+    fireEvent.change(item, { target: { value: 'First line\nsecond line' } });
+    send();
+    await waitFor(() => expect(serve.posts).toHaveLength(1));
+    expect(serve.posts[0]?.body).toMatchObject({
+      macros: [{ macro: 'agenda', args: { item: 'First line\nsecond line' } }],
+    });
+  });
+
   it('sends its arguments and instruction with the answer, in order', async () => {
     await withMacros();
     await invoke('agenda', 'Go ahead with the rota. ');
@@ -286,7 +311,7 @@ describe('a macro card', () => {
     await invoke('todo');
     await invoke('agenda');
     const field = card('todo')?.querySelector<HTMLElement>(
-      'input[aria-label="text"]',
+      'textarea[aria-label="text"]',
     );
     if (field == null) throw new Error('no field');
     field.focus();
