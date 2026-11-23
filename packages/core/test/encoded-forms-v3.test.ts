@@ -1023,6 +1023,75 @@ describe('macros on an operator’s question as stored in the log', () => {
   });
 });
 
+// Macros on a comment: a comment with its words and a macro, one of macros
+// alone (no words), and carried by a move, which came after the comments and
+// the macro goldens above and so have their own file.
+const ON_ROWS = {
+  quote: 'Anything over 50,000 rows is streamed',
+  prefix: 'Small exports are built in memory. ',
+  suffix: ' to the file as it is read.',
+  at: { part: 0, start: 35, end: 72 },
+};
+const COMMENT_MACRO_EVENTS: ReadonlyArray<InboxEvent> = [
+  {
+    _tag: 'QuestionAnswered',
+    inboxId: INBOX_A,
+    number: q(5),
+    response: 'Fine otherwise.',
+    comments: [
+      { ...ON_ROWS, text: 'Where does 50,000 come from?', macros: [AGENDA] },
+      {
+        quote: 'as it is read',
+        prefix: ' to the file ',
+        suffix: '.',
+        at: { part: 0, start: 85, end: 98 },
+        text: '',
+        macros: [PARK, LABEL],
+      },
+    ],
+  },
+  {
+    _tag: 'QuestionMoved',
+    inboxId: INBOX_A,
+    number: q(5),
+    toInboxId: INBOX_B,
+    toNumber: q(3),
+    question: {
+      title: 'Moved question',
+      body: '',
+      revision: rev(1),
+      metadata: {},
+      state: 'awaiting-agent',
+      response: '',
+      withdrawn: false,
+      comments: [{ ...ON_ROWS, text: '', macros: [PARK] }],
+    },
+  },
+];
+
+describe('macros on a comment as stored in the log', () => {
+  it('encodes to its golden JSON lines and decodes back', () => {
+    const lines = COMMENT_MACRO_EVENTS.map((e) => `${encodeEvent(e)}\n`).join(
+      '',
+    );
+    expectGolden('inbox-comment-macro-events.jsonl', lines);
+    const read = golden('inbox-comment-macro-events.jsonl')
+      .split('\n')
+      .filter(Boolean);
+    expect(read.map((l) => decodeEvent(l))).toStrictEqual(COMMENT_MACRO_EVENTS);
+  });
+
+  it('reads a comment logged before comments took macros with none', () => {
+    const decoded = decodeEvent(
+      `{"_tag":"QuestionAnswered","inboxId":"${INBOX_A}","number":1,"response":"","comments":[{"quote":"rows","prefix":"","suffix":"","at":{"part":0,"start":0,"end":4},"text":"Why?"}]}`,
+    );
+    expect(decoded).toMatchObject({ comments: [{ text: 'Why?' }] });
+    expect(
+      decoded._tag === 'QuestionAnswered' ? decoded.comments?.[0] : undefined,
+    ).not.toHaveProperty('macros');
+  });
+});
+
 // Group archives, which came after the event goldens above were pinned and so
 // have their own file.
 const GROUP_ARCHIVE_EVENTS: ReadonlyArray<InboxEvent> = [
@@ -1394,6 +1463,11 @@ const DTOS = [
     response: '',
     seenRevision: rev(1),
     macros: [AGENDA, PARK],
+  }),
+  dtoCase('dto-payload-answer-comment-macros.json', AnswerPayload, {
+    response: '',
+    seenRevision: rev(1),
+    comments: [{ ...ON_ROWS, text: '', macros: [AGENDA, PARK] }],
   }),
   dtoCase('dto-payload-ask-highlight-reply.json', AskPayload, {
     text: 'Can you check X?',

@@ -5,14 +5,23 @@ import {
   type QuestionComment,
 } from '@operator-inbox/core/api';
 import { Atom } from 'effect/reactivity';
-import { cardRefOf, focusedMacroCardAtom, type MacroFocus } from './macros';
+import {
+  cardRefOf,
+  focusedMacroCardAtom,
+  type MacroCard,
+  type MacroFocus,
+  type MacroMenu,
+  macrosToSend,
+} from './macros';
 
 // Comments on a Question's text: select a span of the body, press `c` (or the
 // floating button, the context menu, ⌘⌥M), and a card for the comment joins
 // the stack under the answer box, ahead of the macros. The span stays lit in
 // the body, drawn as boxes behind the text from the Range's client rects, so
-// the body's HTML is never touched (`comment-body.tsx`). Every written
-// comment rides on the answer (core's `comments.ts`).
+// the body's HTML is never touched (`comment-body.tsx`). `/` in a comment's
+// field opens the answer box's macro menu, and each macro picked is a card
+// nested under the field, acting on the comment's quote. Every comment with
+// words or a macro rides on the answer (core's `comments.ts`).
 //
 // The drafts live in memory, by answer key: a reload starts afresh.
 
@@ -244,6 +253,8 @@ export interface CommentDraft extends Anchor {
   // Its card's number among this answer's, never reused while it is open.
   readonly id: number;
   readonly text: string;
+  // The macros invoked on it, as the answer's own cards are (`macros.ts`).
+  readonly macros: ReadonlyArray<MacroCard>;
 }
 
 /** One answer's comments, by its key, in the order made. Memory only. */
@@ -256,23 +267,32 @@ export const commentsInOrderAtom = Atom.family((key: string) =>
   Atom.make((get) => commentsInBodyOrder(get(commentsAtom(key)))),
 );
 
-/** What the answer carries: the written comments only, in body order. */
+// A comment is sent when it has words or a macro: a macro is a whole comment
+// on its own, as it is a whole answer.
+const isSent = (c: CommentDraft): boolean =>
+  c.text.trim() !== '' || c.macros.length > 0;
+
+/** What the answer carries: the comments with words or macros, in body order. */
 export const commentsToSend = (
   drafts: ReadonlyArray<CommentDraft>,
 ): ReadonlyArray<QuestionComment> =>
   commentsInBodyOrder(drafts)
-    .filter((c) => c.text.trim() !== '')
-    .map(({ quote, prefix, suffix, at, text }) => ({
-      quote,
-      prefix,
-      suffix,
-      at,
-      text: text.trim(),
-    }));
+    .filter(isSent)
+    .map(({ quote, prefix, suffix, at, text, macros }) => {
+      const [first, ...rest] = macrosToSend(macros);
+      return {
+        quote,
+        prefix,
+        suffix,
+        at,
+        text: text.trim(),
+        ...(first === undefined ? {} : { macros: [first, ...rest] }),
+      };
+    });
 
-/** Whether any comment is written, so the answer may be comments alone. */
+/** Whether any comment would be sent, so the answer may be comments alone. */
 export const isCommented = (drafts: ReadonlyArray<CommentDraft>): boolean =>
-  drafts.some((c) => c.text.trim() !== '');
+  drafts.some(isSent);
 
 // --- the cards ---------------------------------------------------------------------
 
@@ -289,11 +309,11 @@ export const commentStop = (id: number): MacroFocus => ({
 export const commentCardRef = (key: string, id: number): string =>
   cardRefOf(key, commentCardId(id));
 
-/** The comment a card ref names, if it names one. */
+/** The comment a card ref names, its own or one of its macros', if it names one. */
 export const commentOfCardRef = (
   ref: string | undefined,
 ): { readonly key: string; readonly id: number } | undefined => {
-  const m = ref?.match(/^(.*)#c(\d+)$/);
+  const m = ref?.match(/^(.*)#c(\d+)(?:m\d+)?$/);
   return m?.[1] === undefined || m[2] === undefined
     ? undefined
     : { key: m[1], id: Number(m[2]) };
@@ -342,7 +362,7 @@ export const startCommentAtom = Atom.writable(
     if (same === undefined)
       ctx.set(commentsAtom(req.key), [
         ...comments,
-        { id, ...req.anchor, text: '' },
+        { id, ...req.anchor, text: '', macros: [] },
       ]);
     ctx.set(commentFocusAskedAtom, { key: req.key, id });
   },
@@ -367,6 +387,33 @@ export const setCommentTextAtom = Atom.writable(
         .get(commentsAtom(req.key))
         .map((c) => (c.id === req.id ? { ...c, text: req.text } : c)),
     ),
+);
+
+/** Write comment `id`'s macro cards. */
+export const setCommentMacrosAtom = Atom.writable(
+  () => undefined,
+  (
+    ctx,
+    req: {
+      readonly key: string;
+      readonly id: number;
+      readonly macros: ReadonlyArray<MacroCard>;
+    },
+  ): void =>
+    ctx.set(
+      commentsAtom(req.key),
+      ctx
+        .get(commentsAtom(req.key))
+        .map((c) => (c.id === req.id ? { ...c, macros: req.macros } : c)),
+    ),
+);
+
+/**
+ * The `/` menu of each comment's field, by its card ref (`commentCardRef`):
+ * its own, so the answer box's menu (`macroMenuAtom`) stays the answer's.
+ */
+export const commentMacroMenuAtom = Atom.family((_ref: string) =>
+  Atom.make<MacroMenu | undefined>(undefined),
 );
 
 export const removeCommentAtom = Atom.writable(

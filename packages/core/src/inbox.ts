@@ -1998,7 +1998,11 @@ export const decideAnswer = (
     );
   const badComment = comments.map(commentProblem).find((p) => p !== undefined);
   if (badComment !== undefined) return refuse('bad-comment', badComment);
-  const badMacro = macrosProblem(macros, 'an answer');
+  const badMacro =
+    macrosProblem(macros, 'an answer') ??
+    comments
+      .map((c) => macrosProblem(c.macros ?? [], `the comment on “${c.quote}”`))
+      .find((p) => p !== undefined);
   if (badMacro !== undefined) return refuse('bad-macro', badMacro);
   const unknown = Object.keys(input.drawings ?? {}).find(
     (id) => q.drawings?.[id] === undefined,

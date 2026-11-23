@@ -295,7 +295,7 @@ The Processed queue shows it as "You deferred to the agent:", so deferrals can b
 
 ### Macros on an answer, or on a Question the operator asks you
 
-The operator can add **macros** to an answer, a deferral, or a Question they ask you: short commands they configured, such as `/todo` or `/park`, each with an instruction written for you and the values they filled in. `answers` prints one block per macro after the answer's text, in the order the operator added them:
+The operator can add **macros** to an answer, a deferral, a comment on your Question's text, or a Question they ask you: short commands they configured, such as `/todo` or `/park`, each with an instruction written for you and the values they filled in. `answers` prints one block per macro after the answer's text, in the order the operator added them:
 
 ```text
   MACRO 1 of 2: /todo
@@ -311,7 +311,20 @@ Under `--json` they are `"macros": [{ "macro", "instruction", "args" }]`. An ans
 3. **Say in the session what you did for each macro**, one line each: `/todo: added "Book the room" at priority 2`. If one cannot be done, say why, and carry on with the rest.
 4. Run `operator-inbox done <code>` once they are all carried out, as for any answer.
 
-An answer may also carry the operator's **comments** on quoted spans of your Question, printed after its text as a numbered block of `On “quote”: comment` lines (`"comments": [{ "quote", "prefix", "suffix", "at", "text" }]` under `--json`): read each as part of the answer, about that span.
+An answer may also carry the operator's **comments** on quoted spans of your Question, printed after its text as a numbered block of `On “quote”: comment` lines (`"comments": [{ "quote", "prefix", "suffix", "at", "text", "macros" }]` under `--json`): read each as part of the answer, about that span.
+
+A comment can carry macros of its own. They are printed inside the comment, after its words, each saying which comment's quote it applies to; a comment of macros alone reads `(no words; its macros only)` where its words would be:
+
+```text
+  COMMENTS on the question (1):
+  1. On “Anything over 50,000 rows is streamed”: Is that the right line?
+     MACRO 1 of 1 on comment 1: /show-me
+       applies to: the text comment 1 quotes, “Anything over 50,000 rows is streamed”, not the whole question
+       instruction: Show the operator what this looks like.
+       focus = "the edge case"
+```
+
+Carry out a comment's macros by the rules above, with one difference: each acts on **the text that comment quotes**, read with that comment's words, not on the whole Question. Under `--json` they are that comment's `"macros"`, in the answer's shape.
 
 ### An answer that carries files
 

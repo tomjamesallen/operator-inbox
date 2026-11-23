@@ -249,7 +249,7 @@ const SentMacros = ({
 );
 
 // The comments an answer carried, numbered as the body's highlights are: the
-// quote, then what was said about it.
+// quote, then what was said about it, then the macros invoked on it.
 const SentComments = ({
   comments,
 }: {
@@ -266,10 +266,11 @@ const SentComments = ({
         className="flex items-baseline gap-s2"
       >
         <span className="shrink-0 font-medium text-yellow">❝ {i + 1}</span>
-        <span className="min-w-0">
+        <div className="min-w-0">
           <span className="text-fg/40 italic">“{c.quote}”</span>{' '}
           <span className="whitespace-pre-wrap text-fg/70">{c.text}</span>
-        </span>
+          {c.macros !== undefined && <SentMacros macros={c.macros} />}
+        </div>
       </li>
     ))}
   </ol>
