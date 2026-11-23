@@ -65,12 +65,8 @@ import { InboxActions, LitActions } from './colophon';
 import { edgeFade, fadeEdges } from './edge-fade';
 import { Icon, Tip } from './icon';
 import { ListenControl } from './listen-control';
-import {
-  firstCardStop,
-  MacroCards,
-  MacroMenuList,
-  useMacroMenu,
-} from './macro-cards';
+import { firstCardStop, MacroCards } from './macro-cards';
+import { MacroMenuList, useMacroMenu } from './macro-menu';
 import { InboxMenuButton } from './row-menu';
 import { UndoNotice } from './undo-notice';
 

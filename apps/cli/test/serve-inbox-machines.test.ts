@@ -483,6 +483,39 @@ describe('operator-inbox serve — Inbox machines', () => {
   );
 
   it.live(
+    'an answer to the machine’s Inbox carries its comments’ macros there',
+    () =>
+      Effect.gen(function* () {
+        const { local, machine } = yield* twoMachines;
+        yield* local.api.inbox.board({ query: {} });
+        const SHOW_ME = {
+          macro: 'show-me',
+          instruction: 'Show the operator what this looks like.',
+          args: { focus: 'the edge case' },
+        };
+        const comment = {
+          quote: 'main',
+          prefix: '',
+          suffix: '',
+          at: { part: 0, start: 0, end: 4 },
+          text: '',
+          macros: [SHOW_ME],
+        } as const;
+        const view = yield* local.api.inbox.answer({
+          query: {},
+          params: { inboxId: LAPTOP_ID, number: n(1) },
+          payload: { response: '', seenRevision: r(1), comments: [comment] },
+        });
+        expect(view.machine?.label).toBe('laptop');
+        expect(view.awaitingAgent[0]?.comments).toEqual([comment]);
+        const onMachine = yield* inboxView(LAPTOP_ID).pipe(
+          Effect.provide(machine.context),
+        );
+        expect(onMachine.awaitingAgent[0]?.comments).toEqual([comment]);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live(
     'an ask to the machine’s Inbox lands in the machine’s log with its macros',
     () =>
       Effect.gen(function* () {

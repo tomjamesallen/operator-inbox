@@ -68,7 +68,12 @@ export const CardShell = ({
       aria-label={label}
       tabIndex={stop ? 0 : undefined}
       onFocus={(e: FocusEvent<HTMLElement>) => {
-        setFocused(cardRef);
+        // A card nested in this one (a comment's macro) is the focused one
+        // while the focus is in it, so its "i" and its removal are its own.
+        const inner =
+          e.target instanceof Element &&
+          e.target.closest('[data-macro-card]') !== e.currentTarget;
+        if (!inner) setFocused(cardRef);
         if (e.target instanceof HTMLElement) reveal(e.currentTarget, e.target);
       }}
       // After the field has grown to its new line, on the next frame.

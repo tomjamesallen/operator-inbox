@@ -488,6 +488,87 @@ describe('answers with comments', () => {
       ),
   );
 
+  const SHOW_ME: MacroInvoked = {
+    macro: 'show-me',
+    instruction: 'Show the operator what this looks like.\nUse a picture.',
+    args: { focus: 'the edge case', depth: null },
+  };
+
+  it.effect(
+    'nests each comment’s macros inside it, after its words, in text and json',
+    () =>
+      provide(
+        Effect.gen(function* () {
+          yield* opened;
+          yield* commented(
+            'Ship it.',
+            [
+              { ...NOBODY, macros: [SHOW_ME, PARK] },
+              { ...CHECKLIST, text: '', macros: [PARK] },
+            ],
+            [PARK],
+          );
+          expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+            [
+              '#1 What next?',
+              '  Ship it.',
+              '  COMMENTS on the question (2):',
+              '  1. On “checklist”: (no words; its macros only)',
+              '     MACRO 1 of 1 on comment 1: /park',
+              '       applies to: the text comment 1 quotes, “checklist”, not the whole question',
+              '       instruction: Stop work on this thread until asked.',
+              '       (no parameters)',
+              '  2. On “nobody could predict”: Say which scripts break.',
+              '     The nightly export is one.',
+              '     MACRO 1 of 2 on comment 2: /show-me',
+              '       applies to: the text comment 2 quotes, “nobody could predict”, not the whole question',
+              '       instruction: Show the operator what this looks like.',
+              '         Use a picture.',
+              '       focus = "the edge case"',
+              '       depth = null',
+              '     MACRO 2 of 2 on comment 2: /park',
+              '       applies to: the text comment 2 quotes, “nobody could predict”, not the whole question',
+              '       instruction: Stop work on this thread until asked.',
+              '       (no parameters)',
+              '  MACRO 1 of 1: /park',
+              '    instruction: Stop work on this thread until asked.',
+              '    (no parameters)',
+            ].join('\n'),
+          );
+          const json = JSON.parse(
+            yield* dispatchAnswers({ inboxId: ID, json: true }),
+          );
+          expect(json[0].comments).toStrictEqual([
+            { ...CHECKLIST, text: '', macros: [PARK] },
+            { ...NOBODY, macros: [SHOW_ME, PARK] },
+          ]);
+          expect(json[0].macros).toStrictEqual([PARK]);
+        }),
+      ),
+  );
+
+  it.effect('a comment of macros alone is a whole answer', () =>
+    provide(
+      Effect.gen(function* () {
+        yield* opened;
+        yield* commented('', [{ ...CHECKLIST, text: '', macros: [SHOW_ME] }]);
+        expect(yield* dispatchAnswers({ inboxId: ID, json: false })).toBe(
+          [
+            '#1 What next?',
+            '  COMMENTS on the question (1):',
+            '  1. On “checklist”: (no words; its macros only)',
+            '     MACRO 1 of 1 on comment 1: /show-me',
+            '       applies to: the text comment 1 quotes, “checklist”, not the whole question',
+            '       instruction: Show the operator what this looks like.',
+            '         Use a picture.',
+            '       focus = "the edge case"',
+            '       depth = null',
+          ].join('\n'),
+        );
+      }),
+    ),
+  );
+
   it.effect('an answer with no comments has no block and no key', () =>
     provide(
       Effect.gen(function* () {

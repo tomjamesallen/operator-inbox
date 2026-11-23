@@ -32,6 +32,7 @@ import { clockAtom, nowMillis } from './clock';
 import {
   type Anchor,
   commentsAtom,
+  commentsInOrderAtom,
   commentsToSend,
   startCommentAtom,
 } from './comments';
@@ -1157,7 +1158,8 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       const cards = ctx.get(macroCardsAtom(item.key));
       // A written comment can be the whole answer; one never written is not
       // sent. A deferral carries them too.
-      const comments = commentsToSend(ctx.get(commentsAtom(item.key)));
+      const drafts = ctx.get(commentsInOrderAtom(item.key));
+      const comments = commentsToSend(drafts);
       const files = ctx.get(pendingFilesAtom(answerPlaceOf(item.key)));
       if (
         (response.trim() === '' &&
@@ -1172,9 +1174,10 @@ export const sendComposerAtom = Atom.writable<void, boolean>(
       )
         return;
       // A required macro field left empty holds the send once, on that
-      // field; the same fields still empty at the next send go as `null`.
-      const missing = missingKeyOf(cards);
-      const first = firstMissingOf(cards);
+      // field, a comment's macros' among them; the same fields still empty
+      // at the next send go as `null`.
+      const missing = missingKeyOf(cards, drafts);
+      const first = firstMissingOf(cards, drafts);
       if (
         missing !== undefined &&
         first !== undefined &&

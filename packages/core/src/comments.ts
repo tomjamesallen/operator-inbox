@@ -1,7 +1,9 @@
 import { Schema } from 'effect';
+import { MacrosInvoked } from './macros';
 
 // The operator's comments on a Question's text: a span of the rendered body,
-// quoted, and what they say about it. They ride on the answer, as macros do.
+// quoted, and what they say about it, and the macros they invoked on it. They
+// ride on the answer, as macros do.
 //
 // `quote`, `prefix` and `suffix` are the anchor of record (a W3C Web Annotation
 // TextQuoteSelector): what the agent reads, and what still finds the span in a
@@ -28,8 +30,13 @@ export const QuestionComment = Schema.Struct({
   prefix: Schema.String,
   suffix: Schema.String,
   at: CommentAnchor,
-  // What the operator says about it.
+  // What the operator says about it: '' when its macros say it all.
   text: Schema.String,
+  // The macros the operator invoked on the quoted text, in the order they
+  // stacked them, each with its instruction copied in at send time, as an
+  // answer's are (`macros.ts`). Left out for none, so a comment written
+  // before comments took macros decodes as it was.
+  macros: Schema.optionalKey(MacrosInvoked),
 });
 export type QuestionComment = typeof QuestionComment.Type;
 
@@ -46,7 +53,9 @@ export const MAX_COMMENTS_PER_ANSWER = 50;
 /** Why a comment cannot be sent, or `undefined` when it can. */
 export const commentProblem = (c: QuestionComment): string | undefined => {
   if (c.quote.trim() === '') return 'a comment quotes no text';
-  if (c.text.trim() === '') return `the comment on “${c.quote}” is empty`;
+  // A macro is a whole comment on its own, as it is a whole answer.
+  if (c.text.trim() === '' && (c.macros ?? []).length === 0)
+    return `the comment on “${c.quote}” is empty`;
   if (c.at.end < c.at.start)
     return `the comment on “${c.quote}” ends before it starts`;
   return undefined;

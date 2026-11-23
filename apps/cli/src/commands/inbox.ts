@@ -1005,22 +1005,39 @@ export const drawingChangedLine = (
 export const macroLines = (
   macros: ReadonlyArray<MacroInvoked>,
 ): ReadonlyArray<string> =>
-  macros.flatMap((m, i) => {
-    const [first = '', ...rest] = m.instruction.trim().split('\n');
-    const args = Object.entries(m.args);
-    return [
-      `MACRO ${i + 1} of ${macros.length}: /${m.macro}`,
-      `  instruction: ${first}`,
-      ...rest.map((line) => `    ${line}`),
-      ...(args.length === 0
-        ? ['  (no parameters)']
-        : args.map(([name, value]) => `  ${name} = ${JSON.stringify(value)}`)),
-    ];
-  });
+  macros.flatMap((m, i) =>
+    macroBlock(m, `MACRO ${i + 1} of ${macros.length}: /${m.macro}`),
+  );
+
+// One macro's block under its header line: an optional line saying what it
+// acts on, its instruction (a line each, the first after `instruction:`),
+// then each argument.
+const macroBlock = (
+  m: MacroInvoked,
+  header: string,
+  appliesTo?: string,
+): ReadonlyArray<string> => {
+  const [first = '', ...rest] = m.instruction.trim().split('\n');
+  const args = Object.entries(m.args);
+  return [
+    header,
+    ...(appliesTo === undefined ? [] : [`  applies to: ${appliesTo}`]),
+    `  instruction: ${first}`,
+    ...rest.map((line) => `    ${line}`),
+    ...(args.length === 0
+      ? ['  (no parameters)']
+      : args.map(([name, value]) => `  ${name} = ${JSON.stringify(value)}`)),
+  ];
+};
+
+// What a comment with no words says in its place: its macros say it all.
+export const MACROS_ONLY_COMMENT = '(no words; its macros only)';
 
 // One numbered block for the comments, after the response: what the operator
 // said about each span of the question, in the body's order. The quote is of
-// the rendered text, so it reads as the operator saw it.
+// the rendered text, so it reads as the operator saw it. A comment's macros
+// sit inside it, after its words, each told it acts on that comment's quoted
+// text, so the agent reads the quote, the words and the macros as one.
 export const commentLines = (
   comments: ReadonlyArray<QuestionComment>,
 ): ReadonlyArray<string> =>
@@ -1029,10 +1046,22 @@ export const commentLines = (
     : [
         `COMMENTS on the question (${comments.length}):`,
         ...comments.flatMap((c, i) => {
-          const [first = '', ...rest] = c.text.trim().split('\n');
+          const n = i + 1;
+          const macros = c.macros ?? [];
+          const words = c.text.trim();
+          const [first = '', ...rest] = (
+            words === '' && macros.length > 0 ? MACROS_ONLY_COMMENT : words
+          ).split('\n');
           return [
-            `${i + 1}. On “${c.quote}”: ${first}`,
+            `${n}. On “${c.quote}”: ${first}`,
             ...rest.map((line) => `   ${line}`),
+            ...macros.flatMap((m, j) =>
+              macroBlock(
+                m,
+                `MACRO ${j + 1} of ${macros.length} on comment ${n}: /${m.macro}`,
+                `the text comment ${n} quotes, “${c.quote}”, not the whole question`,
+              ).map((line) => `   ${line}`),
+            ),
           ];
         }),
       ];

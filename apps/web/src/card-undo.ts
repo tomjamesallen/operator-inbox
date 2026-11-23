@@ -8,18 +8,21 @@ import {
   commentFocusAskedAtom,
   commentsAtom,
   removeCommentAtom,
+  setCommentMacrosAtom,
 } from './comments';
 import { askDraftAtom, responseDraftAtom } from './inbox';
 import {
   ASK_CARDS_PREFIX,
   askMacroFocusAtom,
+  commentMacroCardId,
   type MacroCard,
   macroCardsAtom,
 } from './macros';
 
-// Undo for a card removed from an answer: a comment's or a macro's, by its ×,
-// ⌘⌫ or the body's context menu. Each removal keeps the card whole (its text,
-// its slot values, a comment's anchor) and its place in the stack, on a short
+// Undo for a card removed from an answer: a comment's, a macro's, or a macro's
+// on a comment, by its ×, ⌘⌫ or the body's context menu. Each removal keeps the
+// card whole (its text, its slot values, a comment's anchor and its macros)
+// and its place in the stack, on a short
 // stack per answer, so undoing restores it exactly, its highlight with it, and
 // puts the focus back in it. A comment never written that Esc lets go is not a
 // removal: nothing was lost.
@@ -59,6 +62,14 @@ export type RemovedCard =
       readonly inboxId: InboxId;
       // The answer's question; an ask's cards name none.
       readonly number?: QuestionNumber;
+    }
+  | {
+      readonly _tag: 'CommentMacro';
+      // The comment it was on, by id.
+      readonly comment: number;
+      readonly card: MacroCard;
+      // Its place among that comment's macro cards.
+      readonly at: number;
     };
 
 export interface CardRemoval {
@@ -122,6 +133,11 @@ export type CardToRemove =
       readonly id: number;
       readonly inboxId: InboxId;
       readonly number?: QuestionNumber;
+    }
+  | {
+      readonly _tag: 'CommentMacro';
+      readonly comment: number;
+      readonly id: number;
     };
 
 /** Remove a card from answer `key`, keeping it to undo. */
@@ -137,6 +153,24 @@ export const removeCardAtom = Atom.writable(
       if (comment === undefined) return;
       ctx.set(removeCommentAtom, { key, id: card.id });
       removed = { _tag: 'Comment', comment, at };
+    } else if (card._tag === 'CommentMacro') {
+      const macros =
+        ctx.get(commentsAtom(key)).find((c) => c.id === card.comment)?.macros ??
+        [];
+      const at = macros.findIndex((c) => c.id === card.id);
+      const found = macros[at];
+      if (found === undefined) return;
+      ctx.set(setCommentMacrosAtom, {
+        key,
+        id: card.comment,
+        macros: macros.filter((c) => c.id !== card.id),
+      });
+      removed = {
+        _tag: 'CommentMacro',
+        comment: card.comment,
+        card: found,
+        at,
+      };
     } else {
       const cards = ctx.get(macroCardsAtom(key));
       const at = cards.findIndex((c) => c.id === card.id);
@@ -211,6 +245,28 @@ export const undoCardRemovalAtom = Atom.writable(
         insertedAt(comments, removed.at, { ...removed.comment, id }),
       );
       ctx.set(commentFocusAskedAtom, { key, id });
+      return;
+    }
+    if (removed._tag === 'CommentMacro') {
+      // Back on its comment; a comment gone since takes nothing back.
+      const macros = ctx
+        .get(commentsAtom(key))
+        .find((c) => c.id === removed.comment)?.macros;
+      if (macros === undefined) return;
+      const id = freeId(macros, removed.card.id);
+      ctx.set(setCommentMacrosAtom, {
+        key,
+        id: removed.comment,
+        macros: insertedAt(macros, removed.at, { ...removed.card, id }),
+      });
+      const card = commentMacroCardId(removed.comment, id);
+      ctx.set(askMacroFocusAtom, {
+        key,
+        to:
+          removed.card.macro.params.length > 0
+            ? { _tag: 'Field', card, index: 0 }
+            : { _tag: 'Card', card },
+      });
       return;
     }
     const cards = ctx.get(macroCardsAtom(key));

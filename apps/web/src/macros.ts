@@ -19,10 +19,12 @@ import { failureText } from './failure';
 import { inboxBoardAtom } from './inbox';
 import { answerKey } from './inbox-queues';
 
-// Macros in the answer box and the ask box: the operator's `macros.json` as
-// serve read it, the cards of the macros invoked on each answer or ask (its
-// draft, kept as its text is), and what the cards reveal. `/` at a word's start opens the menu;
-// each macro picked becomes a card under the box, one field per parameter.
+// Macros in the answer box, the ask box and a comment's field: the operator's
+// `macros.json` as serve read it, the cards of the macros invoked on each
+// answer or ask (its draft, kept as its text is), and what the cards reveal.
+// `/` at a word's start opens the menu; each macro picked becomes a card under
+// the box, or under the comment, one field per parameter. A comment's cards
+// live on its draft (`comments.ts`).
 // A send with a required field empty is held once, on that field; a second
 // send with the same fields empty sends them as `null`, for the agent.
 
@@ -300,31 +302,54 @@ export const macrosToSend = (
 
 // --- the held send ------------------------------------------------------------------
 
+/** What the held send reads of a comment: its id and its macro cards. */
+export interface CommentWithCards {
+  readonly id: number;
+  readonly macros: ReadonlyArray<MacroCard>;
+}
+
+// Every card a send carries, top to bottom as the stack draws them: each
+// comment's (in body order), then the answer's own.
+const cardsInStack = (
+  cards: ReadonlyArray<MacroCard>,
+  comments: ReadonlyArray<CommentWithCards>,
+): ReadonlyArray<{ readonly id: CardId; readonly card: MacroCard }> => [
+  ...comments.flatMap((c) =>
+    c.macros.map((card) => ({
+      id: commentMacroCardId(c.id, card.id),
+      card,
+    })),
+  ),
+  ...cards.map((card) => ({ id: card.id, card })),
+];
+
 /**
- * The required fields still empty across the cards, as one key: the same
- * key a held send was held on lets the next send through. Undefined when
- * every required field is filled.
+ * The required fields still empty across the cards, a comment's among them,
+ * as one key: the same key a held send was held on lets the next send
+ * through. Undefined when every required field is filled.
  */
 export const missingKeyOf = (
   cards: ReadonlyArray<MacroCard>,
+  comments: ReadonlyArray<CommentWithCards> = [],
 ): string | undefined => {
-  const parts = cards.flatMap((c) => {
-    const missing = missingMacroParams(c.macro, c.args);
+  const parts = cardsInStack(cards, comments).flatMap(({ id, card }) => {
+    const missing = missingMacroParams(card.macro, card.args);
     return missing.length === 0
       ? []
-      : [`${c.id}:${missing.map((p) => p.name).join(',')}`];
+      : [`${id}:${missing.map((p) => p.name).join(',')}`];
   });
   return parts.length === 0 ? undefined : parts.join('|');
 };
 
-/** The first empty required field, in the cards' order. */
+/** The first empty required field, in the stack's order. */
 export const firstMissingOf = (
   cards: ReadonlyArray<MacroCard>,
-): { readonly card: number; readonly index: number } | undefined => {
-  for (const c of cards) {
-    const missing = missingMacroParams(c.macro, c.args);
-    const index = c.macro.params.findIndex((p) => missing.includes(p));
-    if (index >= 0) return { card: c.id, index };
+  comments: ReadonlyArray<CommentWithCards> = [],
+): { readonly card: CardId; readonly index: number } | undefined => {
+  for (const { id, card } of cardsInStack(cards, comments)) {
+    const missing = missingMacroParams(card.macro, card.args);
+    const index = card.macro.params.findIndex((p) => missing.includes(p));
+    if (index >= 0) return { card: id, index };
   }
   return undefined;
 };
@@ -342,9 +367,16 @@ export const macroHeldAtom = Atom.family((_key: string) =>
 
 /**
  * A card in the stack under the answer box: a macro's by its number, a
- * comment's as `c<n>` (`comments.ts`), so the two never meet.
+ * comment's as `c<n>` (`comments.ts`), and a macro's on comment `n` as
+ * `c<n>m<k>`, so none of them meet.
  */
-export type CardId = number | `c${number}`;
+export type CardId = number | `c${number}` | `c${number}m${number}`;
+
+/** The id of macro card `card` on comment `comment`. */
+export const commentMacroCardId = (
+  comment: number,
+  card: number,
+): `c${number}m${number}` => `c${comment}m${card}`;
 
 /** Where the caret is asked to go: a card's field, the card itself, or the text. */
 export type MacroFocus =

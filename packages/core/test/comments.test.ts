@@ -10,6 +10,7 @@ import {
   decideMove,
   type InboxEvent,
   inboxState,
+  MAX_MACROS_PER_ANSWER,
   QuestionAnswered,
   QuestionNumber,
 } from '../src/inbox';
@@ -148,6 +149,101 @@ describe('an answer with comments', () => {
     const withOne = decode({ ...before, comments: [early] });
     expect(withOne.comments).toEqual([early]);
     expect(() => decode({ ...before, comments: [] })).toThrow();
+  });
+});
+
+describe('a comment with macros', () => {
+  const SHOW_ME = {
+    macro: 'show-me',
+    instruction: 'Show the operator what this looks like.',
+    args: { focus: 'the edge case' },
+  };
+  const PARK = { macro: 'park', instruction: 'Stop work here.', args: {} };
+
+  it('carries them, in order, through the decision and the fold', () => {
+    const withMacros = { ...late, macros: [SHOW_ME, PARK] } as const;
+    const event = Result.getOrThrow(
+      answer({ response: 'Yes', comments: [withMacros, early] }),
+    );
+    expect(event.comments).toEqual([early, withMacros]);
+    const q = inboxState([...events, event]).questions[0];
+    expect(q?.comments?.[1]?.macros).toEqual([SHOW_ME, PARK]);
+  });
+
+  it('may be macros alone, with no words, and then is a whole answer', () => {
+    const event = Result.getOrThrow(
+      answer({
+        response: '',
+        comments: [{ ...early, text: '', macros: [SHOW_ME] }],
+      }),
+    );
+    expect(event.response).toBe('');
+    expect(event.comments?.[0]).toEqual({
+      ...early,
+      text: '',
+      macros: [SHOW_ME],
+    });
+  });
+
+  it('refuses a macro with no instruction, or too many, on a comment', () => {
+    expect(
+      reasonOf(
+        answer({
+          response: 'x',
+          comments: [{ ...early, macros: [{ ...SHOW_ME, instruction: ' ' }] }],
+        }),
+      ),
+    ).toBe('bad-macro');
+    expect(
+      reasonOf(
+        answer({
+          response: 'x',
+          comments: [
+            {
+              ...early,
+              macros: [
+                SHOW_ME,
+                ...Array.from({ length: MAX_MACROS_PER_ANSWER }, () => PARK),
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toBe('bad-macro');
+  });
+
+  it('moves with its question, macros and all', () => {
+    const withMacros = { ...early, text: '', macros: [SHOW_ME] } as const;
+    const answered = Result.getOrThrow(
+      answer({ response: '', comments: [withMacros] }),
+    );
+    const moved = Result.getOrThrow(
+      decideMove(
+        inboxState([...events, answered]),
+        inboxState([{ _tag: 'InboxOpened', inboxId: TO, label: 'other' }]),
+        { inboxId: ID, numbers: [n(1)], toInboxId: TO },
+      ),
+    );
+    const to = inboxState([
+      { _tag: 'InboxOpened', inboxId: TO, label: 'other' },
+      ...moved,
+    ]);
+    expect(to.questions[0]?.comments).toEqual([withMacros]);
+  });
+
+  it('decodes a comment logged before comments took macros, and refuses an empty list', () => {
+    const decode = Schema.decodeUnknownSync(QuestionAnswered);
+    const before = decode({
+      _tag: 'QuestionAnswered',
+      inboxId: ID,
+      number: 1,
+      response: '',
+      comments: [early],
+    });
+    expect(before.comments?.[0]).not.toHaveProperty('macros');
+    expect(() =>
+      decode({ ...before, comments: [{ ...early, macros: [] }] }),
+    ).toThrow();
   });
 });
 
